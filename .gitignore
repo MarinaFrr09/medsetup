@@ -1,0 +1,45 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing & Build
+/coverage
+/.next/
+/out/
+/build
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Database
+prisma/dev.db
+prisma/dev.db-journal
+
+# Environment variables
+.env
+.env*.local
+.env.local
+
+# Logs & Debug
+*.log
+debug.log
+start.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# User Uploaded Files (PDFs/Images - Avoids GitHub 100MB limit)
+/public/uploads/*
+!/public/uploads/.gitkeep
+!/public/uploads/histology/
+
+# Cache & Temp
+.turbo/
+.cache/
+
+# OS Files
+.DS_Store
+Thumbs.db
