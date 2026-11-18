@@ -205,49 +205,115 @@ function MindMapCanvas({ id }: { id: string }) {
   const selectedCount = nodes.filter((n) => n.selected || (selectedNode && n.id === selectedNode.id)).length;
   const hasSelection = selectedCount > 0;
 
+  // Helper to attach inline editing callback to any node list
+  const withInlineEditing = useCallback((nds: Node[]): Node[] => {
+    return nds.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        onUpdateLabel: (newLabel: string) => {
+          setNodes((current) => {
+            const updated = current.map((item) =>
+              item.id === n.id ? { ...item, data: { ...item.data, label: newLabel } } : item
+            );
+            try {
+              const stored = localStorage.getItem(`mindmap_${id}`);
+              if (stored) {
+                const parsed = JSON.parse(stored);
+                parsed.nodes = updated;
+                localStorage.setItem(`mindmap_${id}`, JSON.stringify(parsed));
+                useAppStore.getState().updateMindMap(parsed);
+              }
+            } catch {}
+            return updated;
+          });
+          setSelectedNode((prev) =>
+            prev && prev.id === n.id ? { ...prev, data: { ...prev.data, label: newLabel } } : prev
+          );
+        },
+      },
+    }));
+  }, [id]);
+
   // Undo / Redo History Stacks
   const historyRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
   const historyIndexRef = useRef<number>(-1);
   const isUndoRedoAction = useRef(false);
+  const [, setHistoryVersion] = useState(0);
 
   // Helper to record history snapshot
   const pushHistorySnapshot = useCallback((newNodes: Node[], newEdges: Edge[]) => {
     if (isUndoRedoAction.current) return;
     const currentHist = historyRef.current.slice(0, historyIndexRef.current + 1);
-    const nextHist = [...currentHist, { nodes: newNodes, edges: newEdges }].slice(-30);
+    const nextHist = [...currentHist, { nodes: newNodes, edges: newEdges }].slice(-40);
     historyRef.current = nextHist;
     historyIndexRef.current = nextHist.length - 1;
-  }, []);
+    setHistoryVersion((v) => v + 1);
+
+    try {
+      const stored = localStorage.getItem(`mindmap_${id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.nodes = newNodes;
+        parsed.edges = newEdges;
+        localStorage.setItem(`mindmap_${id}`, JSON.stringify(parsed));
+      }
+    } catch (e) {}
+  }, [id]);
 
   const handleUndo = useCallback(() => {
     if (historyIndexRef.current > 0) {
       isUndoRedoAction.current = true;
       historyIndexRef.current -= 1;
       const snapshot = historyRef.current[historyIndexRef.current];
-      setNodes(snapshot.nodes);
+      setNodes(withInlineEditing(snapshot.nodes));
       setEdges(snapshot.edges);
       setSelectedNode(null);
+      setHistoryVersion((v) => v + 1);
+
+      try {
+        const stored = localStorage.getItem(`mindmap_${id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.nodes = snapshot.nodes;
+          parsed.edges = snapshot.edges;
+          localStorage.setItem(`mindmap_${id}`, JSON.stringify(parsed));
+        }
+      } catch (e) {}
+
       setTimeout(() => {
         isUndoRedoAction.current = false;
       }, 50);
       toast.success("Desfeito (Undo)");
     }
-  }, []);
+  }, [id, withInlineEditing]);
 
   const handleRedo = useCallback(() => {
     if (historyIndexRef.current < historyRef.current.length - 1) {
       isUndoRedoAction.current = true;
       historyIndexRef.current += 1;
       const snapshot = historyRef.current[historyIndexRef.current];
-      setNodes(snapshot.nodes);
+      setNodes(withInlineEditing(snapshot.nodes));
       setEdges(snapshot.edges);
       setSelectedNode(null);
+      setHistoryVersion((v) => v + 1);
+
+      try {
+        const stored = localStorage.getItem(`mindmap_${id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.nodes = snapshot.nodes;
+          parsed.edges = snapshot.edges;
+          localStorage.setItem(`mindmap_${id}`, JSON.stringify(parsed));
+        }
+      } catch (e) {}
+
       setTimeout(() => {
         isUndoRedoAction.current = false;
       }, 50);
       toast.success("Refeito (Redo)");
     }
-  }, []);
+  }, [id, withInlineEditing]);
 
   // Fresh refs for shortcuts
   const nodesRef = useRef<Node[]>(nodes);
@@ -378,6 +444,99 @@ function MindMapCanvas({ id }: { id: string }) {
     toast.success(count === 1 ? "Balão duplicado (Ctrl+D)" : `${count} balões duplicados (Ctrl+D)`);
   }, [pushHistorySnapshot]);
 
+  // In-memory clipboard for balloon copy & paste (Ctrl+C and Ctrl+V)
+  const clipboardNodesRef = useRef<Node[]>([]);
+  const clipboardEdgesRef = useRef<Edge[]>([]);
+  const pasteCountRef = useRef<number>(0);
+
+  // Copy selected balloon(s) (Ctrl+C)
+  const handleCopySelected = useCallback(() => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const selNode = selectedNodeRef.current;
+
+    const toCopy = currentNodes.filter((n) => n.selected || (selNode && n.id === selNode.id));
+    if (toCopy.length === 0) {
+      toast("Selecione um balão clicando nele para copiar (Ctrl+C).", { icon: "ℹ️" });
+      return;
+    }
+
+    clipboardNodesRef.current = toCopy;
+    const toCopyIds = new Set(toCopy.map((n) => n.id));
+    clipboardEdgesRef.current = currentEdges.filter(
+      (e) => toCopyIds.has(e.source) && toCopyIds.has(e.target)
+    );
+    pasteCountRef.current = 0;
+
+    const count = toCopy.length;
+    toast.success(count === 1 ? "Balão copiado! (Ctrl+C)" : `${count} balões copiados! (Ctrl+C)`, {
+      icon: "📋",
+    });
+  }, []);
+
+  // Paste copied balloon(s) (Ctrl+V)
+  const handlePaste = useCallback(() => {
+    const copiedNodes = clipboardNodesRef.current;
+    if (!copiedNodes || copiedNodes.length === 0) {
+      toast("Nenhum balão copiado. Clique em um balão e pressione Ctrl+C primeiro.", {
+        icon: "ℹ️",
+      });
+      return;
+    }
+
+    pasteCountRef.current += 1;
+    const offset = 45 + ((pasteCountRef.current - 1) % 6) * 25;
+    const idMap = new Map<string, string>();
+    const timestamp = Date.now();
+
+    const clonedNodes: Node[] = copiedNodes.map((n, idx) => {
+      const newId = `node_copy_${timestamp}_${idx}`;
+      idMap.set(n.id, newId);
+      return {
+        ...n,
+        id: newId,
+        position: {
+          x: n.position.x + offset,
+          y: n.position.y + offset,
+        },
+        selected: true,
+        data: {
+          ...n.data,
+          onUpdateLabel: (newLabel: string) => {
+            setNodes((current) =>
+              current.map((item) =>
+                item.id === newId ? { ...item, data: { ...item.data, label: newLabel } } : item
+              )
+            );
+          },
+        },
+      };
+    });
+
+    // Replicate internal relationships among copied nodes
+    const copiedEdges = clipboardEdgesRef.current;
+    const clonedEdges: Edge[] = copiedEdges.map((e, idx) => ({
+      ...e,
+      id: `edge_copy_${timestamp}_${idx}`,
+      source: idMap.get(e.source) || e.source,
+      target: idMap.get(e.target) || e.target,
+    }));
+
+    const deselectExisting = nodesRef.current.map((n) => ({ ...n, selected: false }));
+    const nextNodes = [...deselectExisting, ...clonedNodes];
+    const nextEdges = [...edgesRef.current, ...clonedEdges];
+
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelectedNode(clonedNodes[0] || null);
+    pushHistorySnapshot(nextNodes, nextEdges);
+
+    const count = clonedNodes.length;
+    toast.success(count === 1 ? "Balão colado! (Ctrl+V)" : `${count} balões colados! (Ctrl+V)`, {
+      icon: "✨",
+    });
+  }, [pushHistorySnapshot]);
+
   // Select all nodes (Ctrl+A)
   const handleSelectAll = useCallback(() => {
     const updated = nodesRef.current.map((n) => ({ ...n, selected: true }));
@@ -398,7 +557,7 @@ function MindMapCanvas({ id }: { id: string }) {
     setContextMenu(null);
   }, []);
 
-  // Keyboard Shortcuts: Ctrl+Z (Undo), Ctrl+Y (Redo), Ctrl+A (Select All), Ctrl+D (Duplicate), Ctrl+F (Search), Delete/Backspace (Delete Node), Esc (Deselect)
+  // Keyboard Shortcuts: Ctrl+Z (Undo), Ctrl+Y (Redo), Ctrl+C (Copy), Ctrl+V (Paste), Ctrl+A (Select All), Ctrl+D (Duplicate), Ctrl+F (Search), Delete/Backspace (Delete Node), Esc (Deselect)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing inside input or textarea
@@ -424,6 +583,12 @@ function MindMapCanvas({ id }: { id: string }) {
       } else if (isCmdOrCtrl && e.key.toLowerCase() === "y") {
         e.preventDefault();
         handleRedo();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        handleCopySelected();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        handlePaste();
       } else if (isCmdOrCtrl && e.key.toLowerCase() === "a") {
         e.preventDefault();
         handleSelectAll();
@@ -461,6 +626,8 @@ function MindMapCanvas({ id }: { id: string }) {
   }, [
     handleUndo,
     handleRedo,
+    handleCopySelected,
+    handlePaste,
     handleDeleteSelected,
     handleDeleteEdge,
     handleDuplicateSelected,
@@ -468,6 +635,28 @@ function MindMapCanvas({ id }: { id: string }) {
     handleDeselectAll,
     isZenMode,
   ]);
+
+  // Listen for AI selection assistant updates on mind map nodes
+  useEffect(() => {
+    const handleNodeAiUpdate = (e: Event) => {
+      const custom = e as CustomEvent<{ nodeId?: string; newLabel?: string }>;
+      const targetId = custom.detail?.nodeId || selectedNodeRef.current?.id;
+      const newLabel = custom.detail?.newLabel;
+      if (!targetId || typeof newLabel !== "string") return;
+
+      const updatedNodes = nodesRef.current.map((n) =>
+        n.id === targetId ? { ...n, data: { ...n.data, label: newLabel } } : n
+      );
+      setNodes(updatedNodes);
+      setSelectedNode((prev) =>
+        prev && prev.id === targetId ? { ...prev, data: { ...prev.data, label: newLabel } } : prev
+      );
+      pushHistorySnapshot(updatedNodes, edgesRef.current);
+    };
+
+    window.addEventListener("medsetup:update-mindmap-node", handleNodeAiUpdate);
+    return () => window.removeEventListener("medsetup:update-mindmap-node", handleNodeAiUpdate);
+  }, [pushHistorySnapshot]);
 
   useEffect(() => {
     setMounted(true);
@@ -480,24 +669,6 @@ function MindMapCanvas({ id }: { id: string }) {
         mainEl.style.overflow = prevOverflow;
       };
     }
-  }, []);
-
-  // Helper to attach inline editing callback to any node list
-  const withInlineEditing = useCallback((nds: Node[]): Node[] => {
-    return nds.map((n) => ({
-      ...n,
-      data: {
-        ...n.data,
-        onUpdateLabel: (newLabel: string) => {
-          setNodes((current) => {
-            const updated = current.map((item) =>
-              item.id === n.id ? { ...item, data: { ...item.data, label: newLabel } } : item
-            );
-            return updated;
-          });
-        },
-      },
-    }));
   }, []);
 
   // Load map data from localStorage or fallback to store / template
@@ -581,6 +752,80 @@ function MindMapCanvas({ id }: { id: string }) {
     []
   );
 
+  // Track node drag starting positions for Undo / Redo history
+  const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  const onNodeDragStart = useCallback((event: any, node: Node, draggedNodes?: Node[]) => {
+    const posMap = new Map<string, { x: number; y: number }>();
+    const allDragged = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
+    allDragged.forEach((n) => {
+      posMap.set(n.id, { x: n.position.x, y: n.position.y });
+    });
+    dragStartPositionsRef.current = posMap;
+  }, []);
+
+  const onNodeDragStop = useCallback(
+    (event: any, node: Node, draggedNodes?: Node[]) => {
+      const allDragged = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
+      const startMap = dragStartPositionsRef.current;
+
+      let hasMoved = false;
+      for (const n of allDragged) {
+        const startPos = startMap.get(n.id);
+        if (startPos && (Math.abs(startPos.x - n.position.x) > 2 || Math.abs(startPos.y - n.position.y) > 2)) {
+          hasMoved = true;
+          break;
+        }
+      }
+
+      if (hasMoved) {
+        const draggedMap = new Map(allDragged.map((n) => [n.id, n]));
+        const updatedNodes = nodesRef.current.map((n) => {
+          const dragged = draggedMap.get(n.id);
+          return dragged ? { ...n, position: { ...dragged.position } } : n;
+        });
+
+        pushHistorySnapshot(updatedNodes, edgesRef.current);
+      }
+      dragStartPositionsRef.current.clear();
+    },
+    [pushHistorySnapshot]
+  );
+
+  const onSelectionDragStart = useCallback((event: any, draggedNodes: Node[]) => {
+    const posMap = new Map<string, { x: number; y: number }>();
+    draggedNodes.forEach((n) => {
+      posMap.set(n.id, { x: n.position.x, y: n.position.y });
+    });
+    dragStartPositionsRef.current = posMap;
+  }, []);
+
+  const onSelectionDragStop = useCallback(
+    (event: any, draggedNodes: Node[]) => {
+      const startMap = dragStartPositionsRef.current;
+      let hasMoved = false;
+      for (const n of draggedNodes) {
+        const startPos = startMap.get(n.id);
+        if (startPos && (Math.abs(startPos.x - n.position.x) > 2 || Math.abs(startPos.y - n.position.y) > 2)) {
+          hasMoved = true;
+          break;
+        }
+      }
+
+      if (hasMoved) {
+        const draggedMap = new Map(draggedNodes.map((n) => [n.id, n]));
+        const updatedNodes = nodesRef.current.map((n) => {
+          const dragged = draggedMap.get(n.id);
+          return dragged ? { ...n, position: { ...dragged.position } } : n;
+        });
+
+        pushHistorySnapshot(updatedNodes, edgesRef.current);
+      }
+      dragStartPositionsRef.current.clear();
+    },
+    [pushHistorySnapshot]
+  );
+
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       setEdges((eds) => {
@@ -624,6 +869,9 @@ function MindMapCanvas({ id }: { id: string }) {
       setSelectedNode(node);
     } else {
       setSelectedNode(node);
+      setNodes((nds) =>
+        nds.map((n) => (n.id === node.id ? { ...n, selected: true } : { ...n, selected: false }))
+      );
       setIsInspectorOpen(true);
     }
     setContextMenu(null);
@@ -1062,12 +1310,17 @@ function MindMapCanvas({ id }: { id: string }) {
     );
 
     try {
+      const incomingEdge = edges.find((e) => e.target === target.id);
+      const parentNode = incomingEdge ? nodes.find((n) => n.id === incomingEdge.source) : null;
+      const parentLabel = (parentNode?.data?.label as string) || "";
+
       const res = await fetch("/api/ai/expand-mindmap-node", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nodeLabel: label,
           mindMapTitle: mapTitle,
+          parentLabel,
           action,
         }),
       });
@@ -1076,6 +1329,7 @@ function MindMapCanvas({ id }: { id: string }) {
 
       const data = await res.json();
       const subtopics = data.subtopics || [];
+      if (subtopics.length === 0) throw new Error("A IA não retornou subtópicos válidos.");
 
       const newNodes: Node[] = [];
       const newEdges: Edge[] = [];
@@ -1134,11 +1388,11 @@ function MindMapCanvas({ id }: { id: string }) {
       });
 
       const combinedNodes = [...nodes, ...newNodes];
-      const safeNodes = resolveCollisions(combinedNodes as any, 25);
+      const safeNodes = withInlineEditing(resolveCollisions(combinedNodes as any, 25) as Node[]);
       const nextEdges = [...edges, ...newEdges];
-      setNodes(safeNodes as Node[]);
+      setNodes(safeNodes);
       setEdges(nextEdges);
-      pushHistorySnapshot(safeNodes as Node[], nextEdges);
+      pushHistorySnapshot(safeNodes, nextEdges);
 
       toast.success(
         action === "examples"
@@ -1184,17 +1438,27 @@ function MindMapCanvas({ id }: { id: string }) {
   const handleSaveMap = () => {
     setIsSaving(true);
     try {
+      const storeMaps = useAppStore.getState().mindmaps || [];
+      const existingInStore = storeMaps.find((m) => m.id === id);
+      let existingLocal: any = null;
+      try {
+        const raw = localStorage.getItem(`mindmap_${id}`);
+        if (raw) existingLocal = JSON.parse(raw);
+      } catch {}
+
       const payload: MindMapItem = {
         id,
         name: mapTitle,
+        description: existingInStore?.description || existingLocal?.description || "",
+        colorTheme: existingInStore?.colorTheme || existingLocal?.colorTheme || activeTheme || "blue",
+        folderId: existingInStore?.folderId ?? existingLocal?.folderId ?? "folder-mm-geral",
         nodes,
         edges,
         layout: currentLayout,
         date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }),
       };
       localStorage.setItem(`mindmap_${id}`, JSON.stringify(payload));
-      const storeMaps = useAppStore.getState().mindmaps || [];
-      if (storeMaps.some((m) => m.id === id)) {
+      if (existingInStore) {
         useAppStore.getState().updateMindMap(payload);
       } else {
         useAppStore.getState().addMindMap(payload);
@@ -2556,6 +2820,24 @@ function MindMapCanvas({ id }: { id: string }) {
 
             <button
               type="button"
+              onClick={handleCopySelected}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium transition cursor-pointer"
+              title="Copiar selecionados (Ctrl+C)"
+            >
+              <Copy className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Copiar <kbd className="text-[10px] opacity-70 font-mono">Ctrl+C</kbd></span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePaste}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium transition cursor-pointer"
+              title="Colar balão copiado (Ctrl+V)"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-300" />
+              <span>Colar <kbd className="text-[10px] opacity-70 font-mono">Ctrl+V</kbd></span>
+            </button>
+            <button
+              type="button"
               onClick={handleDuplicateSelected}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium transition cursor-pointer"
               title="Duplicar selecionados (Ctrl+D)"
@@ -2595,11 +2877,20 @@ function MindMapCanvas({ id }: { id: string }) {
           onEdgeContextMenu={onEdgeContextMenu}
           onNodeContextMenu={onNodeContextMenu}
           onPaneContextMenu={onPaneContextMenu}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDragStop={onNodeDragStop}
+          onSelectionDragStart={onSelectionDragStart}
+          onSelectionDragStop={onSelectionDragStop}
           nodeTypes={nodeTypes}
           multiSelectionKeyCode={["Control", "Meta", "Shift"]}
           selectionKeyCode={["Shift"]}
           selectionMode={SelectionMode.Partial}
           deleteKeyCode={null}
+          onlyRenderVisibleElements={false}
+          elevateNodesOnSelect={false}
+          proOptions={{ hideAttribution: true }}
+          minZoom={0.15}
+          maxZoom={2.5}
           fitView
           className="react-flow-canvas"
         >
@@ -2734,14 +3025,51 @@ function MindMapCanvas({ id }: { id: string }) {
                 <span>Adicionar Nota</span>
               </button>
 
+              {/* Copy & Paste */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleCopySelected();
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 text-left flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Copy className="w-4 h-4 text-emerald-500" />
+                  <span>Copiar Balão</span>
+                </div>
+                <kbd className="text-[10px] text-gray-400 font-mono">Ctrl+C</kbd>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handlePaste();
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 text-left flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4 text-blue-500" />
+                  <span>Colar Balão</span>
+                </div>
+                <kbd className="text-[10px] text-gray-400 font-mono">Ctrl+V</kbd>
+              </button>
+
               {/* Duplicate */}
               <button
                 type="button"
-                onClick={handleDuplicateSelected}
-                className="w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
+                onClick={() => {
+                  handleDuplicateSelected();
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 text-left flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
               >
-                <Copy className="w-4 h-4 text-emerald-500" />
-                <span>Duplicar Balão</span>
+                <div className="flex items-center gap-2.5">
+                  <Copy className="w-4 h-4 text-indigo-500" />
+                  <span>Duplicar Balão</span>
+                </div>
+                <kbd className="text-[10px] text-gray-400 font-mono">Ctrl+D</kbd>
               </button>
 
               {/* Color Palette Inline Submenu */}
@@ -2811,11 +3139,48 @@ function MindMapCanvas({ id }: { id: string }) {
               <button
                 type="button"
                 onClick={() => handleAddChildNode("subtopic")}
-                className="w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
+                className="w-full px-3 py-2 text-left flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
               >
-                <Plus className="w-4 h-4 text-blue-500" />
-                <span>Novo Balão / Conceito</span>
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4 text-blue-500" />
+                  <span>Novo Balão / Conceito</span>
+                </div>
+                <kbd className="text-[10px] text-gray-400 font-mono">Tab</kbd>
               </button>
+
+              {clipboardNodesRef.current.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handlePaste();
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-3 py-2 text-left flex items-center justify-between text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Copy className="w-4 h-4 text-emerald-500" />
+                    <span>Colar Balão Copiado</span>
+                  </div>
+                  <kbd className="text-[10px] opacity-75 font-mono">Ctrl+V</kbd>
+                </button>
+              )}
+
+              {canUndo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUndo();
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-3 py-2 text-left flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Undo2 className="w-4 h-4 text-gray-500" />
+                    <span>Desfazer</span>
+                  </div>
+                  <kbd className="text-[10px] text-gray-400 font-mono">Ctrl+Z</kbd>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -3064,14 +3429,32 @@ function MindMapCanvas({ id }: { id: string }) {
 
 export default function MindMapEditorPage({ params }: { params?: any }) {
   const routeParams = useParams();
-  const id =
+  const rawRouteId =
     (typeof routeParams?.id === "string" ? routeParams.id : Array.isArray(routeParams?.id) ? routeParams.id[0] : "") ||
     (params && typeof params.then !== "function" && params.id ? String(params.id) : "") ||
     "default";
 
+  const [resolvedId, setResolvedId] = useState<string>(rawRouteId);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchId = new URLSearchParams(window.location.search).get("id");
+      if (searchId) {
+        setResolvedId(searchId);
+        return;
+      }
+      const match = window.location.pathname.match(/\/mindmaps\/([^/?#]+)/);
+      if (match && match[1] && match[1] !== "default") {
+        setResolvedId(decodeURIComponent(match[1]));
+        return;
+      }
+    }
+    setResolvedId(rawRouteId);
+  }, [rawRouteId]);
+
   return (
     <ReactFlowProvider>
-      <MindMapCanvas id={id} />
+      <MindMapCanvas id={resolvedId} />
     </ReactFlowProvider>
   );
 }

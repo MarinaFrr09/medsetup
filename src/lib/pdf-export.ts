@@ -47,8 +47,8 @@ export async function exportBoardToPdf({
   const { jsPDF, toPng } = await getPdfEngines();
 
   // Measure natural full dimensions of the whiteboard without any clipping
-  const fullWidth = boardElement.scrollWidth || boardElement.offsetWidth || 1400;
-  const fullHeight = boardElement.scrollHeight || boardElement.offsetHeight || 800;
+  const fullWidth = Math.max(boardElement.scrollWidth || 0, boardElement.offsetWidth || 0, 1380);
+  const fullHeight = Math.max(boardElement.scrollHeight || 0, boardElement.offsetHeight || 0, 750);
 
   // Capture the COMPLETE element with high DPI and no max constraints
   const dataUrl = await toPng(boardElement, {
@@ -60,26 +60,13 @@ export async function exportBoardToPdf({
     style: {
       width: `${fullWidth}px`,
       height: `${fullHeight}px`,
+      minWidth: `${fullWidth}px`,
       maxWidth: "none",
       maxHeight: "none",
       margin: "0",
       transform: "none",
     },
   });
-
-  const pdf = new jsPDF({
-    orientation: "landscape",
-    unit: "mm",
-    format: "a4",
-    compress: true,
-  });
-
-  const pageW = A4_LANDSCAPE_W_MM; // 297mm
-  const pageH = A4_LANDSCAPE_H_MM; // 210mm
-  const margin = 8; // mm margin around board
-  const usableW = pageW - margin * 2; // 281 mm
-  const usableH = pageH - margin * 2; // 194 mm
-  const usableAspect = usableW / usableH;
 
   const imgInfo = await new Promise<{ width: number; height: number }>((resolve) => {
     const img = new Image();
@@ -89,6 +76,23 @@ export async function exportBoardToPdf({
   });
 
   const boardAspect = imgInfo.width / imgInfo.height;
+
+  // The whiteboard MUST ALWAYS be exported as an authentic Landscape (Horizontal) sheet
+  let pageW = A4_LANDSCAPE_W_MM; // 297mm
+  let pageH = A4_LANDSCAPE_H_MM; // 210mm
+
+  if (boardAspect < (pageW / pageH)) {
+    // If board height requires more space, adapt pageH while strictly keeping pageW > pageH
+    pageH = Math.max(210, Math.round(pageW / boardAspect));
+    if (pageH >= pageW) {
+      pageW = Math.round(pageH * 1.35); // strictly enforce horizontal landscape sheet!
+    }
+  }
+
+  const margin = 8; // mm margin around board
+  const usableW = pageW - margin * 2;
+  const usableH = pageH - margin * 2;
+  const usableAspect = usableW / usableH;
 
   let drawW = usableW;
   let drawH = usableH;
@@ -106,6 +110,13 @@ export async function exportBoardToPdf({
     drawW = usableH * boardAspect;
     posX = margin + (usableW - drawW) / 2;
   }
+
+  const pdf = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: [pageW, pageH],
+    compress: true,
+  });
 
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageW, pageH, "F");

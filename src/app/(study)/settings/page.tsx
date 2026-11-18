@@ -288,6 +288,10 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+
+                <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-lg px-3 py-2">
+                  🔒 <strong>Proteção para GitHub ativada:</strong> Sua chave fica ativa apenas na memória temporária enquanto o aplicativo estiver aberto e <strong>nunca é gravada nas pastas ou arquivos do projeto</strong>. Ao abrir o aplicativo novamente, cole sua chave manualmente aqui.
+                </p>
               </div>
 
               {/* Botões de Ação */}

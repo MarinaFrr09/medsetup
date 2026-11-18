@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Sparkles, X, Loader2, BookOpen, Layers, CheckCircle2, Paperclip, FileText, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAppStore } from "@/stores/useAppStore";
+import { cleanFlashcardText } from "@/lib/text-sanitize";
 import toast from "react-hot-toast";
 
 interface AIFlashcardModalProps {
@@ -139,8 +140,8 @@ export default function AIFlashcardModal({
 
       const generatedCards = data.flashcards.map((c: any, idx: number) => ({
         id: `card-ai-${Date.now()}-${idx}`,
-        front: c.front,
-        back: c.back,
+        front: cleanFlashcardText(c.front),
+        back: cleanFlashcardText(c.back),
         interval: 1,
         repetition: 0,
         easeFactor: 2.5,
@@ -188,12 +189,20 @@ export default function AIFlashcardModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isGenerating) {
+          onClose();
+        }
+      }}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="flex w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] dark:border dark:border-[#2a2d3a] overflow-hidden"
+        className="flex w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] dark:border dark:border-[#2a2d3a] overflow-hidden cursor-default"
       >
         <div className="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2d3a] px-6 py-4 bg-gradient-to-r from-purple-50/50 to-indigo-50/50 dark:from-purple-900/10 dark:to-indigo-900/10">
           <div className="flex items-center gap-2">

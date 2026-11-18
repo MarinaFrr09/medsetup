@@ -24,7 +24,7 @@ export const MainContentWrapper = React.memo(function MainContentWrapper({ child
 
   return (
     <main className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6">
-      <div className="max-w-[1400px] mx-auto w-full">
+      <div className="max-w-[1680px] mx-auto w-full">
         {children}
       </div>
     </main>

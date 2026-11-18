@@ -300,8 +300,18 @@ export default function AddAnotacaoModal({
   const origQ = initialData?.source?.originalQuestion;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
-      <div className="bg-white dark:bg-[#1A1D27] rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-slate-200 dark:border-[#2a2d3a] shadow-2xl relative flex flex-col max-h-[92vh] my-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-[#1A1D27] rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-slate-200 dark:border-[#2a2d3a] shadow-2xl relative flex flex-col max-h-[92vh] my-auto cursor-default"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">

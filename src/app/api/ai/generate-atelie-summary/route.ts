@@ -9,10 +9,10 @@ const SUMMARY_PROMPT = `Você é um professor catedrático de Medicina especiali
 MISSÃO: A partir do tema, objetivos, perguntas e atividades respondidas, histologia, anatomia, exames e dados da SP fornecidos, crie um RESUMO TEÓRICO COMPLETO, EXAUSTIVO E ALTAMENTE ESTRUTURADO sobre toda a matéria do documento.
 
 DIRETRIZES FUNDAMENTAIS DE ESTRUTURAÇÃO E FORMATAÇÃO (MUITO IMPORTANTE):
-1. NÃO faça tudo em forma de texto corrido! Alterne dinamicamente entre contextualização explicativa, tópicos, subtópicos e detalhamento minucioso.
-2. LISTAGEM DE CARACTERÍSTICAS: Sempre que o tema exigir listar características, componentes, camadas, folhetos ou estruturas (ex.: camadas do endométrio/miométrio, eixos uterinos de anteversão/anteflexão, porções das tubas, folículos ovarianos, critérios de diferenciação), USE SUBTÓPICOS DEDICADOS E DETALHE essas características aprofundadamente com títulos em negrito (ex.: '**Endométrio Funcional:** ...', '**Miométrio:** ...'). Nunca resuma a uma simples lista rasa.
-3. ETAPAS E PROCESSOS: Para sequências temporais, cascatas hormonais, ciclos (ovariano, endometrial) e embriologia, estruture em ETAPAS numeradas e detalhadas (ex.: '1. **Fase Folicular / Proliferativa:** ...', '2. **Pico de LH e Ovulação:** ...').
-4. DETALHAMENTO MÁXIMO: O conteúdo deve ser de alto nível acadêmico (Guyton, Junqueira, Moore, Robbins), denso, técnico e explicativo.
+1. NÃO FAÇA BLOCOS DE TEXTO CORRIDO! Sempre que explicar estruturas anatômicas, divisões de órgãos, ossos, cartilagens, músculos, camadas histológicas, tipos, classificações ou características, prefira organizar em TÓPICOS COM BOLINHAS (\\n* **Estrutura / Conceito:** ...) e SUBTÓPICOS INDENTADOS COM BOLINHAS (\\n  * **Componente / Subdivisão:** ...) em vez de um parágrafo longo e contínuo.
+2. LISTAGEM DE ESTRUTURAS E CARACTERÍSTICAS COM SUBTÓPICOS DE BOLINHAS: Por exemplo, ao descrever a estrutura óssea do nariz, a cavidade nasal ou a cavidade oral, inicie com 1 frase introdutória curta e coloque cada estrutura em um tópico com bolinha (\\n* **Estrutura óssea do nariz:**) e seus elementos em subtópicos indentados com bolinhas (\\n  * **Ossos nasais**\\n  * **Maxilas**\\n  * **Lâmina perpendicular do etmoide**\\n  * **Vômer**).
+3. ETAPAS E PROCESSOS: Para sequências temporais, cascatas hormonais, reflexos neurais e ciclos fisiológicos, estruture em ETAPAS numeradas ou tópicos com bolinhas e subtópicos claros.
+4. DETALHAMENTO MÁXIMO E ORGANIZADO: O conteúdo deve ser de alto nível acadêmico (Guyton, Junqueira, Moore, Robbins, Goodman & Gilman), denso, técnico, porém visualmente limpo e escaneável.
 
 ESTRUTURA NECESSÁRIA:
 Organize a matéria em 5 a 8 Tópicos Centrais lógicos e didáticos. Exemplos de tópicos:
@@ -26,8 +26,7 @@ Organize a matéria em 5 a 8 Tópicos Centrais lógicos e didáticos. Exemplos d
 
 Para CADA tópico:
 - Crie de 2 a 5 subtópicos focados.
-- Cada subtópico deve ter um conteúdo rico, aprofundado, técnico e claro (5 a 10 linhas), utilizando negrito nas informações cruciais.
-- Se houver características ou etapas, detalhe cada uma com subtópicos internos ou itens destacados em negrito.
+- Cada subtópico deve iniciar com 1 frase introdutória breve seguida de tópicos (\\n* **...**) e subtópicos com bolinhas (\\n  * **...**) detalhando as estruturas, tipos, mecanismos e características.
 
 JSON RETORNADO DEVE TER EXATAMENTE O FORMATO:
 {
@@ -37,7 +36,7 @@ JSON RETORNADO DEVE TER EXATAMENTE O FORMATO:
       "subtopics": [
         {
           "title": "Nome do Subtópico",
-          "content": "Texto aprofundado e completo explicando a fundo o assunto, com destaque em negrito e detalhamento de características..."
+          "content": "Frase introdutória contextualizando o subtópico.\\n* **Estrutura ou Conceito 1:** descrição clara:\\n  * **Subestrutura A:** característica detalhada.\\n  * **Subestrutura B:** característica detalhada.\\n* **Estrutura ou Conceito 2:** descrição detalhada."
         }
       ]
     }

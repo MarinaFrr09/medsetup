@@ -229,101 +229,103 @@ export default function TranscriptView({ data, onSaveAsMindMap }: TranscriptView
   };
 
   return (
-    <div className="bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] overflow-hidden shadow-sm">
-      {/* Header with Title and Tabs */}
-      <div className="p-6 border-b border-gray-100 dark:border-[#2a2d3a] flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-50/40 via-purple-50/30 to-transparent dark:from-blue-950/20 dark:via-purple-950/10 dark:to-transparent">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/40">
-              <Sparkles className="w-3 h-3" /> Síntese Estruturada
-            </span>
-            {(localExpanded || data.expanded) && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-white shadow-2xs">
-                <Zap className="w-3 h-3 fill-white" /> CONTEÚDO EXPANDIDO
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] overflow-hidden shadow-sm">
+        {/* Header with Title and Tabs */}
+        <div className="p-6 border-b border-gray-100 dark:border-[#2a2d3a] flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-50/40 via-purple-50/30 to-transparent dark:from-blue-950/20 dark:via-purple-950/10 dark:to-transparent">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/40">
+                <Sparkles className="w-3 h-3" /> Síntese Estruturada
               </span>
-            )}
+              {(localExpanded || data.expanded) && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-white shadow-2xs">
+                  <Zap className="w-3 h-3 fill-white" /> CONTEÚDO EXPANDIDO
+                </span>
+              )}
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mt-2">
+              {localTitle || data.title || "Resumo da Aula"}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-1">
+              Conteúdo processado e organizado em tópicos claros para estudo eficiente.
+            </p>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mt-2">
-            {localTitle || data.title || "Resumo da Aula"}
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-1">
-            Conteúdo processado e organizado em tópicos claros para estudo eficiente.
-          </p>
+
+          {/* Tab Switcher & Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopySummary}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors border border-gray-200 dark:border-[#2a2d3a] cursor-pointer shadow-sm"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              <span>{copied ? "Copiado" : "Copiar Resumo"}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Tab Switcher & Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCopySummary}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors border border-gray-200 dark:border-[#2a2d3a] cursor-pointer shadow-sm"
-          >
-            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? "Copiado" : "Copiar Resumo"}</span>
-          </button>
-        </div>
-      </div>
+        {/* Expanded Badge Banner */}
+        {(localExpanded || data.expanded) && (
+          <div className="mx-6 mt-4 flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xs">
+            <Zap className="w-4 h-4 flex-shrink-0 fill-amber-500 text-amber-500" />
+            <span>Conteúdo Expandido — informações ricas, didáticas e aprofundadas com mapa mental completo.</span>
+          </div>
+        )}
 
-      {/* Expanded Badge Banner */}
-      {(localExpanded || data.expanded) && (
-        <div className="mx-6 mt-4 flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xs">
-          <Zap className="w-4 h-4 flex-shrink-0 fill-amber-500 text-amber-500" />
-          <span>Conteúdo Expandido — informações ricas, didáticas e aprofundadas com mapa mental completo.</span>
-        </div>
-      )}
+        {/* Navigation Tabs */}
+        <div className="flex border-t border-gray-200 dark:border-[#2a2d3a] px-6 bg-gray-50 dark:bg-[#0F1117]/50 gap-2 items-center justify-between">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("summary")}
+              className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+                activeTab === "summary"
+                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Resumo Completo</span>
+              {(localExpanded || data.expanded) && (
+                <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+              )}
+            </button>
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-gray-200 dark:border-[#2a2d3a] px-6 bg-gray-50 dark:bg-[#0F1117]/50 gap-2 items-center justify-between">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("summary")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
-              activeTab === "summary"
-                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Resumo Completo</span>
-            {(localExpanded || data.expanded) && (
-              <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("mindmap")}
+              className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+                activeTab === "mindmap"
+                  ? "border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400 font-semibold"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <GitBranch className="w-4 h-4" />
+              <span>Mapa Mental</span>
+              {(localExpanded || data.expanded) && (
+                <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("mindmap")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
-              activeTab === "mindmap"
-                ? "border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400 font-semibold"
-                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <GitBranch className="w-4 h-4" />
-            <span>Mapa Mental</span>
-            {(localExpanded || data.expanded) && (
-              <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("transcript")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
-              activeTab === "transcript"
-                ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400 font-semibold"
-                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <MessageSquareText className="w-4 h-4" />
-            <span>Transcrição</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("transcript")}
+              className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+                activeTab === "transcript"
+                  ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400 font-semibold"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <MessageSquareText className="w-4 h-4" />
+              <span>Transcrição</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Tab Contents */}
-      <div className="p-6">
+      {/* Tab Contents (Directly on page background so Floating Tools Balloon & Document Sheet sit outside any gray container) */}
+      <div className="space-y-6">
         {/* TAB 1: RESUMO COMPLETO FORMATADO NO MODELO DE TRANSCRIÇÃO E ATELIÊ */}
         {activeTab === "summary" && (
           <div className="space-y-6">
@@ -540,14 +542,26 @@ export default function TranscriptView({ data, onSaveAsMindMap }: TranscriptView
         {/* TAB 3: TRANSCRIÇÃO LIMPA */}
         {activeTab === "transcript" && (
           <div className="space-y-4">
-            <div className="p-5 bg-gray-50 dark:bg-[#0F1117] rounded-xl border border-gray-200 dark:border-[#2a2d3a]">
-              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                Transcrição Completa e Polida:
-              </h4>
-              <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-sans">
-                {data.cleanTranscript || data.rawTranscript || "Transcrição da aula processada com sucesso."}
-              </p>
-            </div>
+            <TranscriptionDocumentViewer
+              content={data.cleanTranscript || data.rawTranscript || "Transcrição da aula processada com sucesso."}
+              title={localTitle || data.title || "Transcrição da Aula"}
+              editable={true}
+              theme="vermelho"
+              categoryLabel="Gravacao"
+              onSaveContent={(newTranscript) => {
+                const existingRec = audioRecordings.find(
+                  (r) => r.processedData === data || r.title === data.title || r.title === localTitle
+                );
+                if (existingRec) {
+                  updateAudioRecording(existingRec.id, {
+                    processedData: {
+                      ...existingRec.processedData,
+                      cleanTranscript: newTranscript,
+                    },
+                  });
+                }
+              }}
+            />
           </div>
         )}
       </div>

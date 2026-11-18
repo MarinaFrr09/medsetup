@@ -189,7 +189,10 @@ export default function CreateMindMapModal({
             }`,
         layout: selectedLayout,
         colorTheme: selectedPalette,
-        folderId: defaultFolderId || "folder-geral",
+        folderId:
+          defaultFolderId && defaultFolderId !== "unassigned"
+            ? defaultFolderId
+            : "folder-mm-geral",
         date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }),
         nodes: data.nodes || [],
         edges: data.edges || [],
@@ -238,7 +241,10 @@ export default function CreateMindMapModal({
       description: `Mapa mental manual no layout ${LAYOUTS.find((l) => l.id === selectedLayout)?.name}`,
       layout: selectedLayout,
       colorTheme: selectedPalette,
-      folderId: defaultFolderId || "folder-geral",
+      folderId:
+        defaultFolderId && defaultFolderId !== "unassigned"
+          ? defaultFolderId
+          : "folder-mm-geral",
       date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }),
       nodes: [rootNode, sub1, sub2],
       edges: [

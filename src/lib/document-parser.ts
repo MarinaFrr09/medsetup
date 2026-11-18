@@ -129,6 +129,79 @@ export function extractTextFromPptx(buffer: Buffer): string | null {
   return null;
 }
 
+/**
+ * Extracts embedded images (PNG, JPEG, WebP, BMP) from DOCX or PPTX archive buffer
+ */
+export function extractImagesFromOffice(
+  buffer: Buffer
+): Array<{ buffer: Buffer; mimeType: string; name: string }> {
+  const images: Array<{ buffer: Buffer; mimeType: string; name: string }> = [];
+  try {
+    let offset = 0;
+
+    while (offset < buffer.length - 30) {
+      if (
+        buffer[offset] === 0x50 &&
+        buffer[offset + 1] === 0x4b &&
+        buffer[offset + 2] === 0x03 &&
+        buffer[offset + 3] === 0x04
+      ) {
+        const compressionMethod = buffer.readUInt16LE(offset + 8);
+        const compressedSize = buffer.readUInt32LE(offset + 18);
+        const fileNameLen = buffer.readUInt16LE(offset + 26);
+        const extraFieldLen = buffer.readUInt16LE(offset + 28);
+        const fileName = buffer.toString("utf8", offset + 30, offset + 30 + fileNameLen);
+        const dataStart = offset + 30 + fileNameLen + extraFieldLen;
+
+        const isOfficeMedia =
+          fileName.startsWith("word/media/") ||
+          fileName.startsWith("ppt/media/") ||
+          fileName.startsWith("xl/media/");
+
+        if (isOfficeMedia && compressedSize > 0) {
+          const ext = fileName.toLowerCase().split(".").pop() || "";
+          let mime = "";
+          if (ext === "png") mime = "image/png";
+          else if (ext === "jpg" || ext === "jpeg") mime = "image/jpeg";
+          else if (ext === "webp") mime = "image/webp";
+          else if (ext === "bmp") mime = "image/bmp";
+
+          if (mime) {
+            try {
+              let imgBuf: Buffer;
+              if (compressionMethod === 8) {
+                imgBuf = zlib.inflateRawSync(buffer.subarray(dataStart, dataStart + compressedSize));
+              } else if (compressionMethod === 0) {
+                imgBuf = buffer.subarray(dataStart, dataStart + compressedSize);
+              } else {
+                imgBuf = Buffer.alloc(0);
+              }
+
+              if (imgBuf.length > 512) {
+                const baseName = fileName.split("/").pop() || `image_${images.length + 1}.${ext}`;
+                images.push({
+                  buffer: imgBuf,
+                  mimeType: mime,
+                  name: baseName,
+                });
+              }
+            } catch (imgErr) {
+              console.warn(`[Office Parser] Could not decompress ${fileName}:`, imgErr);
+            }
+          }
+        }
+
+        offset = dataStart + (compressedSize > 0 ? compressedSize : 1);
+      } else {
+        offset++;
+      }
+    }
+  } catch (err: any) {
+    console.warn("[Office Image Parser] Warning:", err.message);
+  }
+  return images;
+}
+
 export interface ParsedPdfPage {
   num: number;
   text: string;
@@ -141,11 +214,95 @@ export interface ParsedPdfResult {
 }
 
 /**
+ * Fallback raw PDF stream text extractor when a PDF has a damaged xref table ("Invalid PDF structure")
+ */
+function extractFallbackTextFromDamagedPdf(buffer: Buffer): ParsedPdfResult | null {
+  try {
+    // 1. Check if it's actually a DOCX/PPTX ZIP container disguised as PDF
+    if (buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+      const docxText = extractTextFromDocx(buffer) || extractTextFromPptx(buffer);
+      if (docxText && docxText.trim().length > 20) {
+        return {
+          total: 1,
+          pages: [{ num: 1, text: docxText.trim() }],
+          text: docxText.trim(),
+        };
+      }
+    }
+
+    const rawLatin = buffer.toString("latin1");
+    const extractedChunks: string[] = [];
+
+    // 2. Scan FlateDecode / raw streams for PDF text operators (...) Tj and [...] TJ
+    let pos = 0;
+    while (pos < rawLatin.length) {
+      const streamIdx = rawLatin.indexOf("stream", pos);
+      if (streamIdx === -1) break;
+      let dataStart = streamIdx + 6;
+      if (rawLatin[dataStart] === "\r" && rawLatin[dataStart + 1] === "\n") dataStart += 2;
+      else if (rawLatin[dataStart] === "\n" || rawLatin[dataStart] === "\r") dataStart += 1;
+
+      const endStreamIdx = rawLatin.indexOf("endstream", dataStart);
+      if (endStreamIdx === -1) break;
+
+      const streamBuf = buffer.subarray(dataStart, endStreamIdx);
+      let decoded = "";
+      try {
+        decoded = zlib.inflateSync(streamBuf).toString("latin1");
+      } catch {
+        try {
+          decoded = zlib.inflateRawSync(streamBuf).toString("latin1");
+        } catch {
+          decoded = streamBuf.toString("latin1");
+        }
+      }
+
+      if (decoded && (decoded.includes("Tj") || decoded.includes("TJ"))) {
+        const matches = decoded.match(/\(([^()\\]*(?:\\.[^()\\]*)*)\)/g);
+        if (matches && matches.length > 0) {
+          const textPart = matches
+            .map((m) =>
+              m
+                .slice(1, -1)
+                .replace(/\\n/g, "\n")
+                .replace(/\\r/g, " ")
+                .replace(/\\t/g, " ")
+                .replace(/\\\(/g, "(")
+                .replace(/\\\)/g, ")")
+                .replace(/\\\\/g, "\\")
+            )
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (textPart.length > 3) {
+            extractedChunks.push(textPart);
+          }
+        }
+      }
+
+      pos = endStreamIdx + 9;
+    }
+
+    const fullText = extractedChunks.join("\n\n").trim();
+    if (fullText.length > 30) {
+      return {
+        total: 1,
+        pages: [{ num: 1, text: fullText }],
+        text: fullText,
+      };
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * Extracts all pages of text from a PDF buffer using unpdf.
  * Works seamlessly in Next.js Turbopack/server runtime without external worker dependencies.
  * Returns total page count, array of pages with their text, and the concatenated text.
  */
 export async function extractTextFromPdf(buffer: Buffer): Promise<ParsedPdfResult | null> {
+  if (!buffer || buffer.length < 16) return null;
+
   try {
     const { extractText } = await import("unpdf");
     const uint8 = new Uint8Array(buffer);
@@ -157,6 +314,10 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<ParsedPdfResul
       text: t || "",
     }));
 
+    if (pages.length === 0 || (result.totalPages === 0 && pages.every((p) => !p.text.trim()))) {
+      return extractFallbackTextFromDamagedPdf(buffer);
+    }
+
     return {
       total: result.totalPages || pages.length,
       pages,
@@ -164,7 +325,7 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<ParsedPdfResul
     };
   } catch (err: any) {
     console.warn("[unpdf Parser] Warning:", err.message);
-    return null;
+    return extractFallbackTextFromDamagedPdf(buffer);
   }
 }
 

@@ -239,7 +239,7 @@ body {
 
 /* Digital Whiteboard & Studygram Typography */
 .font-handwriting {
-  font-family: 'Patrick Hand', 'Caveat', cursive, sans-serif;
+  font-family: inherit;
 }
 
 .font-studygram {
@@ -277,4 +277,70 @@ body {
 .studyflow-table th {
   background-color: rgba(156, 163, 175, 0.1);
   font-weight: 700;
+}
+
+/* Notion Outline Target Element Highlight Flash */
+@keyframes outlineTargetPulse {
+  0% {
+    background-color: rgba(59, 130, 246, 0.22);
+    border-radius: 6px;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.outline-flash-target {
+  animation: outlineTargetPulse 1.4s ease-out;
+}
+
+/* Ultra-Crisp High-DPI Mind Map Rendering (Eliminates Blur & 144p Artifacts) */
+.react-flow {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.react-flow__renderer {
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+.react-flow__viewport {
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+.react-flow__node {
+  /* Prevent browser from rasterizing nodes to blurry bitmap textures on zoom */
+  transform-style: flat;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+.react-flow__edge {
+  pointer-events: visibleStroke;
+}
+
+.react-flow__edge-path {
+  shape-rendering: geometricPrecision;
+}
+
+/* App-wide Smooth GPU Acceleration & Text Rendering */
+html {
+  scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
+}
+
+.gpu-accelerated {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform;
+}
+
+/* Off-screen layout optimization for long lists (questions, cards, tables) */
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 120px;
 }

@@ -88,8 +88,8 @@ REGRAS DE ESTILO E JSON (obrigatórias):
 - Idioma: português do Brasil, linguagem acadêmica clara e objetiva. Sem introduções do tipo "Este documento aborda...".
 - NUNCA use frases com "o aluno deve" ou "o aluno precisa". Use verbos no infinitivo ("Listar...", "Identificar...", "Explicar...").
 - Seja completo, porém eficiente: respostas ricas sem enrolação.
-- NUNCA use aspas duplas dentro dos textos (use aspas simples 'assim'). NUNCA use quebras de linha literais dentro de strings (use \\n se precisar).
-- Pode usar **negrito** pontualmente, mas não use listas markdown nem cabeçalhos (#) dentro das respostas comuns.
+- NUNCA use aspas duplas dentro dos textos (use aspas simples 'assim'). NUNCA use quebras de linha literais dentro de strings (use \\n para quebrar linha).
+- ORGANIZAÇÃO VISUAL EM TÓPICOS E SUBTÓPICOS COM BOLINHAS (OBRIGATÓRIO): NUNCA gere blocos densos de texto corrido quando estiver descrevendo ou listando estruturas anatômicas (ex: ossos nasais, maxilas, cartilagens, divisões de órgãos), camadas histológicas, tipos, classificações, características ou mecanismos farmacológicos. Em vez de texto corrido, inicie com 1 frase introdutória curta e estruture o restante usando tópicos com bolinhas (\\n* **Estrutura / Conceito:** descrição...) e subtópicos indentados com bolinhas (\\n  * **Componente / Subdivisão:** detalhe...).
 - O JSON deve ser ESTRITAMENTE VÁLIDO e COMPLETO.
 
 ESTRUTURA EXATA DO JSON:
@@ -99,11 +99,11 @@ ESTRUTURA EXATA DO JSON:
   "summary": "Visão geral objetiva do que a SP aborda e das competências a desenvolver (3-5 linhas)",
   "detailedSummary": [
     {
-      "topic": "Nome do Tópico (ex.: 'Camadas da Pele e Histofisiologia')",
+      "topic": "Nome do Tópico (ex.: 'Anatomia das Vias Aéreas Superiores')",
       "subtopics": [
         {
-          "title": "Subtópico específico",
-          "content": "Texto detalhado explicando o conceito com profundidade científica..."
+          "title": "Subtópico específico (ex.: 'Vias Aéreas Superiores')",
+          "content": "Frase introdutória contextualizando o subtópico.\\n* **Estrutura óssea do nariz** (formando o septo nasal ósseo):\\n  * **Ossos nasais**\\n  * **Maxilas**\\n  * **Lâmina perpendicular do etmoide**\\n  * **Vômer**\\n* **Cavidade nasal:** dividida em:\\n  * **Vestíbulo**\\n  * **Parte respiratória:** revestida por epitélio pseudoestratificado ciliado com células caliciformes.\\n  * **Parte olfatória:** com neurônios olfatórios."
         }
       ]
     }
@@ -228,7 +228,8 @@ export async function POST(request: NextRequest) {
       try {
         const SUMMARY_PROMPT = `Você é um professor catedrático de Medicina especializado na elaboração de resumos e sínteses acadêmicas de alta profundidade para estudantes de graduação (Metodologia PBL / Ateliê).
 MISSÃO: A partir do tema, objetivos e dados da SP, crie um RESUMO TEÓRICO COMPLETO, EXAUSTIVO E ESTRUTURADO sobre toda a matéria do documento.
-Organize em 5 a 8 Tópicos Centrais lógicos e didáticos, cada um com 2 a 4 subtópicos com textos ricos e aprofundados (4 a 8 linhas) e keyPoints.
+Organize em 5 a 8 Tópicos Centrais lógicos e didáticos, cada um com 2 a 4 subtópicos.
+REGRA DE OURO DE ORGANIZAÇÃO VISUAL: NUNCA escreva blocos densos de texto corrido quando listar ou descrever estruturas anatômicas (ex: ossos nasais, maxilas, cartilagens, divisões de órgãos), camadas histológicas, tipos, classificações ou características. Em cada subtópico ("content"), comece com 1 frase introdutória curta e estruture o detalhamento usando tópicos com bolinhas (\\n* **Estrutura / Conceito:** ...) e subtópicos indentados com bolinhas (\\n  * **Subestrutura / Componente:** ...).
 JSON DEVE TER O FORMATO:
 {
   "topics": [
@@ -237,7 +238,7 @@ JSON DEVE TER O FORMATO:
       "subtopics": [
         {
           "title": "Nome do Subtópico",
-          "content": "Texto aprofundado e completo explicando o conceito com riqueza técnica...",
+          "content": "Frase introdutória objetiva.\\n* **Estrutura ou Conceito Principal:** explicação direta:\\n  * **Componente 1:** detalhe específico.\\n  * **Componente 2:** detalhe específico.",
           "keyPoints": ["Ponto-chave 1", "Ponto-chave 2"]
         }
       ]

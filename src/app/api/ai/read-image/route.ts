@@ -56,7 +56,6 @@ Responda OBRIGATORIAMENTE em JSON válido, sem texto fora do JSON:
   "title": "TÍTULO PRINCIPAL DO QUADRO (ex: ANATOMIA PÉLVICA E HISTOLOGIA ÓSSEA)",
   "subtitle": "Subtítulo didático com escopo clínico (ex: Assoalho Pélvico, Músculos do Períneo e Microestrutura do Ósteon)",
   "themeStyle": "studygram_pastel",
-  "illustrationType": "cells_layer",
   "columns": [
     {
       "id": "col_1",
@@ -66,21 +65,24 @@ Responda OBRIGATORIAMENTE em JSON válido, sem texto fora do JSON:
           "id": "cluster_1",
           "title": "Assoalho Pélvico (AP)",
           "headerStyle": "highlighter_pink",
-          "doodleRays": true,
           "badgeNumber": "1º",
           "container": "card",
           "flowSteps": [
             {
               "text": "Diafragma Pélvico: Sustentação das vísceras pélvicas e continência",
               "emphasis": "(Controle de continência urinária e fecal)",
-              "illustration": "cells_layer",
               "arrow": "down",
               "bulletPoints": [
                 "Formado pelo Músculo Levantador do Ânus e Músculo Coccígeo",
                 "Inervação: Ramos diretos do plexo sacral (S3-S4) e nervo pudendo"
               ]
             }
-          ]
+          ],
+          "alertBox": {
+            "type": "gold_rule",
+            "title": "Regra de Ouro / Atenção Clínica",
+            "content": "A lesão do nervo pudendo durante o parto pode causar incontinência fecal e urinária de esforço."
+          }
         }
       ]
     },
@@ -90,15 +92,19 @@ Responda OBRIGATORIAMENTE em JSON válido, sem texto fora do JSON:
       "clusters": [
         {
           "id": "cluster_2",
-          "title": "Musculatura do Períneo",
+          "title": "Musculatura e Inervação do Períneo",
           "headerStyle": "highlighter_blue",
           "badgeNumber": "2º",
-          "container": "dashed_bubble",
-          "bulletPoints": [
-            "Trígono Anterior (Urogenital): Músculo Isquiocavernoso e Bulboesponjoso",
-            "Trígono Posterior: Esfíncter Externo do Ânus",
-            "Inervação motora e sensitiva: Nervo Pudendo (S2-S4)"
-          ],
+          "container": "card",
+          "table": {
+            "title": "Divisão Anatômica do Períneo",
+            "headers": ["Trígono", "Músculos Principais", "Inervação & Ação"],
+            "rows": [
+              ["Trígono Urogenital (Anterior)", "Isquiocavernoso, Bulboesponjoso e Transverso Superficial", "Nervo Pudendo; ereção e continência"],
+              ["Trígono Anal (Posterior)", "Esfíncter Externo do Ânus e Fossa Isquioanal", "Nervo Retal Inferior; oclusão anal"]
+            ],
+            "caption": "Classificação anatômica segundo a terminologia anatômica internacional."
+          },
           "pills": [
             {"label": "Inervação", "color": "emerald", "subTitle": "Nervo Pudendo (S2-S4)"},
             {"label": "Vascularização", "color": "emerald", "subTitle": "Artéria Pudenda Interna"}
@@ -108,19 +114,27 @@ Responda OBRIGATORIAMENTE em JSON válido, sem texto fora do JSON:
     },
     {
       "id": "col_3",
-      "title": "Coluna 3 - Histologia / Repercussões",
+      "title": "Coluna 3 - Histologia e Critérios",
       "clusters": [
         {
           "id": "cluster_3",
-          "title": "Estrutura do Ósteon (Sistema de Havers)",
+          "title": "Estrutura do Ósteon e Fases Clínicas",
           "headerStyle": "highlighter_green",
           "badgeNumber": "3º",
           "container": "card",
+          "metrics": [
+            {"label": "Matriz Orgânica", "value": "35%", "unit": "Colágeno Tipo I", "status": "normal"},
+            {"label": "Matriz Mineral", "value": "65%", "unit": "Hidroxiapatita", "status": "normal"}
+          ],
           "bulletPoints": [
             "Canal de Havers Central: Vasos sanguíneos e nervos",
             "Canais de Volkmann: Conexão vascular transversal",
-            "Osteócitos em lacunas com prolongamentos canaliculares",
-            "Matriz Óssea: Orgânica (Colágeno Tipo I) e Inorgânica (Hidroxiapatita)"
+            "Osteócitos em lacunas com prolongamentos canaliculares comunicantes"
+          ],
+          "timeline": [
+            {"stage": "Remodelação Ativa", "timeframe": "0-3 semanas", "description": "Reabsorção osteoclástica formando lacunas de Howship."},
+            {"stage": "Deposição de Osteoide", "timeframe": "3-8 semanas", "description": "Osteoblastos secretam matriz colágena não mineralizada.", "highlight": "Fase crítica de síntese"},
+            {"stage": "Mineralização", "timeframe": "> 8 semanas", "description": "Cristalização secundária de cálcio e fosfato."}
           ]
         }
       ]
@@ -133,8 +147,8 @@ Responda OBRIGATORIAMENTE em JSON válido, sem texto fora do JSON:
 }`;
 
       if (!expand) {
-        systemPrompt = `Você é um designer acadêmico de notas ilustradas e quadros digitais de medicina e ciências (padrão Studygram / GoodNotes / Canva Educacional).
-O usuário enviou uma fotografia de um quadro branco (whiteboard), anotação de sala de aula ou esquema feito pelo professor.
+        systemPrompt = `Você é um especialista em educação médica, síntese clínica e design de esquemas de estudo de alto nível.
+O usuário enviou uma fotografia de um quadro branco (whiteboard), anotação de aula ou esquema feito pelo professor.
 Sua missão é TRANSFORMAR O QUADRO EM UMA IMAGEM DIGITALIZADA DO QUADRO, EXATAMENTE IGUAL AO ESQUEMA DA IMAGEM MAS DIGITADO, COM TERMOS DESABREVIADOS, PALAVRAS INTEIRAS E NORMAIS, E VISUAL ORGANIZADO:
 
 1. FORMATO OBRIGATÓRIO: QUADRO DIGITAL HORIZONTAL (PAISAGEM / LANDSCAPE - PROPORÇÃO 16:9 OU A4 DEITADO):
@@ -147,7 +161,24 @@ Sua missão é TRANSFORMAR O QUADRO EM UMA IMAGEM DIGITALIZADA DO QUADRO, EXATAM
      • Coluna 4 (Extrema-Direita, se houver muitos tópicos): Segundo tema, matriz óssea, farmacologia ou condutas.
    - Cada coluna deve ter NO MÁXIMO 1 a 2 blocos (clusters), forçando o quadro a se expandir horizontalmente para os lados, mantendo a altura compacta e harmoniosa (proporção paisagem).
 
-2. DESABREVIAÇÃO MANDATÓRIA E PALAVRAS COMPLETAS POR EXTENSO:
+2. VARIEDADE DE FERRAMENTAS E SISTEMAS DE ORGANIZAÇÃO (NÃO USE APENAS BALÕES DE TEXTO!):
+   - NUNCA limite a organização a simples balões com textos ou listas com bolinhas dentro.
+   - VARIE ATIVAMENTE AS FERRAMENTAS DE ACORDO COM O CONTEÚDO MÉDICO:
+     • TABELAS COMPARATIVAS ('table'): Use para comparações de drogas, diagnósticos diferenciais, divisões anatômicas, estadiamentos ou critérios (com 'headers' e 'rows').
+     • QUADROS DE ALERTA / REGRA DE OURO ('alertBox'): Use para contraindicações graves, 'Red Flags', 'Regras de Ouro', pérolas clínicas ('type': 'danger', 'warning', 'gold_rule', 'tip', 'info').
+     • FLUXOGRAMAS E PASSOS DE CONDUTA ('flowSteps'): Use para sequências diagnósticas, raciocínio clínico e condutas com setas direcionais ('arrow': 'down' ou 'right').
+     • LINHAS DO TEMPO ('timeline'): Use para evolução temporal de doenças, fases de cicatrização, evolução clínica ou janelas terapêuticas ('stage', 'timeframe', 'description', 'highlight').
+     • MÉTRICAS E VALORES DE REFERÊNCIA ('metrics'): Use para valores laboratoriais de corte, metas terapêuticas, sensibilidade/especificidade ('label', 'value', 'unit', 'status').
+     • CHAVES AGRUPADORAS ('bracketList'): Use para agrupar ramos ou subdivisões.
+     • PÍLULAS E BOTÕES ('pills'): Use para marcadores moleculares, genes, drogas de primeira linha.
+     • TÓPICOS E MARCADORES ('bulletPoints'): Textos concisos e didáticos.
+
+3. ESTILO VISUAL LIMPO E PROFISSIONAL (SEM ELEMENTOS DECORATIVOS EXCESSIVOS):
+   - NÃO use traços de rabiscos, 'doodleRays' ('//') nem ilustrações infantis ou desenhos aleatórios.
+   - Use uma estrutura limpa e profissional com cartões modernos ('card').
+   - Paletas em destaque suave: 'highlighter_pink', 'highlighter_blue', 'highlighter_green', 'highlighter_purple', 'highlighter_amber'.
+
+4. DESABREVIAÇÃO MANDATÓRIA E PALAVRAS COMPLETAS POR EXTENSO:
    - NUNCA deixe siglas ou rabiscos encurtados sem o significado claro.
    - Escreva TODAS as palavras inteiras, normais e corretas da língua portuguesa, com acentuação impecável.
    - Exemplos:
@@ -156,39 +187,24 @@ Sua missão é TRANSFORMAR O QUADRO EM UMA IMAGEM DIGITALIZADA DO QUADRO, EXATAM
      • "16-18 (↑ risco)" → "16 – 18 (alto risco)"
      • "E5-E6-E7" → botões/pills separados [E5], [E6], [E7] sob "expressão de proteínas oncogênicas"
      • "Inibição p53 / pRb - supressor tumorais" → "inibição de p53 e pRb (genes supressores tumorais)"
-     • "Infecção células basais (↑ mitótica)" → "Infecção nas células basais (↑ mitótica)"
+     • "Infecção células basais (↑ mitótica)" → "Infecção nas células basais (↑ taxa mitótica)"
      • "AMS" → "Artéria Mesentérica Superior (AMS)"
-
-3. ENRIQUECIMENTO DIDÁTICO COM MARCADORES (BULLET POINTS):
-   - Adicione marcadores explicativos claros e concisos para cada subdivisão anatômica, fisiológica ou patológica.
-
-4. ESTILOS VISUAIS DE STUDYGRAM / QUADRO BRANCO:
-   - Atribua estilos correspondentes a cada elemento do quadro:
-     • 'highlighter_pink': marca-texto rosa pastel com doodle rays (ex: títulos principais)
-     • 'highlighter_green': marca-texto verde menta pastel (ex: histologia, rastreamento)
-     • 'highlighter_blue': marca-texto azul pastel (ex: musculatura, exames)
-     • 'highlighter_purple': marca-texto lilás pastel (ex: inervação, biologia)
-     • 'cloud': balão de nuvem com borda suave
-     • 'dashed_bubble': balão com borda tracejada
-     • 'bracket': chave agrupando itens
-     • 'pills': botões em pílula
-     • 'badgeNumber': número de etapas (ex: "1º", "2º", "3º")
-     • 'illustration': tipo de ilustração médica ("cells_layer", "dna", "virus", "microscope", "heart", "brain", "lungs", "kidney")
 
 ${abbreviationRule}
 ${whiteboardSchema}`;
-        userPrompt = "Analise o quadro da foto, identifique toda a distribuição espacial, distribua os tópicos OBRIGATORIAMENTE em 3 a 4 colunas horizontais (lousa em formato paisagem / horizontal), desabrevie todas as siglas para palavras normais inteiras e gere o JSON do Quadro Digital no modelo do exemplo.";
+        userPrompt = "Analise o quadro da foto, identifique toda a distribuição espacial, distribua os tópicos OBRIGATORIAMENTE em 3 a 4 colunas horizontais (lousa em formato paisagem / horizontal), utilize sistemas variados de organização (tabelas, alertas clínicos, fluxos, timelines, métricas), sem doodle rays ou desenhos decorativos infantis, desabrevie todas as siglas para palavras normais inteiras e gere o JSON do Quadro Digital no modelo do exemplo.";
       } else {
-        systemPrompt = `Você é um professor catedrático e designer acadêmico de notas ilustradas (padrão Studygram / GoodNotes / Medicina).
+        systemPrompt = `Você é um professor catedrático e especialista em educação médica e notas científicas estruturadas.
 Sua missão é EXPANDIR e APROFUNDAR o quadro da imagem:
 1. Extraia a estrutura exata do quadro OBRIGATORIAMENTE EM 3 A 4 COLUNAS HORIZONTAIS (formato lousa paisagem/landscape, nunca vertical comprido).
 2. Desabrevie todas as siglas para palavras inteiras e normais.
-3. Para cada bloco, adicione marcadores ricos com fisiopatologia, critérios diagnósticos, valores laboratoriais, condutas clínicas e pontos de prova.
-4. Utilize estilos visuais ricos ('highlighter_pink', 'highlighter_green', 'highlighter_blue', 'cloud', 'dashed_bubble', 'bracket', 'pills').
+3. Varie ativamente as ferramentas de organização: utilize tabelas comparativas ('table'), quadros de alerta clínico ('alertBox'), fluxogramas de etapas ('flowSteps'), timelines de evolução ('timeline') e métricas laboratoriais ('metrics').
+4. Não use doodle rays ('//') nem ilustrações infantis/desenhos no quadro. Use visual limpo, moderno e profissional com tipografia padrão e cartões estruturados.
+5. Para cada bloco, adicione dados ricos de fisiopatologia, critérios diagnósticos, valores laboratoriais, condutas clínicas e pontos de prova.
 
 ${abbreviationRule}
 ${whiteboardSchema}`;
-        userPrompt = "Gere uma versão EXPANDIDA do Quadro Digital da imagem, distribuída em 3 a 4 colunas horizontais (formato paisagem amplo), com palavras normais inteiras desabreviadas, marcadores didáticos aprofundados e riqueza visual.";
+        userPrompt = "Gere uma versão EXPANDIDA do Quadro Digital da imagem, distribuída em 3 a 4 colunas horizontais (formato paisagem amplo), com sistemas variados de organização (tabelas, alertas, fluxos, timelines, métricas), palavras normais inteiras desabreviadas, marcadores didáticos aprofundados e visual médico limpo e profissional.";
       }
     } else if (mode === "mindmap") {
       const mindmapRule = `
@@ -267,7 +283,8 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO DIDÁTICA DO RESUMO:
 
       if (!expand) {
         systemPrompt = `Você é um professor acadêmico especialista em sintetização didática de alto nível.
-Analise o conteúdo da imagem, desabrevie todas as siglas e gere um resumo perfeitamente organizado com elementos visuais de estudo.
+Analise o conteúdo da imagem, desabrevie todas as siglas e gere um resumo longo, aprofundado e perfeitamente organizado com elementos visuais de estudo.
+O resumo DEVE SER EXTENSO, RICO E COMPLETO, sem economizar palavras ou explicações científicas fundamentais.
 ${abbreviationRule}
 ${summaryFormattingRules}
 

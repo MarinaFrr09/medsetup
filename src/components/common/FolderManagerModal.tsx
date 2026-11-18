@@ -10,7 +10,7 @@ import toast from "react-hot-toast";
 interface FolderManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultType?: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes";
+  defaultType?: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes" | "caderno-erros";
   parentId?: string | null;
   parentName?: string;
   folderToEdit?: FolderType | null;

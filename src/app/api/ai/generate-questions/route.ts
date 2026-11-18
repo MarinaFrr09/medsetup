@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJSONFromAI } from "@/lib/ai";
+import { balanceQuestionBatch } from "@/lib/question-balancer";
 import { extractTextFromDocx, extractTextFromPptx, extractTextFromPdf } from "@/lib/document-parser";
 
 export const maxDuration = 600;
@@ -197,21 +198,29 @@ Sua missão é criar exatamente ${requestedCount} questões impecáveis, clinica
     }.
 
 ══════════════════════════════════════════════════════════════════════════════════
-DIRETRIZ DE QUALIDADE: QUESTÕES RANDOMIZADAS E NÃO ÓBVIAS
+🚨 REGRA CRÍTICA DE OURO: PROIBIÇÃO DO "VÍCIO DA MAIOR ALTERNATIVA" (ANTI-LENGTH BIAS)
 ══════════════════════════════════════════════════════════════════════════════════
-O objetivo principal é que as questões sejam realistas, desafiadoras e sem padrões óbvios:
+É TERMINANTEMENTE PROIBIDO que a alternativa correta seja a mais longa ou mais detalhada da questão!
+Bancas de excelência acadêmica (Revalida, USMLE, Residência Médica) NUNCA deixam a resposta correta ser identificável pelo tamanho:
 
-1. ALTERNATIVAS NÃO ÓBVIAS E DISTRATORES PLAUSÍVEIS:
-   - Evite que a resposta correta se destaque visualmente ou logicamente das demais.
-   - Os distratores (alternativas incorretas) devem ser inteligentes, plausíveis e verossímeis (conceitos reais, diagnósticos diferenciais autênticos ou condutas verdadeiras em outro contexto), e NUNCA opções bobas, simplistas ou absurdas.
-   - Não use termos absolutistas denunciantes nos distratores ("sempre", "nunca", "exclusivamente").
+1. PARIDADE RIGOROSA DE EXTENSÃO:
+   - Todas as alternativas de uma mesma questão DEVEM ter extensões equivalentes (mesmo número aproximado de palavras e caracteres, variação máxima de 15%).
+   - Se a alternativa correta tem 12 palavras, os distratores DEVEM ter entre 10 e 15 palavras.
+   - Se a correta cita dosagens, exames ou classes farmacológicas, os distratores DEVEM OBRIGATORIAMENTE conter dosagens e condutas completas com a mesma sofisticação técnica (proibido deixar distratores curtos e genéricos enquanto a correta é detalhada!).
 
-2. EXTENSÃO E ESTRUTURA NATURALMENTE VARIADAS (SEM PADRÃO FIXO):
-   - Não use uma métrica engessada, mas VARIE NATURALMENTE: em algumas questões a resposta correta pode ser mais concisa, em outras de tamanho médio, e em outras um distrator pode ser a opção mais longa.
-   - Evite o vício de sempre fazer a resposta correta ser a mais extensa e explicativa da questão.
+2. PROIBIÇÃO DE JUSTIFICATIVAS OU MOTIVOS NA ALTERNATIVA:
+   - NUNCA inclua explicações ou motivos dentro do texto da alternativa correta (PROIBIDO escrever ", visto que...", ", pois...", ", garantindo assim...", ", o que decorre de...").
+   - A alternativa é apenas a afirmação ou conduta clínica pura. Toda explicação pertence EXCLUSIVAMENTE ao campo "explanation".
 
-3. RANDOMIZAÇÃO DO GABARITO:
-   - Alterne de forma randômica e variada a letra da resposta correta entre A, B, C, D e E.
+3. RANDOMIZAÇÃO ATIVA DE TAMANHO AO LONGO DA PROVA:
+   - Para impossibilitar qualquer padrão de tamanho:
+     * Em pelo menos 40% das questões, faça um DISTRATOR (alternativa incorreta) ser a opção MAIS LONGA e elaborada da questão!
+     * Em pelo menos 30% das questões, faça a alternativa CORRETA ser a opção MAIS CURTA e direta de todas!
+     * Nas demais questões, mantenha todas as alternativas rigorosamente do mesmo tamanho.
+   - NUNCA crie uma questão onde a alternativa correta seja a mais extensa de todas!
+
+4. RANDOMIZAÇÃO DO GABARITO:
+   - Alterne de forma randômica e equilibrada a letra da resposta correta entre A, B, C, D e E.
 ══════════════════════════════════════════════════════════════════════════════════
 ${
   hasFiles
@@ -240,84 +249,6 @@ Responda APENAS em JSON no seguinte formato:
   ]
 }`;
 
-    const normalizeAndBalanceQuestion = (q: any): any => {
-      if (!q || typeof q !== "object") return q;
-
-      const isMC =
-        q.type === "multiple_choice" ||
-        q.type === "multiple-choice" ||
-        (!q.type && Array.isArray(q.options) && q.options.length >= 2);
-
-      if (!isMC || !Array.isArray(q.options) || q.options.length < 2) {
-        return q;
-      }
-
-      const rawAns = String(q.answer || "").trim().toLowerCase();
-
-      // Normalize raw options into { id, text }
-      const originalOptions: Array<{ id: string; text: string }> = q.options.map(
-        (opt: any, idx: number) => {
-          const defaultId = String.fromCharCode(97 + idx);
-          if (typeof opt === "string") {
-            return { id: defaultId, text: opt.trim() };
-          }
-          const optId = String(opt.id || opt.letra || defaultId).toLowerCase().trim().replace(/[^a-z0-9]/g, "");
-          return {
-            id: optId || defaultId,
-            text: String(opt.text || opt.texto || opt.descricao || "").trim(),
-          };
-        }
-      );
-
-      // Determine which option is currently the correct one
-      let correctIndex = originalOptions.findIndex((o) => o.id === rawAns);
-      if (correctIndex === -1) {
-        correctIndex = originalOptions.findIndex((o) => o.text.toLowerCase() === rawAns);
-      }
-      if (correctIndex === -1 && rawAns.length === 1 && rawAns >= "a" && rawAns <= "z") {
-        const code = rawAns.charCodeAt(0) - 97;
-        if (code >= 0 && code < originalOptions.length) {
-          correctIndex = code;
-        }
-      }
-      if (correctIndex === -1) {
-        correctIndex = 0;
-      }
-
-      // Tag each option with correctness marker before shuffling
-      const tagged = originalOptions.map((opt, idx) => ({
-        text: opt.text,
-        _isCorrect: idx === correctIndex,
-      }));
-
-      // Shuffle options to completely prevent positional bias
-      for (let i = tagged.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [tagged[i], tagged[j]] = [tagged[j], tagged[i]];
-      }
-
-      // Re-index to a, b, c, d, e...
-      const letters = ["a", "b", "c", "d", "e", "f", "g"];
-      let finalAnswer = "a";
-
-      const finalOptions = tagged.map((item, idx) => {
-        const letter = letters[idx] || String.fromCharCode(97 + idx);
-        if (item._isCorrect) {
-          finalAnswer = letter;
-        }
-        return {
-          id: letter,
-          text: item.text,
-        };
-      });
-
-      return {
-        ...q,
-        options: finalOptions,
-        answer: finalAnswer,
-      };
-    };
-
     const shuffleArray = <T>(array: T[]): T[] => {
       const copy = [...array];
       for (let i = copy.length - 1; i > 0; i--) {
@@ -343,7 +274,7 @@ Responda APENAS em JSON no seguinte formato:
       ? result
       : [];
 
-    const balancedList = questionsList.map(normalizeAndBalanceQuestion);
+    const balancedList = await balanceQuestionBatch(questionsList);
     const shuffledList = shuffleArray(balancedList);
 
     return NextResponse.json({ ...result, questions: shuffledList });

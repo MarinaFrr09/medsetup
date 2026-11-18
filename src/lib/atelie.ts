@@ -310,16 +310,39 @@ export function normalizeAtelieResult(raw: any, fallbackTitle = "Análise de SP"
   };
 }
 
+import { formatDenseProseParagraphsIntoBullets } from "@/lib/rich-text-utils";
+
 /* ───────────────────────────── markdown ───────────────────────────── */
 
-/** Mantém o markdown compatível com o renderer do documento (sem #, - ou * no início de linhas soltas). */
+/** Mantém o markdown limpo para cabeçalhos ou itens inline únicos. */
 const clean = (text: string): string[] =>
   text
     .split(/\r?\n/)
     .map((l) => l.trim().replace(/^#{1,6}\s+/, "").replace(/^[-*•]\s+/, ""))
     .filter(Boolean);
 
-const para = (text: string): string[] => clean(text).flatMap((l) => [l, ""]);
+const para = (text: string): string[] => {
+  const structured = formatDenseProseParagraphsIntoBullets(text);
+  const rawLines = structured.split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const bulletMatch = line.match(/^(\s*)[-*•]\s+(.*)$/);
+    if (bulletMatch) {
+      const indent = bulletMatch[1].length >= 4 ? "    " : bulletMatch[1].length >= 2 ? "  " : "";
+      out.push(`${indent}* ${bulletMatch[2].trim()}`);
+      const nextLine = rawLines[i + 1] || "";
+      if (!/^\s*[-*•]\s+/.test(nextLine)) {
+        out.push("");
+      }
+    } else {
+      out.push(trimmed.replace(/^#{1,6}\s+/, ""), "");
+    }
+  }
+  return out;
+};
 
 const AREA_LABEL: Record<string, string> = {
   morfologia: "Morfologia",

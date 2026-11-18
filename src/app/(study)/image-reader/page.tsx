@@ -39,6 +39,26 @@ export default function ImageReaderPage() {
   const [expandMode, setExpandMode] = useState(false);
   const [resultExpanded, setResultExpanded] = useState(false);
 
+  // Recupera e sincroniza histórico do backup local caso a hidratação inicial do Zustand ainda não tenha concluído
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const backupRaw = localStorage.getItem("medsetup_image_readings");
+      if (backupRaw) {
+        const backupItems = JSON.parse(backupRaw);
+        if (Array.isArray(backupItems) && backupItems.length > 0) {
+          const currentIds = new Set((imageReadings || []).map((r) => r.id));
+          const missing = backupItems.filter((b: any) => !currentIds.has(b.id));
+          if (missing.length > 0) {
+            missing.forEach((item: any) => addImageReading(item));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Falha ao recuperar backup de leituras de imagem:", e);
+    }
+  }, []);
+
   const filteredHistory = (imageReadings || []).filter((item) => {
     if (!searchHistory.trim()) return true;
     const q = searchHistory.toLowerCase();
@@ -119,13 +139,19 @@ export default function ImageReaderPage() {
         setPreviewUrl(data.imageUrl);
       }
 
+      const cleanResult = data && typeof data === "object" ? { ...data } : data;
+      if (cleanResult && cleanResult.imageUrl && typeof cleanResult.imageUrl === "string" && cleanResult.imageUrl.startsWith("data:") && cleanResult.imageUrl.length > 50000) {
+        cleanResult.imageUrl = undefined;
+      }
+      const safeImageUrl = finalImageUrl && finalImageUrl.startsWith("data:") && finalImageUrl.length > 50000 ? undefined : finalImageUrl;
+
       const newHistoryItem: ImageReadingItem = {
         id: `img_read_${Date.now()}`,
         name: (selectedFile.name || "Leitura de Imagem").replace(/\.[^/.]+$/, "").slice(0, 40),
         date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }),
         type,
-        result: data,
-        imageUrl: finalImageUrl,
+        result: cleanResult,
+        imageUrl: safeImageUrl,
         imageFileName: selectedFile.name,
         expanded: expandMode,
         createdAt: new Date().toISOString(),

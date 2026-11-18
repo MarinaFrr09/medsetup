@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJSONFromAI } from "@/lib/ai";
-import { extractTextFromDocx, extractTextFromPptx } from "@/lib/document-parser";
+import { extractTextFromDocx, extractTextFromPptx, extractImagesFromOffice } from "@/lib/document-parser";
 import { writeFile, mkdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
@@ -70,10 +70,20 @@ export async function POST(request: NextRequest) {
           fileAttachments.push({
             data: Buffer.from(extractedText, "utf8").toString("base64"),
             mimeType: "text/plain",
-            name: `Caso_Clinico_${file.name}`,
+            name: `Caso_Clinico_${file.name}.txt`,
           });
-          continue;
         }
+        // Extract embedded images from Word document (e.g. photos/scans of the clinical case)
+        const embeddedImages = extractImagesFromOffice(buffer);
+        for (let imgIdx = 0; imgIdx < embeddedImages.length; imgIdx++) {
+          const img = embeddedImages[imgIdx];
+          fileAttachments.push({
+            data: img.buffer.toString("base64"),
+            mimeType: img.mimeType,
+            name: `Caso_Clinico_${file.name}_img_${imgIdx + 1}.${img.name.split(".").pop() || "png"}`,
+          });
+        }
+        continue;
       }
 
       if (ext === "pptx") {
@@ -82,16 +92,51 @@ export async function POST(request: NextRequest) {
           fileAttachments.push({
             data: Buffer.from(extractedText, "utf8").toString("base64"),
             mimeType: "text/plain",
-            name: `Caso_Clinico_${file.name}`,
+            name: `Caso_Clinico_${file.name}.txt`,
           });
-          continue;
         }
+        // Extract embedded images from PowerPoint presentation
+        const embeddedImages = extractImagesFromOffice(buffer);
+        for (let imgIdx = 0; imgIdx < embeddedImages.length; imgIdx++) {
+          const img = embeddedImages[imgIdx];
+          fileAttachments.push({
+            data: img.buffer.toString("base64"),
+            mimeType: img.mimeType,
+            name: `Caso_Clinico_${file.name}_img_${imgIdx + 1}.${img.name.split(".").pop() || "png"}`,
+          });
+        }
+        continue;
       }
 
       if (ext === "pdf" || file.type === "application/pdf") {
         fileAttachments.push({
           data: buffer.toString("base64"),
           mimeType: "application/pdf",
+          name: `Caso_Clinico_${file.name}`,
+        });
+        continue;
+      }
+
+      if (
+        ext === "png" ||
+        ext === "jpg" ||
+        ext === "jpeg" ||
+        ext === "webp" ||
+        ext === "jfif" ||
+        ext === "bmp" ||
+        file.type.startsWith("image/")
+      ) {
+        const imgMime =
+          file.type && file.type.startsWith("image/")
+            ? file.type
+            : ext === "png"
+            ? "image/png"
+            : ext === "webp"
+            ? "image/webp"
+            : "image/jpeg";
+        fileAttachments.push({
+          data: buffer.toString("base64"),
+          mimeType: imgMime,
           name: `Caso_Clinico_${file.name}`,
         });
         continue;
@@ -170,22 +215,40 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
 1. **TÍTULO DO CASO CLÍNICO**:
    - Defina um título claro e acadêmico para o caso clínico (# Nome do Caso Clínico).
 
-2. **TRANSCRIÇÃO INTEGRAL DO CASO CLÍNICO**:
-   - Transcreva fielmente todas as palavras do caso clínico / situação-problema original contido no documento anexo, para que o estudante tenha o texto original de referência no início do documento.
-   - Preencha o campo "caseTranscription" com este texto integral.
+2. **TRANSCRIÇÃO INTEGRAL DO CASO CLÍNICO (OCR / LEITURA DE IMAGEM OBRIGATÓRIA - TODAS AS PALAVRAS)**:
+   - REGRA MANDATÓRIA E INEGOCIÁVEL: MESMO QUE O ARQUIVO ENVIADO CONTENHA UMA IMAGEM AO INVÉS DE TEXTO SELECIONÁVEL (POR EXEMPLO: FOTO DE FOLHA IMPRESSA, SCAN DE DOCUMENTO, SCREENSHOT/PRINT DE TELA, OU PDF CONTENDO UMA IMAGEM DA SITUAÇÃO-PROBLEMA OU CASO CLÍNICO):
+     VOCÊ DEVE LER VISUALMENTE CADA IMAGEM (OCR MÉDICO PRECISO) E TRANSCREVER O CASO CLÍNICO INTEGRALMENTE COM TODAS AS PALAVRAS QUE ESTÃO LÁ, DO INÍCIO AO FIM, EXATAMENTE COMO ESCRITO NO ORIGINAL!
+   - Transcreva palavra por palavra sem cortes:
+     * Toda a narrativa do caso, dados de identificação do paciente (idade, sexo, profissão, procedência).
+     * Queixa principal e história da doença atual completa com todas as frases, termos médicos e datas originais.
+     * Interrogatório sintomatológico, antecedentes pessoais e familiares, hábitos de vida.
+     * Exame físico completo, dados antropométricos, sinais vitais (PA, FC, FR, SatO2, temperatura axilar).
+     * Resultados de exames laboratoriais, achados de imagem ou propedêutica armada com todos os valores numéricos e unidades.
+     * Perguntas disparadoras ou problemas da situação-problema presentes na imagem.
+   - NUNCA resuma, NUNCA parafraseie, NUNCA substitua por síntese e NUNCA omita nenhuma frase ou palavra do caso original.
+   - Preencha o campo "caseTranscription" com esta transcrição integral com todas as palavras.
 
-3. **TERMOS E PERGUNTAS DESCONHECIDAS**:
-   - Mapear e elucidar com precisão cirúrgica todos os termos médicos, siglas, nomenclaturas e dúvidas conceituais presentes no caso.
-   - Formate cada termo como:
-     * **Nome do Termo / Sigla**: Definição médica precisa, mecanismo e relevância no contexto do paciente.
+3. **TERMOS E PALAVRAS DESCONHECIDAS (FIDELIDADE TOTAL AO ARQUIVO ANEXADO)**:
+   - REGRA MANDATÓRIA: As palavras/termos desconhecidos DEVEM SER ESTRITAMENTE AS MESMAS que estão no arquivo anexado (ou nas anotações do estudante).
+   - NÃO É PARA VOCÊ INVENTAR ou formular palavras desconhecidas por conta própria! Se o documento/roteiro anexo já contiver uma lista de "Palavras Desconhecidas", "Termos Desconhecidos" ou "Dúvidas", utilize EXATAMENTE os termos dessa lista.
+   - Sua única função é responder quais são essas palavras e fornecer a definição médica precisa, mecanismo e significado de cada uma delas.
+   - Formate cada termo no array "unknownTerms" com:
+     * "term": "Nome exato da palavra/termo que está no documento anexado"
+     * "definition": "Definição médica precisa, clara e contextualizada do termo"
+   - Apenas se o documento NÃO contiver nenhuma lista ou menção a termos desconhecidos, identifique as nomenclaturas médicas mais complexas presentes no caso.
 
-4. **HIPÓTESES DIAGNÓSTICAS**:
+4. **HIPÓTESES DIAGNÓSTICAS (FIDELIDADE TOTAL AO ARQUIVO ANEXADO - APENAS JULGAR)**:
    - O título desta seção DEVE SER EXATAMENTE "Hipóteses Diagnósticas".
-   - Declare se cada hipótese levantada no caso é Correta (Provável) ou Incorreta (Descartada), com breve e concisa explicação clínica.
+   - REGRA MANDATÓRIA: As hipóteses diagnósticas DEVEM SER ESTRITAMENTE AS MESMAS que estão no arquivo anexado (ou nas anotações do estudante).
+   - NÃO É PARA VOCÊ INVENTAR hipóteses diagnósticas novas da sua cabeça! O grupo de tutoria / situação-problema já levantou as hipóteses no documento.
+   - Sua única função é APENAS AVALIAR E JULGAR se as hipóteses levantadas no documento estão corretas ou não:
+     * Declare expressamente no campo "judgment": "Correta (Provável)" ou "Incorreta (Descartada)".
+     * Forneça uma explicação concisa no campo "explanation" justificando clinicamente por que aquela hipótese levantada está certa ou errada com base nos dados do caso.
    - Preencha o campo "hypothesisAnalysis" com:
-     * "hypothesis": Nome da hipótese diagnóstica
+     * "hypothesis": Nome exato da hipótese levantada no documento
      * "judgment": "Correta (Provável)" ou "Incorreta (Descartada)"
-     * "explanation": Breve explicação de por que está correta ou errada baseada no caso
+     * "explanation": Explicação clínica objetiva fundamentando o julgamento
+   - Apenas se o documento NÃO contiver nenhuma hipótese levantada, liste de 3 a 5 hipóteses cabíveis para a queixa do caso e julgue-as.
 
 5. **CONCLUSÃO DO CASO CLÍNICO E TABELA COMPARATIVA DE DIAGNÓSTICO DIFERENCIAL**:
    - Fechamento consistente do caso clínico:
@@ -201,6 +264,12 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
 
 6. **QUESTÕES DE APRENDIZAGEM - NÚCLEO CENTRAL E OBRIGATÓRIO (MÁXIMO DETALHAMENTO EM NÍVEL TRATADO MÉDICO)**:
    - ESTE É O NÚCLEO DE MAIOR PESO DA TUTORIA! O array "learningQuestions" NUNCA PODE SER RETORNADO VAZIO!
+   - **REGRA CRUCIAL: RESPOSTA TEÓRICA E INDEPENDENTE DO CASO CLÍNICO (NÃO MISTURAR COM O CASO)**:
+     * Ao responder as Questões de Aprendizagem, a resposta DEVE SER PURAMENTE TEÓRICA, CONCEITUAL E APROFUNDADA (padrão tratado médico / UpToDate / Harrison / Cecil).
+     * É EXPRESSAMENTE PROIBIDO misturar ou interligar a resposta da questão com a história ou paciente do caso clínico ao longo da explanação. Para responder às perguntas de aprendizagem, NÃO fale do caso clínico, do paciente, de nomes, queixas ou eventos do caso da tutoria.
+     * Se for fazer qualquer relação com o caso clínico do problema, faça isso ESTRITAMENTE ao final da resposta como uma ÚNICA estrofe independente e destacada, explicitando com clareza: "**Aplicação / Correlação ao Caso Clínico:** Agora correlacionando diretamente com o caso clínico do problema..." (no máximo uma única estrofe concisa ao final).
+     * Todo o corpo principal da resposta deve ser 100% autônomo, teórico, médico, científico e completo sem fazer referências ao paciente ou caso clínico!
+     * PROIBIÇÃO ABSOLUTA DE LACUNAS: Nunca corte palavras nem crie frases incompletas como 'de , resultando em ,'. Toda a resposta teórica deve citar os nomes médicos reais e universais de todos os fármacos e patologias por extenso.
    - **COMO IDENTIFICAR AS QUESTÕES DE APRENDIZAGEM (REGRA CRÍTICA DE EXTRAÇÃO TOTAL - ZERO CORTES)**:
      * **1ª PRIORIDADE (DOCUMENTO ANEXO E ANOTAÇÕES - COBERTURA DE 100% DOS OBJETIVOS/QUESTÕES)**:
        Leia com máxima atenção todo o documento anexo (PDF, Word, Apresentação ou Texto) e as anotações do estudante ("userNotes") até a última página.
@@ -232,7 +301,7 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
           - Medidas não farmacológicas, suporte nutricional, fisioterapia e intervenções cirúrgicas/invasivas com critérios de indicação.
        8. **Diagnóstico Diferencial na Própria Questão**: Contraste a condição com as principais patologias mimetizadoras, apontando critérios objetivos de diferenciação clínica e laboratorial.
        9. **Prognóstico, Complicações e Continuidade do Cuidado**: Complicações agudas e crônicas, critérios para encaminhamento / internação em enfermaria ou UTI, critérios de alta e acompanhamento multiprofissional longitudinal.
-       10. **Curiosidade Clínica / Pérola Médica**: Subtópico enriquecedor com curiosidades fisiopatológicas, aspectos históricos ou associações clínicas de alto rendimento.
+       10. **Curiosidade Clínica / Correlação Fisiopatológica e Terapêutica**: Subtópico enriquecedor que explique de forma lógica e integrada (sem decoreba ou mnemônicos artificiais) como o mecanismo fisiopatológico da condição justifica seus achados clínicos e o tratamento instituído (ex: "O pé diabético resulta de neuropatia periférica e isquemia causadas pela hiperglicemia crônica, sendo tratado com controle rigoroso da glicemia, desbridamento de feridas, uso de curativos adequados, descarga de pressão e antibioticoterapia quando houver infecção").
 
    - **ESTRUTURAÇÃO DIDÁTICA EM TÓPICOS E SUBTÓPICOS DETALHADOS (PROIBIDO BLOCO ÚNICO OU "MEGA TEXTO")**:
      * **1. PROIBIÇÃO DE BLOCOS MONOLÍTICOS ("MEGA TEXTO")**:
@@ -240,7 +309,7 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
      * **2. MODELO DIDÁTICO E FLEXÍVEL (ORGANIZAÇÃO EM TÓPICOS, SUBTÓPICOS E CONTEXTUALIZAÇÃO)**:
        Estruture a resposta com clareza visual e alto rigor acadêmico:
        - **Contextualização**: Pode incluir uma contextualização introdutória inicial (2 a 5 linhas situando o conceito central, relevância clínica e panorama epidemiológico antes de desmembrar os aspectos específicos).
-       - **Tópicos e Subtópicos com Detalhamento Profundo**: Divida o conteúdo em tópicos e subtópicos com títulos claros em negrito (ex: '* **Mecanismo Fisiopatológico Detalhado:** [explicação aprofundada]', '* **Conduta Farmacológica e Manejo Clínico:** [posologias, fármacos, doses]'). Proibido fazer tópicos telegráficos de uma única frase; cada subtópico deve ser dissecado exaustivamente.
+       - **Tópicos e Subtópicos com Bolinhas para Estruturas, Tipos e Características**: Divida o conteúdo em tópicos e subtópicos com títulos claros em negrito (ex: '* **Mecanismo Fisiopatológico Detalhado:** [explicação aprofundada]', '* **Conduta Farmacológica e Manejo Clínico:** [posologias, fármacos, doses]'). Sempre que listar ou detalhar estruturas anatômicas (ex: ossos, cartilagens, camadas, divisões de órgãos), tipos, classificações ou características, prefira usar subtópicos indentados com bolinhas ('\\n  * **Nome da Estrutura / Característica:** explicação') em vez de um texto corrido longo.
        - **Etapas Sequenciais Numeradas ('1.', '2.', '3.')**: Para processos que envolvem etapas, fases evolutivas cronológicas (ex: estágios do choque hipovolêmico, ciclo ovariano/endometrial, cascata de hemostasia) ou passos de conduta médica e protocolos sequenciais de atendimento, utilize etapas numeradas (1. 2. 3.) detalhando cada fase.
        - **Cadeias de Causalidade e Fluxos com Setas ('->' ou '→')**: Utilize setas de forma equilibrada para ilustrar relações de causa-efeito, cascatas hormonais ou encadeamentos fisiopatológicos (ex: Hemorragia volumosa -> Hipovolemia relativa -> Queda do retorno venoso -> Ativação simpática compensatória). Use com moderação e equilíbrio, sem exageros.
      * **3. APROFUNDAMENTO INTEGRADO NA PRÓPRIA RESPOSTA**:
@@ -272,7 +341,7 @@ ${hasReferenceBooks ? `   - Obras de referência selecionadas pelo estudante na 
 JSON DE RETORNO OBRIGATÓRIO (VÁLIDO):
 {
   "title": "Título conciso e representativo do Caso Clínico / Tutoria",
-  "caseTranscription": "Transcrição literal e integral de todas as palavras do caso clínico original do documento anexo, sem omitir nada e sem adicionar comentários",
+  "caseTranscription": "Transcrição literal e integral com TODAS as palavras do caso clínico original do documento/imagem anexa, exatamente como está na foto/scan/PDF, sem resumir, sem omitir nada e sem adicionar comentários",
   "unknownTerms": [
     { "term": "Nome do Termo ou Sigla", "definition": "Definição precisa contextualizada" }
   ],
@@ -284,7 +353,7 @@ JSON DE RETORNO OBRIGATÓRIO (VÁLIDO):
     }
   ],
   "clinicalConclusion": {
-    "summary": "Síntese diagnóstica do caso",
+    "summary": "Síntese diagnóstica ultra-concisa e objetiva em no máximo 1 ou 2 frases diretas (máximo 2 linhas, sem parágrafos longos)",
     "clinicalReasoning": "Raciocínio clínico integrativo",
     "conductAndOutcome": "Conduta médica, manejo e prognóstico esperado",
     "differentialTable": "| Diagnóstico Diferencial / Patologia | Fisiopatologia Central | Achados Clínicos e Exames | Conduta Médica |\n| --- | --- | --- | --- |\n| Linha 1 | ... | ... | ... |"
@@ -301,8 +370,103 @@ JSON DE RETORNO OBRIGATÓRIO (VÁLIDO):
   ]
 }`;
 
+    // Separate case attachments (photos, PDFs, documents) from library reference books
+    const caseAttachments = fileAttachments.filter(
+      (f) => !f.name?.startsWith("Livro_Referencia_")
+    );
+
+    const hasVisualCaseFiles = caseAttachments.some(
+      (f) => f.mimeType.startsWith("image/") || f.mimeType === "application/pdf"
+    );
+
+    let initialTranscribedCase = "";
+    let initialDetectedObjectives: string[] = [];
+    let initialDetectedUnknownTerms: string[] = [];
+    let initialDetectedHypotheses: string[] = [];
+
+    // Pre-OCR step: When images, photos, scans, or PDFs are attached, run dedicated OCR FIRST
+    // so the clinical case is literally transcribed word-for-word from images before full generation
+    if (hasVisualCaseFiles) {
+      console.log(`[generate-tutoria] Executando OCR médico prioritário para ${caseAttachments.length} anexo(s) do caso...`);
+      try {
+        const ocrRes = await generateJSONFromAI({
+          systemPrompt: `Você é um especialista em OCR médico de altíssima precisão e transcrição integral de situações-problema e casos clínicos de Tutoria Médica / PBL.
+Sua missão MANDATÓRIA e PRIORITÁRIA é LER ATENTAMENTE TODAS AS IMAGENS, FOTOS, PRINTS, SCANS E PÁGINAS DO CASO CLÍNICO e TRANSCREVER O CASO CLÍNICO INTEGRALMENTE, COM TODAS AS PALAVRAS, EXATAMENTE COMO ESTÁ NAS IMAGENS.
+
+DIRETRIZES DE TRANSCRIÇÃO INTEGRAL (ZERO CORTES / ZERO RESUMOS):
+1. Leia visualmente cada foto, screenshot, print de tela, scan de folha impressa, slide ou página de PDF com máxima atenção.
+2. Transcreva literalmente palavra por palavra todo o caso clínico com fidelidade absoluta:
+   - Identificação do paciente (nome/iniciais, idade, sexo, ocupação, procedência, etnia, estado civil).
+   - Queixa principal (QP) e História da Doença Atual (HDA) com todas as frases, sintomas descritos, cronologia, termos originais e detalhes clínicos.
+   - Interrogatório sintomatológico (ISDA), antecedentes pessoais patológicos, cirúrgicos, ginecológicos/obstétricos se aplicável, história medicamentosa, hábitos de vida e história familiar.
+   - Exame físico completo (sinais vitais com todos os valores numéricos: PA, FC, FR, Temp, SpO2; ectoscopia, aparelhos cardiovascular, respiratório, abdome, membros, neurológico).
+   - Exames laboratoriais e complementares (hemograma, bioquímica, gasometria, ECG, laudos de radiografia, tomografia, ultrassom) com TODOS os valores numéricos, unidades e referências.
+   - Qualquer pergunta disparadora, dúvida, desafio ou problema formulado no final do caso original.
+3. Se o caso estiver distribuído em múltiplas fotos/imagens/slides, junte tudo em uma única transcrição contínua, completa e cronológica do caso clínico.
+4. PROIBIDO resumir, PROIBIDO parafrasear, PROIBIDO omitir frases e PROIBIDO inventar dados que não estão lá.
+5. Se houver Objetivos de Aprendizagem ou Questões de Aprendizagem explícitas escritas na imagem ou documento, extraia cada uma delas no array "detectedObjectives".
+6. Se houver Palavras Desconhecidas ou Termos Desconhecidos listados na imagem ou documento (Passo 1 do PBL), extraia cada uma delas no array "detectedUnknownTerms".
+7. Se houver Hipóteses ou Hipóteses Diagnósticas levantadas na imagem ou documento (Passo 3 do PBL), extraia cada uma delas no array "detectedHypotheses".
+
+Retorne estritamente o JSON válido:
+{
+  "caseTranscription": "Transcrição literal e completa de todas as palavras do caso clínico presentes nas imagens/documentos, sem resumo",
+  "detectedObjectives": ["Objetivo ou questão 1", "Objetivo ou questão 2"],
+  "detectedUnknownTerms": ["Palavra desconhecida 1", "Palavra desconhecida 2"],
+  "detectedHypotheses": ["Hipótese 1", "Hipótese 2"]
+}`,
+          userPrompt: `Leia todas as imagens e documentos do caso em anexo e transcreva o caso clínico integralmente com TODAS as palavras que estão lá, exatamente como escrito no original. Não resuma nada. Extraia também quaisquer objetivos de aprendizagem, palavras desconhecidas e hipóteses diagnósticas listadas no material.`,
+          fileAttachments: caseAttachments,
+          maxOutputTokens: 16384,
+          temperature: 0.1,
+        });
+
+        if (ocrRes?.caseTranscription && ocrRes.caseTranscription.trim().length > 30) {
+          initialTranscribedCase = ocrRes.caseTranscription.trim();
+          console.log(`[generate-tutoria] Caso clínico transcrito com sucesso via OCR (${initialTranscribedCase.length} caracteres).`);
+        } else if (ocrRes?.transcription && ocrRes.transcription.trim().length > 30) {
+          initialTranscribedCase = ocrRes.transcription.trim();
+        }
+
+        if (Array.isArray(ocrRes?.detectedObjectives) && ocrRes.detectedObjectives.length > 0) {
+          initialDetectedObjectives = ocrRes.detectedObjectives.filter(Boolean);
+        }
+        if (Array.isArray(ocrRes?.detectedUnknownTerms) && ocrRes.detectedUnknownTerms.length > 0) {
+          initialDetectedUnknownTerms = ocrRes.detectedUnknownTerms.filter(Boolean);
+        }
+        if (Array.isArray(ocrRes?.detectedHypotheses) && ocrRes.detectedHypotheses.length > 0) {
+          initialDetectedHypotheses = ocrRes.detectedHypotheses.filter(Boolean);
+        }
+      } catch (ocrErr) {
+        console.warn("[generate-tutoria] Pré-OCR dedicado falhou, continuando para resolução primária:", ocrErr);
+      }
+    }
+
     const userPromptText = `Resolva integralmente o Caso Clínico / Situação-Problema de Tutoria em anexo.
 MISSÃO PRINCIPAL MANDATÓRIA: RESPONDER A TODAS AS QUESTÕES DE APRENDIZAGEM COM MÁXIMO NÍVEL DE DETALHAMENTO E APROFUNDAMENTO ACADÊMICO (PADRÃO TRATADO MÉDICO / UPTODATE / HARRISON / CECIL).
+
+${initialTranscribedCase ? `🚨 TRANSCRIÇÃO LITERAL COMPLETA DO CASO CLÍNICO EXTRAÍDA DAS IMAGENS/DOCUMENTOS ANEXADOS:
+"""
+${initialTranscribedCase}
+"""
+Coloque OBRIGATORIAMENTE esta transcrição completa no campo "caseTranscription". NÃO resuma e NÃO corte!` : `🚨 REGRA CRÍTICA PARA O CASO CLÍNICO (TRANSCRIÇÃO LITERAL COMPLETA COM TODAS AS PALAVRAS):
+MESMO QUE O ARQUIVO ENVIADO SEJA UMA IMAGEM (FOTO/PRINT/SCAN) OU UM PDF CONTENDO IMAGEM AO INVÉS DE TEXTO SELECIONÁVEL:
+LEIA VISUALMENTE A IMAGEM E TRANSCREVA O CASO CLÍNICO INTEGRALMENTE NO CAMPO "caseTranscription" COM TODAS AS PALAVRAS QUE ESTÃO LÁ!
+Não resuma, não corte e não parafraseie nenhuma frase ou dado. Transcreva palavra por palavra todo o caso clínico original.`}
+
+${initialDetectedUnknownTerms.length > 0 ? `🚨 PALAVRAS/TERMOS DESCONHECIDOS EXTRAÍDOS DO DOCUMENTO ANEXADO:
+${initialDetectedUnknownTerms.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+Defina EXATAMENTE estas palavras no array "unknownTerms"! NÃO invente outras!` : ""}
+
+${initialDetectedHypotheses.length > 0 ? `🚨 HIPÓTESES DIAGNÓSTICAS EXTRAÍDAS DO DOCUMENTO ANEXADO:
+${initialDetectedHypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}
+Avalie e julgue EXATAMENTE estas hipóteses no array "hypothesisAnalysis" (Correta ou Incorreta)! NÃO invente outras hipóteses!` : ""}
+
+${initialDetectedObjectives.length > 0 ? `🚨 OBJETIVOS DE APRENDIZAGEM EXTRAÍDOS DAS IMAGENS/DOCUMENTOS:
+${initialDetectedObjectives.map((obj, i) => `${i + 1}. ${obj}`).join("\n")}
+Responda OBRIGATORIAMENTE a CADA UM destes objetivos no array "learningQuestions"! Não omita nenhum!
+${initialDetectedObjectives.length === 1 ? `ATENÇÃO CRÍTICA: Foi detectado apenas 1 objetivo prévio na leitura inicial, porém uma Tutoria Médica exige o desdobramento e resposta a TODOS os objetivos do documento ou a formulação de 5 a 8 Questões de Aprendizagem completas cobrindo todos os eixos biomédicos do caso (fisiopatologia celular e molecular, semiologia e diagnóstico diferencial, propedêutica armada e manejo clínico/farmacológico completo). É TERMINANTEMENTE PROIBIDO PARAR NA QUESTÃO 1 OU GERAR APENAS 1 QUESTÃO!` : ""}` : `🚨 ATENÇÃO PARA AS QUESTÕES DE APRENDIZAGEM:
+Extraia e responda a TODOS os objetivos de aprendizagem do documento. Se não houver lista explícita, formule e responda de 5 a 8 Questões de Aprendizagem profundas cobrindo todos os pilares biomédicos do caso. PROIBIDO PARAR NA QUESTÃO 1!`}
 
 ${userNotes ? `🚨 ATENÇÃO - ANOTAÇÕES E PERGUNTAS DO ESTUDANTE:
 """
@@ -310,13 +474,18 @@ ${userNotes}
 """
 Se as anotações acima contiverem dúvidas, perguntas ou tópicos de tutoria, extraia e responda a CADA UMA DELAS com máxima prioridade no array "learningQuestions"! Não deixe nenhuma pergunta de fora!` : ""}
 
+🚨 REGRAS CRÍTICAS PARA PALAVRAS DESCONHECIDAS E HIPÓTESES DIAGNÓSTICAS:
+- PALAVRAS DESCONHECIDAS: Devem ser ESTRITAMENTE as mesmas que constam no arquivo anexado (ou nas anotações). NÃO é para você inventar ou formular termos da sua cabeça! Responda apenas definindo o significado exato das palavras presentes no documento.
+- HIPÓTESES DIAGNÓSTICAS: Devem ser ESTRITAMENTE as mesmas levantadas no arquivo anexado (ou nas anotações). NÃO é para você inventar hipóteses novas! Sua função é apenas avaliar e julgar cada uma das hipóteses levantadas (marcar se é "Correta (Provável)" ou "Incorreta (Descartada)" e justificar brevemente com base no caso).
+
 DIRETRIZES FUNDAMENTAIS PARA AS QUESTÕES DE APRENDIZAGEM:
-1. RESPONDA A 100% DAS QUESTÕES E OBJETIVOS (ZERO CORTES): Extraia TODOS os objetivos de aprendizagem do documento anexo (se houver 6, 7, 8 ou mais objetivos, responda a CADA UM DELES individualmente). NUNCA corte nem omita objetivos! O array "learningQuestions" NUNCA PODE SER VAZIO e deve conter uma questão para CADA objetivo do documento anexo!
+1. RESPONDA A 100% DAS QUESTÕES E OBJETIVOS (ZERO CORTES / PROIBIDO PARAR NA QUESTÃO 1): Extraia TODOS os objetivos de aprendizagem do documento anexo (se houver 5, 6, 7, 8 ou mais objetivos, responda a CADA UM DELES individualmente). NUNCA corte nem pare na Questão 1! O array "learningQuestions" DEVE CONTER TODAS AS QUESTÕES (no mínimo 5 a 8 questões se o documento não trouxer lista explícita)!
 2. NÍVEL MÁXIMO DE DETALHAMENTO (ZERO RESUMOS SUPERFICIAIS): Cada questão de aprendizagem deve ser uma explanação exaustiva e de altíssima densidade científica. Disque minuciosamente a fisiopatologia celular e molecular (citocinas, mediadores, receptores, vias de sinalização), anatomofisiologia, semiótica detalhada com manobras propedêuticas e sinais de alarme, escores clínicos validados, exames complementares com valores e pontos de corte numéricos, e terapêutica completa (classes, fármacos de 1ª e 2ª linha, mecanismos de ação, doses, posologia, vias e tempos de uso, além de medidas não farmacológicas e cirúrgicas).
-3. ESTRUTURAÇÃO DIDÁTICA EM TÓPICOS E SUBTÓPICOS (PROIBIDO MEGA TEXTO MACIÇO): Proibido fazer parágrafos gigantes contínuos sem divisão visual. Estruture cada resposta com contextualização inicial, seguida de tópicos e subtópicos claros em negrito, dissecando cada ponto com alto rigor técnico.
-4. ETAPAS NUMERADAS E FLUXOS COM SETAS: Utilize numeração (1., 2., 3.) para processos com fases evolutivas ou etapas cronológicas (ex: estágios de choque, protocolos de conduta) e setas (-> ou →) sem exagero para relações causais e encadeamento fisiopatológico.
-5. DIAGNÓSTICO DIFERENCIAL NA PRÓPRIA RESPOSTA: Aborde e diferencie as principais condições correlatas dentro da questão, apontando critérios objetivos de exclusão.
-6. CURIOSIDADE CLÍNICA: Finalize as questões com um subtópico enriquecedor "**Curiosidade Clínica**" com pérolas práticas ou fatos biomédicos de alto rendimento.
+3. RESPOSTAS TEÓRICAS E INDEPENDENTES DO CASO CLÍNICO (NÃO MISTURAR COM O CASO): Não interligue ou misture a resposta das questões com o paciente ou história do caso clínico ao longo do texto. Responda à pergunta de forma puramente teórica, conceitual, universal e científica (padrão tratado médico / UpToDate). Para responder à pergunta, NÃO fale do caso clínico! Se for correlacionar com o caso do problema, faça isso APENAS ao final da resposta como uma única estrofe independente destacando: "**Aplicação / Correlação ao Caso Clínico:** Agora correlacionando diretamente com o caso clínico do problema...".
+4. ESTRUTURAÇÃO DIDÁTICA EM TÓPICOS E SUBTÓPICOS (PROIBIDO MEGA TEXTO MACIÇO): Proibido fazer parágrafos gigantes contínuos sem divisão visual. Estruture cada resposta com contextualização inicial, seguida de tópicos e subtópicos claros em negrito, dissecando cada ponto com alto rigor técnico.
+5. ETAPAS NUMERADAS E FLUXOS COM SETAS: Utilize numeração (1., 2., 3.) para processos com fases evolutivas ou etapas cronológicas (ex: estágios de choque, protocolos de conduta) e setas (-> ou →) sem exagero para relações causais e encadeamento fisiopatológico.
+6. DIAGNÓSTICO DIFERENCIAL NA PRÓPRIA RESPOSTA: Aborde e diferencie as principais condições correlatas dentro da questão, apontando critérios objetivos de exclusão.
+7. CURIOSIDADE CLÍNICA: Finalize as questões com um subtópico enriquecedor "**Curiosidade Clínica**" trazendo uma síntese lógica e integrada (sem decoreba) que conecte a causa fisiopatológica diretamente ao manejo e tratamento clínico.
 ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${bookTitles.join(", ")}.\nUtilize o embasamento destas obras para responder com máxima veracidade científica a todas as questões.` : ""}`;
 
     const result = await generateJSONFromAI({
@@ -327,17 +496,30 @@ ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${book
       temperature: 0.3,
     });
 
-    // Safeguard: Guarantee learningQuestions is NEVER empty!
-    if (!result.learningQuestions || !Array.isArray(result.learningQuestions) || result.learningQuestions.length === 0) {
-      console.warn("learningQuestions is empty in primary result. Generating dedicated learning questions with full document attachments...");
+    // Ensure caseTranscription is populated with full fidelity from pre-OCR
+    if (initialTranscribedCase && (!result.caseTranscription || result.caseTranscription.trim().length < initialTranscribedCase.length * 0.7)) {
+      result.caseTranscription = initialTranscribedCase;
+    }
+
+    // Safeguard: Guarantee learningQuestions has ALL questions and is never empty or cut off at 1 question!
+    if (!result.learningQuestions || !Array.isArray(result.learningQuestions) || result.learningQuestions.length <= 1) {
+      console.warn("learningQuestions has <= 1 question in primary result. Generating dedicated learning questions with full document attachments...");
       try {
         const fallbackRes = await generateJSONFromAI({
           systemPrompt: `Você é um preceptor médico especialista sênior em PBL / Tutoria Médica.
 Sua missão única e prioritária é EXTRAIR E RESPONDER A TODAS AS PERGUNTAS E OBJETIVOS DE APRENDIZAGEM do caso clínico em anexo COM MÁXIMO NÍVEL DE DETALHAMENTO (PADRÃO TRATADO MÉDICO / UPTODATE).
 Leia atentamente todo o documento anexo (PDF, Word ou Texto) e as anotações do estudante até o fim.
 Localize e extraia TODOS os objetivos de aprendizagem e questões do documento anexo. Responda a TODOS sem omitir nenhum!
-Responda a cada questão com riqueza exaustiva de detalhes: fisiopatologia celular e molecular completa, anatomofisiologia, semiótica com manobras e red flags, escores clínicos validados, exames com pontos de corte laboratoriais, e farmacologia detalhada (classes, fármacos, doses, posologias, vias e duração).
-Estrutura estrita: tópicos e subtópicos detalhados (proibido mega texto monolítico corrido), contextualização inicial, etapas numeradas (1. 2. 3.) para processos com fases, setas (->) para encadeamentos causais sem exagero, cobertura ampla de diagnósticos diferenciais e condutas médicas detalhadas.
+PROIBIÇÃO INVIOLÁVEL: É terminantemente proibido parar na questão 1 ou retornar apenas 1 questão! Uma sessão completa de Tutoria exige responder a todos os objetivos do documento ou, caso não haja lista explícita no documento, formular e responder de 5 a 8 Questões de Aprendizagem essenciais cobrindo:
+1) Fisiopatologia celular e molecular profunda;
+2) Correlação anatomoclínica e fisiologia do sistema afetado;
+3) Semiotécnica, manobras diagnósticas e sinais de alarme ("red flags");
+4) Diagnóstico diferencial e critérios de exclusão;
+5) Propedêutica armada e exames complementares com valores de referência;
+6) Terapêutica medicamentosa (classes, fármacos, doses, posologia e efeitos adversos) e conduta não farmacológica.
+Responda a cada questão com riqueza exaustiva de detalhes (padrão tratado médico / UpToDate).
+REGRA MANDATÓRIA: Responda a cada questão de forma puramente teórica, científica e universal. NÃO mencione nem misture o caso clínico do problema ao longo da resposta! Se for correlacionar com o caso, faça-o exclusivamente ao final como uma única estrofe independente destacada ("**Aplicação / Correlação ao Caso Clínico:** Agora correlacionando diretamente com o caso clínico do problema...").
+Estrutura estrita: tópicos e subtópicos detalhados (proibido mega texto monolítico corrido), contextualização inicial, etapas numeradas (1. 2. 3.) para processos com fases, setas (->) para encadeamentos causais sem exagero.
 Retorne estritamente o JSON válido:
 {
   "learningQuestions": [
@@ -347,7 +529,8 @@ Retorne estritamente o JSON válido:
     }
   ]
 }`,
-          userPrompt: `Extraia e responda com profundidade máxima e detalhamento exaustivo a TODAS as questões e objetivos de aprendizagem do caso clínico em anexo (sem omitir nenhum objetivo)!
+          userPrompt: `Extraia e responda com profundidade máxima e detalhamento exaustivo a TODAS as questões e objetivos de aprendizagem do caso clínico em anexo (sem omitir nenhum objetivo, responda a todos os objetivos do documento ou formule de 5 a 8 questões completas, NUNCA pare na questão 1)!
+${initialTranscribedCase ? `Caso Clínico Transcrito:\n"""\n${initialTranscribedCase}\n"""\n` : ""}
 ${userNotes ? `Anotações do estudante com perguntas prioritárias:\n"""\n${userNotes}\n"""` : "Identifique e responda a todos os objetivos de aprendizagem do documento com máxima densidade acadêmica."}`,
           fileAttachments, // PASS THE FILE ATTACHMENTS TO FALLBACK!
           maxOutputTokens: 65536,
@@ -355,19 +538,62 @@ ${userNotes ? `Anotações do estudante com perguntas prioritárias:\n"""\n${use
         });
 
         if (fallbackRes?.learningQuestions && Array.isArray(fallbackRes.learningQuestions) && fallbackRes.learningQuestions.length > 0) {
-          result.learningQuestions = fallbackRes.learningQuestions;
+          if (!result.learningQuestions || result.learningQuestions.length <= 1) {
+            result.learningQuestions = fallbackRes.learningQuestions;
+          } else {
+            const existingQ = new Set(result.learningQuestions.map((q: any) => q.question?.toLowerCase().trim()));
+            for (const fq of fallbackRes.learningQuestions) {
+              if (fq?.question && !existingQ.has(fq.question.toLowerCase().trim())) {
+                result.learningQuestions.push(fq);
+              }
+            }
+          }
+          console.log(`[generate-tutoria] learningQuestions enriquecido/restaurado com sucesso via fallback: ${result.learningQuestions.length} questões.`);
         }
       } catch (fbErr) {
         console.error("Failed to generate fallback learning questions:", fbErr);
       }
     }
 
+    // Safeguard 2: Guarantee caseTranscription is NEVER empty, especially when case is an image/photo/scan!
+    if (!result.caseTranscription || result.caseTranscription.trim().length < 50) {
+      console.warn("caseTranscription is empty or too short. Performing dedicated OCR image transcription on case files...");
+      try {
+        const ocrRes = await generateJSONFromAI({
+          systemPrompt: `Você é um especialista em OCR médico de altíssima precisão e transcrição literal de documentos e imagens.
+Sua missão única e mandatória é LER A IMAGEM OU DOCUMENTO ANEXO (PDF, Foto, Scan ou Print de tela) e TRANSCREVER O CASO CLÍNICO / SITUAÇÃO-PROBLEMA INTEGRALMENTE COM TODAS AS PALAVRAS QUE ESTÃO LÁ, SEM OMITIR ABSOLUTAMENTE NADA!
+DIRETRIZES:
+1. Mesmo que o documento seja uma foto, imagem ou scan, leia cada palavra visualmente e transcreva literalmente.
+2. Transcreva todos os dados do paciente, queixa principal, história da doença atual, antecedentes, exame físico, sinais vitais, exames complementares e perguntas/desafios.
+3. PROIBIDO resumir, parafrasear ou adicionar comentários. Transcreva com fidelidade absoluta palavra por palavra.
+Retorne estritamente o JSON válido:
+{
+  "caseTranscription": "Transcrição literal e completa de todas as palavras do caso clínico presentes na imagem/documento"
+}`,
+          userPrompt: `Leia a imagem/documento em anexo e transcreva o caso clínico integralmente com TODAS as palavras que estão lá, exatamente como escrito no original. Não resuma.`,
+          fileAttachments: caseAttachments, // ONLY CASE FILES!
+          maxOutputTokens: 16384,
+          temperature: 0.1,
+        });
+
+        if (ocrRes?.caseTranscription && ocrRes.caseTranscription.trim().length > 30) {
+          result.caseTranscription = ocrRes.caseTranscription.trim();
+        } else if (ocrRes?.transcription && ocrRes.transcription.trim().length > 30) {
+          result.caseTranscription = ocrRes.transcription.trim();
+        }
+      } catch (ocrErr) {
+        console.error("Failed dedicated OCR transcription:", ocrErr);
+      }
+    }
+
+    const finalCaseTranscription = (result.caseTranscription || initialTranscribedCase || "").trim();
+
     const parts: string[] = [];
     parts.push(`# ${result.title || "Resolução de Tutoria Clínica"}\n`);
 
     // 1. Transcrição integral do caso clínico original
-    if (result.caseTranscription && result.caseTranscription.trim()) {
-      parts.push(`## Caso Clínico\n\n${result.caseTranscription.trim()}\n`);
+    if (finalCaseTranscription) {
+      parts.push(`## Caso Clínico\n\n${finalCaseTranscription}\n`);
     }
 
     // 2. Termos e Perguntas Desconhecidas
@@ -421,6 +647,7 @@ ${userNotes ? `Anotações do estudante com perguntas prioritárias:\n"""\n${use
           .trim();
         const finalQuestion = cleanQ || rawQ;
         lq.question = finalQuestion;
+        lq.detailedAnswer = cleanLatexAndBadges(lq.detailedAnswer || "");
         parts.push(`### Questão ${i + 1}: ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
       }
     }
@@ -449,7 +676,7 @@ ${userNotes ? `Anotações do estudante com perguntas prioritárias:\n"""\n${use
 
     return NextResponse.json({
       title: result.title || "Resolução de Tutoria Clínica",
-      caseTranscription: result.caseTranscription || "",
+      caseTranscription: finalCaseTranscription,
       unknownTerms: result.unknownTerms || [],
       hypothesisAnalysis: result.hypothesisAnalysis || [],
       clinicalConclusion: result.clinicalConclusion || {

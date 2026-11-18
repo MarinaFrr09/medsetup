@@ -85,14 +85,14 @@ export default function TutoriaPage() {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length === 0) return;
 
-    const allowed = [".pdf", ".docx", ".doc", ".txt", ".pptx"];
+    const allowed = [".pdf", ".docx", ".doc", ".txt", ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".jfif", ".bmp"];
     const valid = files.filter((f) => {
       const ext = "." + (f.name.split(".").pop()?.toLowerCase() || "");
-      return allowed.includes(ext) || f.type.includes("pdf");
+      return allowed.includes(ext) || f.type.includes("pdf") || f.type.startsWith("image/");
     });
 
     if (valid.length === 0) {
-      toast.error("Formato inválido. Envie arquivos PDF, Word (.docx) ou Texto.");
+      toast.error("Formato inválido. Envie arquivos PDF, Imagens (fotos/prints/scans), Word (.docx) ou Texto.");
       return;
     }
 
@@ -177,6 +177,7 @@ export default function TutoriaPage() {
         selectedBookTitles: bookTitles,
         result: {
           title: data.title,
+          caseTranscription: data.caseTranscription || "",
           unknownTerms: data.unknownTerms || [],
           hypothesisAnalysis: data.hypothesisAnalysis || [],
           clinicalConclusion: data.clinicalConclusion || {},
@@ -312,7 +313,7 @@ export default function TutoriaPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.pptx"
+                accept=".pdf,.docx,.doc,.txt,.pptx,.png,.jpg,.jpeg,.webp,.jfif,.bmp,image/*"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -341,10 +342,10 @@ export default function TutoriaPage() {
                         openPdfViewer(url, file.name);
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors cursor-pointer shadow-xs"
-                      title="Visualizar o PDF ou anexo enviado"
+                      title="Visualizar o PDF, imagem ou anexo enviado"
                     >
                       <Eye className="w-3.5 h-3.5" />
-                      <span>Visualizar PDF</span>
+                      <span>{selectedCaseFiles[0].type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(selectedCaseFiles[0].name) ? "Visualizar Imagem" : "Visualizar PDF"}</span>
                     </button>
                     <button
                       type="button"
@@ -370,7 +371,7 @@ export default function TutoriaPage() {
                     Clique ou arraste o anexo do caso clínico
                   </h4>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-                    Formatos suportados: PDF, Word (.docx, .doc), PowerPoint (.pptx) ou TXT.
+                    Formatos suportados: PDF, Imagens (fotos/prints/scans), Word (.docx, .doc), PowerPoint (.pptx) ou TXT.
                   </p>
                 </div>
               )}

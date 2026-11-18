@@ -10,8 +10,10 @@ import {
   CornerDownLeft,
   RefreshCw,
   Loader2,
+  Edit3,
+  Eye,
 } from "lucide-react";
-import { markdownToHtml } from "@/lib/rich-text-utils";
+import { markdownToHtml, formatInlineHtml } from "@/lib/rich-text-utils";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
 import toast from "react-hot-toast";
 
@@ -21,6 +23,7 @@ interface TargetSelection {
   end: number;
   selectedText: string;
   context: string;
+  mindmapNodeId?: string;
 }
 
 export function AISelectionAssistant() {
@@ -32,6 +35,7 @@ export function AISelectionAssistant() {
   const [loadingAction, setLoadingAction] = useState<"expand" | "explain" | null>(null);
   const [resultText, setResultText] = useState<string | null>(null);
   const [resultAction, setResultAction] = useState<"expand" | "explain">("expand");
+  const [aiTab, setAiTab] = useState<"edit" | "preview">("edit");
   const [copied, setCopied] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,6 +136,15 @@ export function AISelectionAssistant() {
       const finalY = Math.max(12, y);
 
       const targetOrActive = editableParent || targetElement || (active as HTMLElement);
+      const mindmapNodeEl = (
+        targetOrActive?.closest?.("[data-mindmap-node-id], .react-flow__node") ||
+        (active as HTMLElement)?.closest?.("[data-mindmap-node-id], .react-flow__node")
+      ) as HTMLElement | null;
+      const mindmapNodeId =
+        targetOrActive?.getAttribute?.("data-mindmap-node-id") ||
+        mindmapNodeEl?.getAttribute("data-mindmap-node-id") ||
+        mindmapNodeEl?.getAttribute("data-id") ||
+        undefined;
 
       setPosition({ x: finalX, y: finalY });
       setSelectionData({
@@ -140,6 +153,7 @@ export function AISelectionAssistant() {
         end,
         selectedText,
         context: fullText,
+        mindmapNodeId,
       });
       setVisible(true);
     };
@@ -225,7 +239,11 @@ export function AISelectionAssistant() {
       }
 
       const data = await res.json();
+      if (!data.result || data.result.trim() === selectionData.selectedText.trim()) {
+        throw new Error("A IA não gerou uma expansão aprofundada para este trecho. Tente novamente.");
+      }
       setResultText(data.result);
+      setAiTab("edit");
       toast.success(
         action === "expand" ? "Expansão gerada com sucesso!" : "Explicação gerada com sucesso!",
         { id: toastId, icon: "💡" }
@@ -245,8 +263,63 @@ export function AISelectionAssistant() {
 
     const el = selectionData.element;
 
-    // Check textarea or input
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+    // 0. Check if selection originated inside a Mind Map balloon node (React Flow node)
+    // Even if the balloon's inline <textarea> unmounted on blur when the AI modal opened,
+    // dispatching `medsetup:update-mindmap-node` updates the node label, state, undo stack, and storage!
+    if (selectionData.mindmapNodeId) {
+      const cleanBalloonText = cleanLatexAndBadges(resultText).replace(/\*\*/g, "").trim();
+      const baseContext = selectionData.context || "";
+      let newLabel = cleanBalloonText;
+
+      if (mode === "replace") {
+        if (selectionData.end > selectionData.start && baseContext.length >= selectionData.end) {
+          newLabel =
+            baseContext.substring(0, selectionData.start) +
+            cleanBalloonText +
+            baseContext.substring(selectionData.end);
+        } else if (baseContext && baseContext.includes(selectionData.selectedText)) {
+          newLabel = baseContext.replace(selectionData.selectedText, cleanBalloonText);
+        } else {
+          newLabel = cleanBalloonText;
+        }
+      } else {
+        const base = (baseContext || selectionData.selectedText).trim();
+        newLabel = base ? `${base}\n\n${cleanBalloonText}` : cleanBalloonText;
+      }
+
+      window.dispatchEvent(
+        new CustomEvent("medsetup:update-mindmap-node", {
+          detail: {
+            nodeId: selectionData.mindmapNodeId,
+            newLabel,
+          },
+        })
+      );
+
+      if ((el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) && el.isConnected) {
+        const prototype = Object.getPrototypeOf(el);
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+        if (descriptor && descriptor.set) {
+          descriptor.set.call(el, newLabel);
+        } else {
+          el.value = newLabel;
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      toast.success(
+        mode === "replace"
+          ? "Texto substituído no balão do mapa mental!"
+          : "Conteúdo inserido no balão do mapa mental!",
+        { icon: "✨" }
+      );
+      handleClose();
+      return;
+    }
+
+    // 1. Check textarea or input first (exact character offset replacement)
+    if ((el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) && el.isConnected) {
       const currentVal = el.value;
       const start = selectionData.start;
       const end = selectionData.end;
@@ -263,7 +336,6 @@ export function AISelectionAssistant() {
         newCursor = end + insertion.length;
       }
 
-      // Use prototype setter so React state onChange is properly invoked
       const prototype = Object.getPrototypeOf(el);
       const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
       if (descriptor && descriptor.set) {
@@ -284,49 +356,63 @@ export function AISelectionAssistant() {
         mode === "replace" ? "Texto substituído com sucesso!" : "Conteúdo inserido abaixo!",
         { icon: "✨" }
       );
-    } else {
-      // Check if element is contenteditable or inside an element that is contenteditable
-      const editableContainer =
-        (el && (el.getAttribute("contenteditable") === "true" || (el as HTMLElement).isContentEditable))
-          ? (el as HTMLElement)
-          : (el?.closest?.('[contenteditable="true"]') as HTMLElement | null);
+      handleClose();
+      return;
+    }
 
-      if (editableContainer) {
+    // 2. Check if element is inside a live contenteditable container (e.g. RichTextEditor or EditableAnswerBlock)
+    const editableContainer =
+      (el && (el.getAttribute("contenteditable") === "true" || (el as HTMLElement).isContentEditable))
+        ? (el as HTMLElement)
+        : (el?.closest?.('[contenteditable="true"]') as HTMLElement | null);
+
+    if (
+      editableContainer &&
+      editableContainer.isConnected &&
+      savedRangeRef.current &&
+      editableContainer.contains(savedRangeRef.current.commonAncestorContainer)
+    ) {
+      try {
         editableContainer.focus();
-        const sel = window.getSelection();
-        if (savedRangeRef.current && sel) {
-          sel.removeAllRanges();
-          sel.addRange(savedRangeRef.current);
-        }
+        const range = savedRangeRef.current;
 
-        const formattedHtml = markdownToHtml(cleanLatexAndBadges(resultText));
+        const inlineHtml = cleanLatexAndBadges(resultText)
+          .trim()
+          .split(/\n{2,}/)
+          .map((p) => formatInlineHtml(p.trim().replace(/\n/g, " ")))
+          .filter(Boolean)
+          .join("<br><br>");
+
+        const startNode =
+          range.startContainer.nodeType === Node.ELEMENT_NODE
+            ? (range.startContainer as HTMLElement)
+            : range.startContainer.parentElement;
+        const parentLi = startNode?.closest?.("li");
+        const parentBlock = startNode?.closest?.("p, h1, h2, h3, h4, h5, h6, blockquote");
 
         if (mode === "replace") {
-          // Native execCommand pushes to the browser's undo stack (Ctrl+Z works!)
-          const executed = document.execCommand("insertHTML", false, formattedHtml);
-          if (!executed) {
-            const range = savedRangeRef.current || (sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null);
-            if (range) {
-              range.deleteContents();
-              const frag = range.createContextualFragment(formattedHtml);
-              range.insertNode(frag);
-            }
-          }
+          range.deleteContents();
+          const frag = range.createContextualFragment(inlineHtml);
+          range.insertNode(frag);
         } else {
-          if (sel) {
-            sel.collapseToEnd();
-          }
-          const executed = document.execCommand("insertHTML", false, `<p><br></p>${formattedHtml}`);
-          if (!executed) {
-            const range = savedRangeRef.current || (sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null);
-            if (range) {
-              const frag = range.createContextualFragment(`<p><br></p>${formattedHtml}`);
-              range.collapse(false);
-              range.insertNode(frag);
-            }
+          // mode === "insertBelow"
+          if (parentLi && editableContainer.contains(parentLi)) {
+            range.collapse(false);
+            const frag = range.createContextualFragment(`<br><br>${inlineHtml}`);
+            range.insertNode(frag);
+          } else if (parentBlock && editableContainer.contains(parentBlock)) {
+            const newP = document.createElement("p");
+            newP.className = "my-2 leading-relaxed text-gray-800 dark:text-gray-200 text-sm sm:text-base";
+            newP.innerHTML = inlineHtml;
+            parentBlock.after(newP);
+          } else {
+            range.collapse(false);
+            const frag = range.createContextualFragment(`<br><br>${inlineHtml}`);
+            range.insertNode(frag);
           }
         }
 
+        editableContainer.dispatchEvent(new CustomEvent("medsetup:richtext-dom-updated", { bubbles: true }));
         editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
         editableContainer.dispatchEvent(new Event("change", { bubbles: true }));
 
@@ -336,16 +422,40 @@ export function AISelectionAssistant() {
             : "Conteúdo inserido abaixo! (Pressione Ctrl+Z para desfazer)",
           { icon: "✨" }
         );
-      } else {
-        // Element is read-only: NEVER inject raw unmanaged DOM nodes!
-        navigator.clipboard?.writeText(resultText);
-        toast.success(
-          "Copiado para a área de transferência! (Clique no texto para editar e colar)",
-          { icon: "📋" }
-        );
+        handleClose();
+        return;
+      } catch (domErr) {
+        console.warn("Fallback to custom event after DOM range error:", domErr);
       }
     }
 
+    // 3. Fallback: Dispatch custom event for state-driven viewers (Tutoria, Transcrição, Ateliê, etc.)
+    const applyEvent = new CustomEvent("medsetup:apply-ai-selection", {
+      bubbles: true,
+      cancelable: true,
+      detail: {
+        mode,
+        selectedText: selectionData.selectedText,
+        resultText,
+        targetElement: selectionData.element,
+      },
+    });
+
+    const dispatched = window.dispatchEvent(applyEvent);
+    if (!dispatched || applyEvent.defaultPrevented) {
+      toast.success(
+        mode === "replace"
+          ? "Texto substituído diretamente no documento!"
+          : "Conteúdo inserido abaixo diretamente no documento!",
+        { icon: "✨" }
+      );
+      handleClose();
+      return;
+    }
+
+    // 4. Ultimate fallback: copy to clipboard
+    navigator.clipboard?.writeText(resultText);
+    toast.success("Copiado para a área de transferência!", { icon: "📋" });
     handleClose();
   };
 
@@ -366,6 +476,7 @@ export function AISelectionAssistant() {
     setResultText(null);
     setIsLoading(false);
     setLoadingAction(null);
+    setAiTab("edit");
   };
 
   // Convert raw markdown result into beautiful formatted HTML
@@ -443,94 +554,143 @@ export function AISelectionAssistant() {
       {/* 2. Popover Modal with Generated Result and Quick Action Buttons */}
       {resultText && (
         <div
-          style={{
-            position: "fixed",
-            left: `${position.x}px`,
-            top: `${Math.min(window.innerHeight - 380, Math.max(20, position.y))}px`,
-            transform: "translate(-50%, 0)",
-            zIndex: 9999,
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/25 backdrop-blur-[1px] animate-in fade-in"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) handleClose();
           }}
-          className="w-[92vw] max-w-xl bg-white dark:bg-[#1A1D27] rounded-2xl shadow-2xl border-2 border-indigo-500/40 p-4 sm:p-5 space-y-3.5 animate-in fade-in zoom-in-95"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800">
-            <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
-                {resultAction === "expand" ? (
-                  <Sparkles className="w-4 h-4" />
-                ) : (
-                  <Lightbulb className="w-4 h-4" />
-                )}
+          <div className="w-[95vw] max-w-3xl max-h-[88vh] flex flex-col bg-white dark:bg-[#1A1D27] rounded-2xl shadow-2xl border-2 border-indigo-500/40 p-5 sm:p-6 gap-3.5 animate-in zoom-in-95">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+                  {resultAction === "expand" ? (
+                    <Sparkles className="w-4 h-4" />
+                  ) : (
+                    <Lightbulb className="w-4 h-4" />
+                  )}
+                </span>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">
+                    {resultAction === "expand" ? "Conteúdo Expandido com IA" : "Explicação do Conceito com IA"}
+                  </h4>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    Formatação enriquecida • Pronto para inserir ou substituir
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClose}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Original selection snippet */}
+            {selectionData?.selectedText && (
+              <div className="text-[11.5px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-[#12141c] px-3 py-2 rounded-xl border border-gray-100 dark:border-gray-800 line-clamp-2 shrink-0">
+                <span className="font-semibold text-gray-400 mr-1">Trecho original:</span>
+                &quot;{selectionData.selectedText}&quot;
+              </div>
+            )}
+
+            {/* Subheader: Edit Tab vs Preview Tab */}
+            <div className="flex items-center justify-between gap-2 pt-0.5 shrink-0">
+              <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <Edit3 className="w-3.5 h-3.5" />
+                Edite ou ajuste o texto antes de aplicar:
               </span>
-              <div>
-                <h4 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">
-                  {resultAction === "expand" ? "Conteúdo Expandido com IA" : "Explicação do Conceito com IA"}
-                </h4>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Formatação enriquecida • Pronto para inserir ou substituir
-                </p>
+              <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setAiTab("edit")}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                    aiTab === "edit"
+                      ? "bg-white dark:bg-[#1A1D27] text-indigo-600 dark:text-indigo-400 shadow-2xs"
+                      : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>Editar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiTab("preview")}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                    aiTab === "preview"
+                      ? "bg-white dark:bg-[#1A1D27] text-indigo-600 dark:text-indigo-400 shadow-2xs"
+                      : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                  }`}
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>Prévia</span>
+                </button>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleClose}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+            {/* Generated Text Content - Editable Textarea or Formatted Preview */}
+            {aiTab === "edit" ? (
+              <div className="flex-1 min-h-0 flex flex-col gap-1.5">
+                <textarea
+                  value={resultText || ""}
+                  onChange={(e) => setResultText(e.target.value)}
+                  rows={10}
+                  style={{ minHeight: "180px", maxHeight: "42vh" }}
+                  className="w-full flex-1 p-4 rounded-xl bg-gray-50/90 dark:bg-[#12141c] text-sm sm:text-[15px] leading-relaxed text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 font-sans resize-y shadow-inner transition-all placeholder-gray-400"
+                  placeholder="Edite, complemente ou refine o texto aqui antes de substituir ou inserir..."
+                />
+                <div className="flex items-center justify-between px-1 text-[10.5px] text-gray-400 dark:text-gray-500 shrink-0">
+                  <span>Dica: você pode alterar qualquer palavra ou adicionar observações antes de aplicar.</span>
+                  <span>{(resultText || "").length} caracteres</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-[180px] max-h-[42vh] overflow-y-auto p-4 rounded-xl bg-gray-50/80 dark:bg-[#12141c] text-sm sm:text-[15px] leading-relaxed text-gray-800 dark:text-gray-200 border border-gray-200/80 dark:border-gray-800/80 font-sans select-text space-y-2">
+                <div
+                  className="formatted-ai-result leading-relaxed space-y-2"
+                  dangerouslySetInnerHTML={{ __html: formattedResultHtml }}
+                />
+              </div>
+            )}
 
-          {/* Original selection snippet */}
-          {selectionData?.selectedText && (
-            <div className="text-[11.5px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-[#12141c] px-3 py-2 rounded-xl border border-gray-100 dark:border-gray-800 line-clamp-2">
-              <span className="font-semibold text-gray-400 mr-1">Trecho original:</span>
-              &quot;{selectionData.selectedText}&quot;
-            </div>
-          )}
+            {/* Action Buttons (Always visible at bottom) */}
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-gray-100 dark:border-gray-800 flex-wrap shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleApply("replace")}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-xs cursor-pointer"
+                  title="Substituir o trecho selecionado por este conteúdo formatado"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Substituir Seleção</span>
+                </button>
 
-          {/* Generated Text Content - Visually Formatted (No raw asterisks or monospace!) */}
-          <div className="max-h-72 overflow-y-auto p-4 rounded-xl bg-gray-50/80 dark:bg-[#12141c] text-xs sm:text-sm leading-relaxed text-gray-800 dark:text-gray-200 border border-gray-200/80 dark:border-gray-800/80 font-sans select-text space-y-2">
-            <div
-              className="formatted-ai-result leading-relaxed space-y-2"
-              dangerouslySetInnerHTML={{ __html: formattedResultHtml }}
-            />
-          </div>
+                <button
+                  type="button"
+                  onClick={() => handleApply("insertBelow")}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+                  title="Manter o trecho original e inserir este conteúdo formatado logo abaixo"
+                >
+                  <CornerDownLeft className="w-3.5 h-3.5" />
+                  <span>Inserir Abaixo</span>
+                </button>
+              </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleApply("replace")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-xs cursor-pointer"
-                title="Substituir o trecho selecionado por este conteúdo formatado"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Substituir Seleção</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleApply("insertBelow")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
-                title="Manter o trecho original e inserir este conteúdo formatado logo abaixo"
-              >
-                <CornerDownLeft className="w-3.5 h-3.5" />
-                <span>Inserir Abaixo</span>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handleCopyResult}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors cursor-pointer"
-                title="Copiar texto formatado"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? "Copiado" : "Copiar"}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleCopyResult}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors cursor-pointer"
+                  title="Copiar texto formatado"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? "Copiado" : "Copiar"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

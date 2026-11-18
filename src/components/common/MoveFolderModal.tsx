@@ -10,7 +10,7 @@ interface MoveFolderModalProps {
   onClose: () => void;
   folder: FolderType | null;
   folders: FolderType[];
-  type: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes";
+  type: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes" | "caderno-erros";
   onMove: (folderId: string, targetParentId: string | null) => void;
 }
 

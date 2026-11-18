@@ -321,21 +321,21 @@ export default function SimuladoAnhembiView({
           )}
         </div>
 
-        {/* 3. GABARITO GERAL (TABLE COM BOTÕES MAIORES - FIXO NA PARTE INFERIOR) */}
-        <div className="mt-auto border-t border-gray-200 bg-[#FAFAFA] px-6 sm:px-8 py-4 shrink-0">
-          <div className="w-full space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-gray-700">
-              <span className="leading-snug text-xs sm:text-sm">
+        {/* 3. GABARITO GERAL (TABELA COMPACTA FIXA NA PARTE INFERIOR) */}
+        <div className="mt-auto border-t border-gray-200 bg-[#FAFAFA] px-4 sm:px-6 py-2.5 shrink-0">
+          <div className="w-full space-y-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs text-gray-700">
+              <span className="leading-snug text-xs sm:text-[13px]">
                 Confira todas as suas respostas antes de concluir a prova. As marcadas em{" "}
                 <strong className="text-red-600 font-bold">vermelho</strong> estão com a resposta em branco.
               </span>
-              <span className="shrink-0 font-bold text-red-600 self-start sm:self-auto bg-red-50 border border-red-200 px-3 py-1 rounded-lg text-xs">
+              <span className="shrink-0 font-bold text-red-600 self-start sm:self-auto bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-md text-[11px]">
                 {unansweredCount} em branco
               </span>
             </div>
 
-            <div className="overflow-x-auto pt-1">
-              <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 lg:grid-cols-12 gap-2 sm:gap-2.5 min-w-[340px]">
+            <div className="overflow-x-auto pt-0.5">
+              <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 xl:grid-cols-14 gap-1.5 sm:gap-2 min-w-[320px]">
                 {simulado.questions.map((q, idx) => {
                   const studentAns = answers[idx]?.trim() || "";
                   const isAnswered = studentAns.length > 0;
@@ -352,11 +352,11 @@ export default function SimuladoAnhembiView({
                       type="button"
                       onClick={() => setCurrentIdx(idx)}
                       className={cn(
-                        "h-10 sm:h-11 min-w-[42px] sm:min-w-[46px] rounded-xl border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all cursor-pointer shadow-xs",
+                        "h-7 sm:h-8 min-w-[32px] sm:min-w-[36px] rounded-lg border flex items-center justify-center font-bold text-[11px] sm:text-xs transition-all cursor-pointer shadow-2xs",
                         !isAnswered
                           ? "bg-[#D9534F] text-white border-red-600 hover:brightness-110 active:scale-95"
                           : isCurrent
-                          ? "bg-[#C5D9F1] border-2 border-blue-600 text-blue-950 font-black ring-2 ring-blue-300"
+                          ? "bg-[#C5D9F1] border-2 border-blue-600 text-blue-950 font-bold ring-2 ring-blue-300"
                           : "bg-white border-gray-300 text-gray-800 hover:bg-gray-100"
                       )}
                       title={`Questão ${q.number || idx + 1}: ${isAnswered ? `Resposta ${letter}` : "Em branco"}`}

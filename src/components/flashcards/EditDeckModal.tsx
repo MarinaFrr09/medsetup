@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, Deck, Flashcard } from "@/stores/useAppStore";
-import { renderFormattedText } from "@/lib/questionUtils";
+import { renderFormattedText, cleanFlashcardText } from "@/lib/questionUtils";
 import toast from "react-hot-toast";
 
 interface EditDeckModalProps {
@@ -101,15 +101,18 @@ export default function EditDeckModal({
   };
 
   const handleAddNewCard = () => {
-    if (!newFront.trim() || !newBack.trim()) {
+    const cleanFront = cleanFlashcardText(newFront.trim());
+    const cleanBack = cleanFlashcardText(newBack.trim());
+
+    if (!cleanFront || !cleanBack) {
       toast.error("Preencha a frente e o verso do cartão.");
       return;
     }
 
     const newCard: Flashcard = {
       id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      front: newFront.trim(),
-      back: newBack.trim(),
+      front: cleanFront,
+      back: cleanBack,
     };
 
     addCardsToDeck(deck.id, [newCard]);
@@ -126,14 +129,17 @@ export default function EditDeckModal({
   };
 
   const handleSaveEditCard = (index: number) => {
-    if (!editFront.trim() || !editBack.trim()) {
+    const cleanFront = cleanFlashcardText(editFront.trim());
+    const cleanBack = cleanFlashcardText(editBack.trim());
+
+    if (!cleanFront || !cleanBack) {
       toast.error("Frente e verso não podem ficar vazios.");
       return;
     }
 
     updateFlashcardInDeck(deck.id, index, {
-      front: editFront.trim(),
-      back: editBack.trim(),
+      front: cleanFront,
+      back: cleanBack,
     });
 
     toast.success("Cartão atualizado!");
@@ -154,12 +160,20 @@ export default function EditDeckModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="flex w-full max-w-4xl flex-col max-h-[92vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] overflow-hidden my-auto"
+        className="flex w-full max-w-4xl flex-col max-h-[92vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] overflow-hidden my-auto cursor-default"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2d3a] px-6 py-4 bg-gradient-to-r from-purple-50/50 via-indigo-50/30 to-transparent dark:from-purple-950/20 dark:via-indigo-950/10 dark:to-transparent">

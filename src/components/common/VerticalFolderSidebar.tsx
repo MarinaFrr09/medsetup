@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Folder,
   FolderOpen,
@@ -15,19 +16,27 @@ import {
   ArrowRight,
   GripVertical,
   MoreVertical,
+  HelpCircle,
+  Brain,
+  FileText,
+  FileQuestion,
+  Inbox,
+  BookX,
 } from "lucide-react";
 import { useAppStore, Folder as FolderType } from "@/stores/useAppStore";
 import FolderManagerModal from "./FolderManagerModal";
 import MoveFolderModal, { isDescendant } from "./MoveFolderModal";
+import { cleanQuestionTitle } from "@/lib/questionUtils";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 interface VerticalFolderSidebarProps {
   selectedFolderId: string | null;
   onSelectFolder: (folderId: string | null) => void;
-  type: "flashcards" | "questions" | "mindmaps" | "anotacoes";
+  type: "flashcards" | "questions" | "mindmaps" | "anotacoes" | "caderno-erros";
   extraFilterSlot?: React.ReactNode;
   className?: string;
+  onSelectItem?: (itemId: string) => void;
 }
 
 export default function VerticalFolderSidebar({
@@ -36,13 +45,55 @@ export default function VerticalFolderSidebar({
   type,
   extraFilterSlot,
   className,
+  onSelectItem,
 }: VerticalFolderSidebarProps) {
-  const { folders, flashcardDecks, questions, mindmaps, anotacoes, updateFolder, deleteFolder } = useAppStore();
+  const {
+    folders,
+    flashcardDecks,
+    questions,
+    mindmaps,
+    anotacoes,
+    cadernoErrors,
+    updateFolder,
+    deleteFolder,
+    deleteQuestion,
+    clearQuestionsByFolder,
+    deleteDeck,
+    deleteDecks,
+    deleteMindMap,
+    deleteAnotacao,
+    deleteCadernoError,
+    moveMindMapToFolder,
+    moveDeckToFolder,
+    moveQuestionToFolder,
+    moveCadernoErrorToFolder,
+    updateAnotacao,
+  } = useAppStore();
+
+  const router = useRouter();
+
+  const handleItemClick = (e: React.MouseEvent, itemId: string) => {
+    e.stopPropagation();
+    if (onSelectItem) {
+      onSelectItem(itemId);
+      return;
+    }
+    if (type === "mindmaps") {
+      if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+        router.push(`/mindmaps/default?id=${encodeURIComponent(itemId)}`);
+      } else {
+        router.push(`/mindmaps/${itemId}`);
+      }
+    }
+  };
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [folderToEdit, setFolderToEdit] = useState<FolderType | null>(null);
   const [modalParentId, setModalParentId] = useState<string | null>(null);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Record<string, boolean>>({});
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [isAllFilesExpanded, setIsAllFilesExpanded] = useState(false);
+  const [expandedFilesByFolder, setExpandedFilesByFolder] = useState<Record<string, boolean>>({});
 
   // Move Folder Modal state
   const [moveModalFolder, setMoveModalFolder] = useState<FolderType | null>(null);
@@ -50,6 +101,19 @@ export default function VerticalFolderSidebar({
   // Discrete action menu state
   const [openMenuFolderId, setOpenMenuFolderId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Clear / Delete confirmation modal
+  const [clearConfirmModal, setClearConfirmModal] = useState<{
+    isOpen: boolean;
+    folderId: string | null;
+    folderName: string;
+    itemCount: number;
+  }>({
+    isOpen: false,
+    folderId: null,
+    folderName: "",
+    itemCount: 0,
+  });
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -65,13 +129,17 @@ export default function VerticalFolderSidebar({
     };
   }, [openMenuFolderId]);
 
-  // Drag and Drop state & ref for synchronous tracking
+  // Drag and Drop state & ref for synchronous tracking (both Folders and Items)
   const draggedFolderIdRef = useRef<string | null>(null);
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
+  const draggedItemIdRef = useRef<string | null>(null);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [isOverRootDropZone, setIsOverRootDropZone] = useState(false);
+  const [isOverUnassignedDropZone, setIsOverUnassignedDropZone] = useState(false);
 
-  const relevantFolders = folders.filter((f) => f.type === type);
+  const relevantFolders = useMemo(() => folders.filter((f) => f.type === type), [folders, type]);
+  const relevantFolderIds = useMemo(() => new Set(relevantFolders.map((f) => f.id)), [relevantFolders]);
 
   // Total count for "Todas as Pastas"
   const totalCount =
@@ -81,7 +149,80 @@ export default function VerticalFolderSidebar({
       ? questions.length
       : type === "anotacoes"
       ? (anotacoes || []).length
+      : type === "caderno-erros"
+      ? (cadernoErrors || []).length
       : (mindmaps || []).length;
+
+  const getDefaultFolderId = () => {
+    if (type === "questions") return "folder-q-geral";
+    if (type === "flashcards") return "folder-fc-geral";
+    if (type === "mindmaps") return "folder-mm-geral";
+    if (type === "caderno-erros") return "caderno-geral";
+    return "anot-macetes";
+  };
+
+  const getEffectiveItemFolderId = (rawFolderId?: string) => {
+    const fallback = getDefaultFolderId();
+    if (!rawFolderId || rawFolderId === "folder-geral" || !relevantFolderIds.has(rawFolderId)) {
+      return fallback;
+    }
+    return rawFolderId;
+  };
+
+  // Retrieve direct items for a folder or null (all) or unassigned
+  const getFolderDirectItems = (folderId: string | null): any[] => {
+    const list =
+      type === "questions"
+        ? questions
+        : type === "flashcards"
+        ? flashcardDecks
+        : type === "mindmaps"
+        ? mindmaps || []
+        : type === "caderno-erros"
+        ? cadernoErrors || []
+        : anotacoes || [];
+
+    if (folderId === null) return list;
+    if (folderId === "unassigned") {
+      return list.filter((item: any) => !item.folderId || !relevantFolderIds.has(item.folderId));
+    }
+    return list.filter((item: any) => getEffectiveItemFolderId(item.folderId) === folderId);
+  };
+
+  const unassignedItems = useMemo(() => getFolderDirectItems("unassigned"), [
+    type,
+    questions,
+    flashcardDecks,
+    mindmaps,
+    anotacoes,
+    cadernoErrors,
+    relevantFolderIds,
+  ]);
+  const unassignedCount = unassignedItems.length;
+
+  const getItemTitle = (item: any): string => {
+    if (type === "questions") {
+      return cleanQuestionTitle(item.text) || "Questão sem título";
+    }
+    if (type === "flashcards") {
+      const count = item.cardCount || item.cards?.length || 0;
+      return `${item.name} (${count} cards)`;
+    }
+    if (type === "caderno-erros") {
+      return item.originalQuestion?.text ? cleanQuestionTitle(item.originalQuestion.text) : (item.userNotes || item.pontoCego || "Questão anotada");
+    }
+    return item.title || item.name || "Item sem título";
+  };
+
+  const getItemIcon = () => {
+    if (type === "questions") return HelpCircle;
+    if (type === "flashcards") return Layers;
+    if (type === "mindmaps") return Brain;
+    if (type === "caderno-erros") return BookX;
+    return FileText;
+  };
+
+  const ItemIcon = getItemIcon();
 
   // Count items inside a folder and all its descendants recursively
   const getItemCount = (folderId: string) => {
@@ -90,29 +231,67 @@ export default function VerticalFolderSidebar({
       return [id, ...direct.flatMap(getDescendantIds)];
     };
     const targetFolderIds = new Set(getDescendantIds(folderId));
+    const list =
+      type === "questions"
+        ? questions
+        : type === "flashcards"
+        ? flashcardDecks
+        : type === "mindmaps"
+        ? mindmaps || []
+        : type === "caderno-erros"
+        ? cadernoErrors || []
+        : anotacoes || [];
 
-    if (type === "flashcards") {
-      return flashcardDecks.filter((d) =>
-        targetFolderIds.has(d.folderId || "folder-geral")
-      ).length;
-    } else if (type === "questions") {
-      return questions.filter((q) =>
-        targetFolderIds.has(q.folderId || "folder-geral")
-      ).length;
-    } else if (type === "anotacoes") {
-      return (anotacoes || []).filter((a) =>
-        targetFolderIds.has(a.folderId || "folder-geral")
-      ).length;
-    } else {
-      return (mindmaps || []).filter((m) =>
-        targetFolderIds.has(m.folderId || "folder-geral")
-      ).length;
-    }
+    return list.filter((item: any) =>
+      targetFolderIds.has(getEffectiveItemFolderId(item.folderId))
+    ).length;
   };
 
   const toggleExpand = (e: React.MouseEvent, folderId: string) => {
     e.stopPropagation();
     setExpandedFolderIds((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
+  const toggleFilesExpand = (e: React.MouseEvent, folderId: string) => {
+    e.stopPropagation();
+    setExpandedFilesByFolder((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
+  const handleDeleteItem = (e: React.MouseEvent, itemId: string) => {
+    e.stopPropagation();
+    if (type === "questions") {
+      deleteQuestion(itemId);
+      toast.success("Questão movida para a lixeira.");
+    } else if (type === "flashcards") {
+      deleteDeck(itemId);
+      toast.success("Baralho movido para a lixeira.");
+    } else if (type === "mindmaps") {
+      deleteMindMap(itemId);
+      toast.success("Mapa mental movido para a lixeira.");
+    } else if (type === "anotacoes") {
+      deleteAnotacao(itemId);
+      toast.success("Anotação movida para a lixeira.");
+    } else if (type === "caderno-erros") {
+      deleteCadernoError(itemId);
+      toast.success("Anotação de erro removida.");
+    }
+  };
+
+  const handleConfirmClear = () => {
+    const { folderId, itemCount } = clearConfirmModal;
+    if (type === "questions") {
+      clearQuestionsByFolder(folderId);
+      toast.success(`${itemCount} questões movidas para a lixeira.`);
+    } else if (type === "flashcards") {
+      const items = getFolderDirectItems(folderId);
+      deleteDecks(items.map((d: any) => d.id));
+      toast.success(`${itemCount} baralhos movidos para a lixeira.`);
+    } else if (type === "caderno-erros") {
+      const items = getFolderDirectItems(folderId);
+      items.forEach((it: any) => deleteCadernoError(it.id));
+      toast.success(`${itemCount} questões de erro removidas.`);
+    }
+    setClearConfirmModal({ isOpen: false, folderId: null, folderName: "", itemCount: 0 });
   };
 
   const handleDeleteFolder = (e: React.MouseEvent, folder: FolderType) => {
@@ -174,23 +353,83 @@ export default function VerticalFolderSidebar({
     }
   };
 
+  // Move an item (mindmap, deck, question, anotacao, caderno-erro) into a target folder
+  const handleMoveItemToFolder = (itemId: string, targetFolderId: string | undefined) => {
+    if (!itemId) return;
+    const folderObj = targetFolderId ? folders.find((f) => f.id === targetFolderId) : undefined;
+    const folderLabel = folderObj?.name || "Geral / Sem Pasta";
+
+    if (type === "mindmaps") {
+      moveMindMapToFolder(itemId, targetFolderId);
+      toast.success(`Mapa mental movido para "${folderLabel}"!`, { icon: "🧠" });
+    } else if (type === "flashcards") {
+      moveDeckToFolder(itemId, targetFolderId);
+      toast.success(`Baralho movido para "${folderLabel}"!`, { icon: "🗂️" });
+    } else if (type === "questions") {
+      moveQuestionToFolder(itemId, targetFolderId);
+      toast.success(`Questão movida para "${folderLabel}"!`, { icon: "❓" });
+    } else if (type === "anotacoes") {
+      updateAnotacao(itemId, { folderId: targetFolderId || "anot-macetes" });
+      toast.success(`Anotação movida para "${folderLabel}"!`, { icon: "📝" });
+    } else if (type === "caderno-erros") {
+      moveCadernoErrorToFolder(itemId, targetFolderId);
+      toast.success(`Item movido para "${folderLabel}"!`, { icon: "📕" });
+    }
+
+    if (targetFolderId) {
+      setExpandedFilesByFolder((prev) => ({ ...prev, [targetFolderId]: true }));
+    }
+  };
+
   // Drag and Drop handlers
   const handleDragStart = (e: React.DragEvent, folder: FolderType) => {
+    e.stopPropagation();
     draggedFolderIdRef.current = folder.id;
     setDraggedFolderId(folder.id);
+    draggedItemIdRef.current = null;
+    setDraggedItemId(null);
     e.dataTransfer.setData("text/plain", folder.id);
     e.dataTransfer.setData("application/studyflow-folder-id", folder.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleItemDragStart = (e: React.DragEvent, itemId: string) => {
+    e.stopPropagation();
+    draggedItemIdRef.current = itemId;
+    setDraggedItemId(itemId);
+    draggedFolderIdRef.current = null;
+    setDraggedFolderId(null);
+    e.dataTransfer.setData("text/plain", itemId);
+    e.dataTransfer.setData("application/studyflow-item-id", itemId);
+    e.dataTransfer.setData("application/studyflow-item-type", type);
     e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragEnd = () => {
     draggedFolderIdRef.current = null;
     setDraggedFolderId(null);
+    draggedItemIdRef.current = null;
+    setDraggedItemId(null);
     setDragOverFolderId(null);
     setIsOverRootDropZone(false);
+    setIsOverUnassignedDropZone(false);
+  };
+
+  const isDraggingItemEvent = (e: React.DragEvent): boolean => {
+    return Boolean(
+      draggedItemIdRef.current ||
+        draggedItemId ||
+        Array.from(e.dataTransfer?.types || []).includes("application/studyflow-item-id")
+    );
   };
 
   const handleDragEnterFolder = (e: React.DragEvent, targetFolder: FolderType) => {
+    if (isDraggingItemEvent(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOverFolderId(targetFolder.id);
+      return;
+    }
     const currentDraggedId = draggedFolderIdRef.current || draggedFolderId;
     if (
       currentDraggedId &&
@@ -204,6 +443,15 @@ export default function VerticalFolderSidebar({
   };
 
   const handleDragOverFolder = (e: React.DragEvent, targetFolder: FolderType) => {
+    if (isDraggingItemEvent(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverFolderId !== targetFolder.id) {
+        setDragOverFolderId(targetFolder.id);
+      }
+      return;
+    }
     const currentDraggedId = draggedFolderIdRef.current || draggedFolderId;
     if (
       currentDraggedId &&
@@ -231,6 +479,18 @@ export default function VerticalFolderSidebar({
   const handleDropOnFolder = (e: React.DragEvent, targetFolder: FolderType) => {
     e.preventDefault();
     e.stopPropagation();
+
+    const droppedItemId =
+      e.dataTransfer.getData("application/studyflow-item-id") ||
+      draggedItemIdRef.current ||
+      draggedItemId;
+
+    if (droppedItemId) {
+      handleMoveItemToFolder(droppedItemId, targetFolder.id);
+      handleDragEnd();
+      return;
+    }
+
     const sourceId =
       e.dataTransfer.getData("application/studyflow-folder-id") ||
       e.dataTransfer.getData("text/plain") ||
@@ -244,9 +504,7 @@ export default function VerticalFolderSidebar({
     ) {
       handleMoveFolder(sourceId, targetFolder.id);
     }
-    draggedFolderIdRef.current = null;
-    setDraggedFolderId(null);
-    setDragOverFolderId(null);
+    handleDragEnd();
   };
 
   // Root drop zone handlers
@@ -291,15 +549,13 @@ export default function VerticalFolderSidebar({
       draggedFolderIdRef.current ||
       draggedFolderId;
 
-    if (sourceId) {
+    if (sourceId && !draggedItemIdRef.current) {
       handleMoveFolder(sourceId, null);
     }
-    draggedFolderIdRef.current = null;
-    setIsOverRootDropZone(false);
-    setDraggedFolderId(null);
+    handleDragEnd();
   };
 
-  // Recursive tree rendering function - Minimalist & Sleek
+  // Recursive tree rendering function - Minimalist & Sleek with expandable files preview
   const renderFolderNode = (folder: FolderType, depth: number = 0) => {
     const isSelected = selectedFolderId === folder.id;
     const count = getItemCount(folder.id);
@@ -309,6 +565,9 @@ export default function VerticalFolderSidebar({
     const isExpanded = expandedFolderIds[folder.id] ?? true;
     const isDragTarget = dragOverFolderId === folder.id;
     const isBeingDragged = draggedFolderId === folder.id;
+    const directItems = getFolderDirectItems(folder.id);
+    const hasDirectItems = directItems.length > 0;
+    const areFilesExpanded = expandedFilesByFolder[folder.id] ?? false;
 
     return (
       <div key={folder.id} className="space-y-0.5">
@@ -339,7 +598,7 @@ export default function VerticalFolderSidebar({
           title="Arraste para mover para outra pasta, ou clique para filtrar"
         >
           {/* Left item contents */}
-          <div className={`flex items-center gap-1.5 min-w-0 flex-1 ${draggedFolderId ? "pointer-events-none" : ""}`}>
+          <div className={`flex items-center gap-1.5 min-w-0 flex-1 ${draggedFolderId || draggedItemId ? "pointer-events-none" : ""}`}>
             {/* Subtle Grip handle (only on hover) */}
             <GripVertical
               size={12}
@@ -352,12 +611,9 @@ export default function VerticalFolderSidebar({
                 type="button"
                 onClick={(e) => toggleExpand(e, folder.id)}
                 className="p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded pointer-events-auto cursor-pointer shrink-0 transition-colors"
+                title={isExpanded ? "Recolher subpastas" : "Expandir subpastas"}
               >
-                {isExpanded ? (
-                  <ChevronDown size={13} />
-                ) : (
-                  <ChevronRight size={13} />
-                )}
+                {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </button>
             ) : depth > 0 ? (
               <CornerDownRight size={11} className="text-gray-400/70 shrink-0 mx-0.5" />
@@ -396,6 +652,21 @@ export default function VerticalFolderSidebar({
               {count}
             </span>
 
+            {/* Direct expand files toggle button if has direct items */}
+            {hasDirectItems && (
+              <button
+                type="button"
+                onClick={(e) => toggleFilesExpand(e, folder.id)}
+                className={cn(
+                  "p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer",
+                  areFilesExpanded ? "text-blue-600 dark:text-blue-400" : "opacity-0 group-hover:opacity-100"
+                )}
+                title={areFilesExpanded ? "Ocultar arquivos na coluna" : "Ver arquivos na coluna"}
+              >
+                {areFilesExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              </button>
+            )}
+
             {/* 3-dots action menu button (discreet, shows on hover or active) */}
             <div className="relative">
               <button
@@ -419,7 +690,7 @@ export default function VerticalFolderSidebar({
                 <div
                   ref={menuRef}
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-xl shadow-xl py-1 z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100"
+                  className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-xl shadow-xl py-1 z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100"
                 >
                   <button
                     type="button"
@@ -454,6 +725,26 @@ export default function VerticalFolderSidebar({
                     <Edit2 size={13} className="text-gray-500 dark:text-gray-400" />
                     <span>Renomear pasta</span>
                   </button>
+
+                  {directItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        setOpenMenuFolderId(null);
+                        setClearConfirmModal({
+                          isOpen: true,
+                          folderId: folder.id,
+                          folderName: `Pasta "${folder.name}"`,
+                          itemCount: directItems.length,
+                        });
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={13} className="text-amber-500" />
+                      <span>Esvaziar ({directItems.length} itens)</span>
+                    </button>
+                  )}
+
                   <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                   <button
                     type="button"
@@ -472,6 +763,66 @@ export default function VerticalFolderSidebar({
           </div>
         </div>
 
+        {/* Visualização de Arquivos na Coluna (Expandable Items List) */}
+        {hasDirectItems && areFilesExpanded && (
+          <div
+            style={{ paddingLeft: `${16 + depth * 14}px` }}
+            className="border-l border-gray-200 dark:border-gray-800/80 ml-3.5 pl-1 my-0.5 space-y-0.5 max-h-56 overflow-y-auto pr-1"
+          >
+            <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500 px-1 py-0.5">
+              <span>Arquivos ({directItems.length})</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setClearConfirmModal({
+                    isOpen: true,
+                    folderId: folder.id,
+                    folderName: `Pasta "${folder.name}"`,
+                    itemCount: directItems.length,
+                  });
+                }}
+                className="text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                title="Excluir todos os arquivos desta pasta"
+              >
+                Esvaziar
+              </button>
+            </div>
+            {directItems.map((item: any) => {
+              const itemTitle = getItemTitle(item);
+              const isItemDragged = draggedItemId === item.id;
+              return (
+                <div
+                  key={item.id}
+                  draggable={true}
+                  onDragStart={(e) => handleItemDragStart(e, item.id)}
+                  onDragEnd={handleDragEnd}
+                  onClick={(e) => handleItemClick(e, item.id)}
+                  className={cn(
+                    "group/file flex items-center justify-between px-2 py-1 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100/90 dark:hover:bg-gray-800/60 hover:text-gray-900 dark:hover:text-white transition-colors cursor-grab active:cursor-grabbing select-none",
+                    isItemDragged && "opacity-40 border border-dashed border-purple-400"
+                  )}
+                  title={`Arraste para mover para outra pasta ou clique para abrir "${itemTitle}"`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <GripVertical size={11} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/file:opacity-100 transition-opacity shrink-0 -ml-1" />
+                    <ItemIcon size={12} className="text-gray-400 shrink-0 group-hover/file:text-blue-500 transition-colors" />
+                    <span className="truncate text-[12px]">{itemTitle}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteItem(e, item.id)}
+                    className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 opacity-70 sm:opacity-0 sm:group-hover/file:opacity-100 transition-opacity cursor-pointer shrink-0 ml-1"
+                    title="Excluir este arquivo"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Nested Subfolders Rendered Recursively */}
         {hasSubfolders && isExpanded && (
           <div className="space-y-0.5 border-l border-gray-200 dark:border-gray-800/80 ml-3.5 pl-1 my-0.5">
@@ -484,8 +835,12 @@ export default function VerticalFolderSidebar({
 
   const rootFolders = relevantFolders.filter((f) => !f.parentId);
   const activeFolderName = selectedFolderId
-    ? relevantFolders.find((f) => f.id === selectedFolderId)?.name || "Pasta Selecionada"
+    ? selectedFolderId === "unassigned"
+      ? "Sem Pasta / Geral"
+      : relevantFolders.find((f) => f.id === selectedFolderId)?.name || "Pasta Selecionada"
     : "Todas as Pastas";
+
+  const allItems = getFolderDirectItems(null);
 
   return (
     <aside className={cn("w-full lg:w-64 xl:w-72 shrink-0 flex flex-col space-y-3", className)}>
@@ -539,27 +894,26 @@ export default function VerticalFolderSidebar({
               onDragOver={handleDragOverRootZone}
               onDragLeave={handleDragLeaveRootZone}
               onDrop={handleDropOnRootZone}
-              className={`rounded-lg transition-all ${
+              className={`group/root relative rounded-lg transition-all ${
                 isOverRootDropZone
                   ? "ring-1 ring-gray-400 dark:ring-gray-500 bg-gray-100/90 dark:bg-gray-800/80"
                   : ""
               }`}
             >
-              <button
-                type="button"
+              <div
                 onClick={() => {
                   onSelectFolder(null);
                   if (typeof window !== "undefined" && window.innerWidth < 768) {
                     setIsMobileExpanded(false);
                   }
                 }}
-                className={`w-full flex items-center justify-between px-2.5 py-2 sm:py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer min-h-[40px] sm:min-h-0 ${
+                className={`w-full flex items-center justify-between px-2.5 py-2 sm:py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer min-h-[40px] sm:min-h-0 select-none ${
                   selectedFolderId === null
                     ? "bg-gray-200/80 dark:bg-[#222634] text-gray-900 dark:text-white font-semibold"
                     : "text-gray-600 dark:text-gray-300 hover:bg-gray-100/70 dark:hover:bg-gray-800/40 hover:text-gray-900 dark:hover:text-white"
                 }`}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <Layers
                     size={15}
                     className={`shrink-0 ${
@@ -573,17 +927,270 @@ export default function VerticalFolderSidebar({
                   </span>
                 </div>
 
-                <span
-                  className={`text-xs tabular-nums font-normal shrink-0 ${
-                    selectedFolderId === null
-                      ? "text-gray-900 dark:text-gray-100 font-medium"
-                      : "text-gray-400 dark:text-gray-500"
+                <div className="flex items-center gap-1 shrink-0">
+                  <span
+                    className={`text-xs tabular-nums font-normal ${
+                      selectedFolderId === null
+                        ? "text-gray-900 dark:text-gray-100 font-medium"
+                        : "text-gray-400 dark:text-gray-500"
+                    }`}
+                  >
+                    {totalCount}
+                  </span>
+
+                  {/* Toggle expand all items */}
+                  {totalCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsAllFilesExpanded(!isAllFilesExpanded);
+                      }}
+                      className={cn(
+                        "p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer",
+                        isAllFilesExpanded ? "text-blue-600 dark:text-blue-400" : "opacity-0 group-hover/root:opacity-100"
+                      )}
+                      title={isAllFilesExpanded ? "Ocultar arquivos na coluna" : "Ver todos os arquivos na coluna"}
+                    >
+                      {isAllFilesExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </button>
+                  )}
+
+                  {/* 3-dots action menu for Todas as Pastas */}
+                  {totalCount > 0 && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuFolderId((prev) => (prev === "all-folders" ? null : "all-folders"));
+                        }}
+                        className={cn(
+                          "p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-700/60 transition-opacity cursor-pointer",
+                          openMenuFolderId === "all-folders"
+                            ? "opacity-100 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                            : "opacity-0 group-hover/root:opacity-100 focus:opacity-100"
+                        )}
+                        title="Opções gerais"
+                      >
+                        <MoreVertical size={13} />
+                      </button>
+
+                      {openMenuFolderId === "all-folders" && (
+                        <div
+                          ref={menuRef}
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-xl shadow-xl py-1 z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuFolderId(null);
+                              setIsAllFilesExpanded(!isAllFilesExpanded);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                          >
+                            <FileQuestion size={13} className="text-gray-500 dark:text-gray-400" />
+                            <span>{isAllFilesExpanded ? "Ocultar arquivos" : "Ver arquivos na coluna"}</span>
+                          </button>
+                          <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuFolderId(null);
+                              setClearConfirmModal({
+                                isOpen: true,
+                                folderId: null,
+                                folderName: "Todas as Pastas",
+                                itemCount: totalCount,
+                              });
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={13} className="text-rose-500" />
+                            <span>Excluir todos ({totalCount})</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* All files expanded list */}
+              {totalCount > 0 && isAllFilesExpanded && (
+                <div className="border-l border-gray-200 dark:border-gray-800/80 ml-4 pl-1.5 my-1 space-y-0.5 max-h-60 overflow-y-auto pr-1">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500 px-1 py-0.5">
+                    <span>Todos os Arquivos ({totalCount})</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setClearConfirmModal({
+                          isOpen: true,
+                          folderId: null,
+                          folderName: "Todas as Pastas",
+                          itemCount: totalCount,
+                        });
+                      }}
+                      className="text-red-500 hover:text-red-600 font-semibold transition-colors cursor-pointer"
+                      title="Excluir todos os arquivos"
+                    >
+                      Excluir Todos
+                    </button>
+                  </div>
+                  {allItems.map((item: any) => {
+                    const itemTitle = getItemTitle(item);
+                    const isItemDragged = draggedItemId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        draggable={true}
+                        onDragStart={(e) => handleItemDragStart(e, item.id)}
+                        onDragEnd={handleDragEnd}
+                        onClick={(e) => handleItemClick(e, item.id)}
+                        className={cn(
+                          "group/file flex items-center justify-between px-2 py-1 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100/90 dark:hover:bg-gray-800/60 hover:text-gray-900 dark:hover:text-white transition-colors cursor-grab active:cursor-grabbing select-none",
+                          isItemDragged && "opacity-40 border border-dashed border-purple-400"
+                        )}
+                        title={`Arraste para mover para outra pasta ou clique para abrir "${itemTitle}"`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <GripVertical size={11} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/file:opacity-100 transition-opacity shrink-0 -ml-1" />
+                          <ItemIcon size={12} className="text-gray-400 shrink-0 group-hover/file:text-blue-500 transition-colors" />
+                          <span className="truncate text-[12px]">{itemTitle}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteItem(e, item.id)}
+                          className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 opacity-70 sm:opacity-0 sm:group-hover/file:opacity-100 transition-opacity cursor-pointer shrink-0 ml-1"
+                          title="Excluir este arquivo"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Item: Sem Pasta / Geral (Mostrado se houver arquivos órfãos sem pasta ou durante arraste de item) */}
+            {(unassignedCount > 0 || draggedItemId !== null) && (
+              <div
+                onDragEnter={(e) => {
+                  if (isDraggingItemEvent(e)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsOverUnassignedDropZone(true);
+                  }
+                }}
+                onDragOver={(e) => {
+                  if (isDraggingItemEvent(e)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "move";
+                    if (!isOverUnassignedDropZone) setIsOverUnassignedDropZone(true);
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setIsOverUnassignedDropZone(false);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const droppedItemId =
+                    e.dataTransfer.getData("application/studyflow-item-id") ||
+                    draggedItemIdRef.current ||
+                    draggedItemId;
+                  if (droppedItemId) {
+                    handleMoveItemToFolder(droppedItemId, undefined);
+                  }
+                  handleDragEnd();
+                }}
+                className={cn(
+                  "group/unassigned relative rounded-lg transition-all",
+                  isOverUnassignedDropZone && "ring-1 ring-amber-400 bg-amber-50/60 dark:bg-amber-950/30"
+                )}
+              >
+                <div
+                  onClick={() => onSelectFolder("unassigned")}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer select-none ${
+                    selectedFolderId === "unassigned"
+                      ? "bg-gray-200/80 dark:bg-[#222634] text-gray-900 dark:text-white font-semibold"
+                      : "text-gray-600 dark:text-gray-300 hover:bg-gray-100/70 dark:hover:bg-gray-800/40 hover:text-gray-900 dark:hover:text-white"
                   }`}
                 >
-                  {totalCount}
-                </span>
-              </button>
-            </div>
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <Inbox size={15} className="text-amber-500 shrink-0" />
+                    <span className="truncate text-[13px]">Geral / Sem Pasta</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-xs tabular-nums font-normal text-amber-600 dark:text-amber-400 font-medium">
+                      {unassignedCount}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setClearConfirmModal({
+                          isOpen: true,
+                          folderId: "unassigned",
+                          folderName: "Geral / Sem Pasta",
+                          itemCount: unassignedCount,
+                        });
+                      }}
+                      className="p-1 rounded text-gray-400 hover:text-red-500 opacity-70 sm:opacity-0 sm:group-hover/unassigned:opacity-100 transition-opacity cursor-pointer"
+                      title="Excluir arquivos sem pasta"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Unassigned files list if selected */}
+                {selectedFolderId === "unassigned" && (
+                  <div className="border-l border-amber-300 dark:border-amber-700/60 ml-4 pl-1.5 my-1 space-y-0.5 max-h-56 overflow-y-auto pr-1">
+                    {unassignedItems.map((item: any) => {
+                      const itemTitle = getItemTitle(item);
+                      const isItemDragged = draggedItemId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          draggable={true}
+                          onDragStart={(e) => handleItemDragStart(e, item.id)}
+                          onDragEnd={handleDragEnd}
+                          onClick={(e) => handleItemClick(e, item.id)}
+                          className={cn(
+                            "group/file flex items-center justify-between px-2 py-1 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100/90 dark:hover:bg-gray-800/60 hover:text-gray-900 dark:hover:text-white transition-colors cursor-grab active:cursor-grabbing select-none",
+                            isItemDragged && "opacity-40 border border-dashed border-amber-400"
+                          )}
+                          title={`Arraste para mover para outra pasta ou clique para abrir "${itemTitle}"`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <GripVertical size={11} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/file:opacity-100 transition-opacity shrink-0 -ml-1" />
+                            <ItemIcon size={12} className="text-amber-500 shrink-0" />
+                            <span className="truncate text-[12px]">{itemTitle}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteItem(e, item.id)}
+                            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 opacity-70 sm:opacity-0 sm:group-hover/file:opacity-100 transition-opacity cursor-pointer shrink-0 ml-1"
+                            title="Excluir este arquivo"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Root Folders Tree */}
             <div className="space-y-0.5 pt-0.5">
@@ -609,6 +1216,56 @@ export default function VerticalFolderSidebar({
       {extraFilterSlot && (
         <div className={cn("bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-[#2a2d3a] p-3 shadow-2xs", isMobileExpanded ? "block" : "hidden lg:block")}>
           {extraFilterSlot}
+        </div>
+      )}
+
+      {/* Clear / Delete All Confirmation Modal */}
+      {clearConfirmModal.isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setClearConfirmModal({ isOpen: false, folderId: null, folderName: "", itemCount: 0 })}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] p-6 max-w-sm w-full shadow-2xl space-y-4"
+          >
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                  Excluir {clearConfirmModal.itemCount} {type === "questions" ? "questões" : type === "flashcards" ? "baralhos" : "itens"}?
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {clearConfirmModal.folderName}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+              {clearConfirmModal.itemCount === 1
+                ? "Este arquivo será movido para a lixeira."
+                : `Todos os ${clearConfirmModal.itemCount} arquivos serão movidos para a lixeira e poderão ser recuperados na aba Lixeira.`}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setClearConfirmModal({ isOpen: false, folderId: null, folderName: "", itemCount: 0 })}
+                className="px-3.5 py-2 text-xs font-semibold rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClear}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer shadow-xs"
+              >
+                Sim, Mover para Lixeira
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

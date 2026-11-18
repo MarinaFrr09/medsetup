@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import {
   FileText,
   BookOpen,
@@ -51,10 +51,12 @@ import { useAppStore, AtelieAnalysis, Deck, Flashcard } from "@/stores/useAppSto
 import { atelieToMarkdown, atelieStats, areaLabel, AtelieStructure, AtelieTopic, AtelieResult, structureMd } from "@/lib/atelie";
 import { copyRichText } from "@/lib/notion-export";
 import { exportDocumentToProfessionalPdf } from "@/lib/pdf-export";
-import { markdownToHtml, htmlToMarkdown } from "@/lib/rich-text-utils";
+import { markdownToHtml, htmlToMarkdown, formatDenseProseParagraphsIntoBullets } from "@/lib/rich-text-utils";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
+import { replaceInMarkdown } from "@/lib/selection-replace";
 import { cleanQuestionTitle, extractCleanSubject, shortenCardAnswer, cleanClinicalCaseTitle, cleanClinicalCaseText } from "@/lib/questionUtils";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { NotionOutline } from "@/components/shared/NotionOutline";
 import { parseInlineSpans, cleanCssVal } from "@/components/tutoria/TutoriaViewer";
 import dynamic from "next/dynamic";
 import type { TranscriptionViewerHandle } from "@/components/transcription/TranscriptionDocumentViewer";
@@ -493,7 +495,7 @@ export function buildSummaryMarkdown(res: AtelieResult): string {
     parts.push("");
   }
 
-  return cleanLatexAndBadges(parts.join("\n"));
+  return formatDenseProseParagraphsIntoBullets(cleanLatexAndBadges(parts.join("\n")));
 }
 
 function renderSummaryInline(raw: string): React.ReactNode {
@@ -502,14 +504,14 @@ function renderSummaryInline(raw: string): React.ReactNode {
     if (span.type === "bold") {
       return (
         <strong key={i} className="font-bold text-slate-950 dark:text-white">
-          {span.content}
+          {renderSummaryInline(span.content)}
         </strong>
       );
     }
     if (span.type === "italic") {
       return (
         <em key={i} className="italic text-slate-800 dark:text-slate-300">
-          {span.content}
+          {renderSummaryInline(span.content)}
         </em>
       );
     }
@@ -573,11 +575,12 @@ function renderSummaryItemContent(text: string): React.ReactNode {
   }
 
   const boldColonMatch = body.match(/^\s*\*\*([^*]+)\*\*(\s*(?:->|→|&rarr;|:)\s*)(.*)$/);
+  const spanColonMatch = !boldColonMatch && body.match(/^\s*(<span\b[^>]*>[\s\S]*?<\/span>)\s*(:)\s*(.*)$/i);
   const plainColonMatch =
-    !boldColonMatch && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
+    !boldColonMatch && !spanColonMatch && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
       ? body.match(/^\s*([^<*:\->—\n]{2,60})(\s*(?:->|→|&rarr;|:)\s*)(.*)$/)
       : null;
-  const colonOrArrowMatch = boldColonMatch || plainColonMatch;
+  const colonOrArrowMatch = boldColonMatch || spanColonMatch || plainColonMatch;
   if (colonOrArrowMatch) {
     const term = colonOrArrowMatch[1].trim().replace(/\*\*/g, "");
     const isArrow = colonOrArrowMatch[2].includes("->") || colonOrArrowMatch[2].includes("→");
@@ -586,7 +589,7 @@ function renderSummaryItemContent(text: string): React.ReactNode {
     return (
       <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-slate-800 dark:text-slate-200 inline">
         <strong className="font-bold text-slate-950 dark:text-white mr-1.5">
-          {term}
+          {renderSummaryInline(term)}
           {isArrow ? "" : ":"}
         </strong>
         {isArrow && (
@@ -611,6 +614,7 @@ function renderSummaryDocumentLines(
   const lines = markdown.split("\n");
   const elements: React.ReactNode[] = [];
   let currentParagraphLines: string[] = [];
+  let headingCounter = 0;
 
   const flushParagraph = (key: string) => {
     if (currentParagraphLines.length === 0) return;
@@ -638,10 +642,12 @@ function renderSummaryDocumentLines(
 
     if (trimmed.startsWith("# ")) {
       flushParagraph(`p-before-h1-${i}`);
+      const headingId = `heading-sec-${headingCounter++}`;
       elements.push(
         <h1
           key={`h1-${i}`}
-          className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight pb-3 border-b border-slate-200 dark:border-slate-800 mt-2 mb-6"
+          id={headingId}
+          className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight pb-3 border-b border-slate-200 dark:border-slate-800 mt-2 mb-6 scroll-mt-24"
         >
           {renderSummaryInline(trimmed.replace(/^#\s+/, ""))}
         </h1>
@@ -651,10 +657,12 @@ function renderSummaryDocumentLines(
 
     if (trimmed.startsWith("## ")) {
       flushParagraph(`p-before-h2-${i}`);
+      const headingId = `heading-sec-${headingCounter++}`;
       elements.push(
         <h2
           key={`h2-${i}`}
-          className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-8 mb-3 flex items-center gap-2.5"
+          id={headingId}
+          className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-8 mb-3 flex items-center gap-2.5 scroll-mt-24"
         >
           <span className="w-2 h-6 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0" />
           <span>{renderSummaryInline(trimmed.replace(/^##\s+/, ""))}</span>
@@ -679,10 +687,12 @@ function renderSummaryDocumentLines(
 
     if (trimmed.startsWith("#### ")) {
       flushParagraph(`p-before-h4-${i}`);
+      const headingId = `heading-sec-${headingCounter++}`;
       elements.push(
         <h4
           key={`h4-${i}`}
-          className="text-[15.5px] sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-5 mb-1.5"
+          id={headingId}
+          className="text-[15.5px] sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-5 mb-1.5 scroll-mt-24"
         >
           {renderSummaryInline(trimmed.replace(/^####\s+/, ""))}
         </h4>
@@ -692,10 +702,12 @@ function renderSummaryDocumentLines(
 
     if (trimmed.startsWith("### ")) {
       flushParagraph(`p-before-h3-${i}`);
+      const headingId = `heading-sec-${headingCounter++}`;
       elements.push(
         <h3
           key={`h3-${i}`}
-          className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight mt-6 mb-2"
+          id={headingId}
+          className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight mt-6 mb-2 scroll-mt-24"
         >
           {renderSummaryInline(trimmed.replace(/^###\s+/, ""))}
         </h3>
@@ -954,7 +966,7 @@ function EditableAnswerBlock({
     }
   }, [value]);
 
-  const handleInput = () => {
+  const handleInput = useCallback(() => {
     if (!contentRef.current) return;
     isEditingRef.current = true;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -965,7 +977,15 @@ function EditableAnswerBlock({
       onChange(md);
       isEditingRef.current = false;
     }, 400);
-  };
+  }, [onChange]);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onDomUpdated = () => handleInput();
+    el.addEventListener("medsetup:richtext-dom-updated", onDomUpdated);
+    return () => el.removeEventListener("medsetup:richtext-dom-updated", onDomUpdated);
+  }, [handleInput]);
 
   const handleBlur = () => {
     setIsFocused(false);
@@ -1507,24 +1527,83 @@ export default function AtelieResultView({ analysis, onBack }: AtelieResultViewP
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
-  const [isEditingSummary, setIsEditingSummary] = useState(false);
+  const [isEditingSummary, setIsEditingSummary] = useState(true); // Edição direta instantânea ativa por padrão!
+  const [saveStatusSummary, setSaveStatusSummary] = useState<"saved" | "saving">("saved");
+  const autoSaveSummaryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isExportingSummaryPdf, setIsExportingSummaryPdf] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const lastSavedSummaryRef = useRef<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [openQuestions, setOpenQuestions] = useState<Set<number>>(new Set([0, 1]));
 
   const activeSummaryMarkdown = useMemo(() => {
+    if (
+      analysis.customSummaryMarkdown &&
+      analysis.customSummaryMarkdown === lastSavedSummaryRef.current
+    ) {
+      return analysis.customSummaryMarkdown;
+    }
     const rawMd =
       analysis.customSummaryMarkdown && analysis.customSummaryMarkdown.includes("Perguntas e Atividades do Roteiro")
         ? cleanLegacyThemeAndRelevanceQuotes(analysis.customSummaryMarkdown)
         : buildSummaryMarkdown(result);
     const baseMd = reorderAtelieMarkdown(rawMd);
-    return syncMorphologyAttachmentsIntoMarkdown(baseMd, result);
+    const syncedMd = syncMorphologyAttachmentsIntoMarkdown(baseMd, result);
+    return formatDenseProseParagraphsIntoBullets(syncedMd);
   }, [analysis.customSummaryMarkdown, result]);
 
   useEffect(() => {
+    if (
+      analysis.customSummaryMarkdown &&
+      analysis.customSummaryMarkdown === lastSavedSummaryRef.current
+    ) {
+      return;
+    }
     setSummaryDraft(activeSummaryMarkdown);
-  }, [activeSummaryMarkdown]);
+  }, [activeSummaryMarkdown, analysis.customSummaryMarkdown]);
+
+  const handleSummaryEditorChange = useCallback((newText: string) => {
+    setSummaryDraft(newText);
+    setSaveStatusSummary("saving");
+
+    if (autoSaveSummaryTimerRef.current) {
+      clearTimeout(autoSaveSummaryTimerRef.current);
+    }
+    autoSaveSummaryTimerRef.current = setTimeout(() => {
+      lastSavedSummaryRef.current = newText;
+      updateAtelieAnalysis(analysis.id, {
+        customSummaryMarkdown: newText,
+      });
+      setSaveStatusSummary("saved");
+    }, 800);
+  }, [analysis.id, updateAtelieAnalysis]);
+
+  // Handle direct in-place AI selection apply (replace selection or insert below)
+  useEffect(() => {
+    const handleApplySelection = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        mode: "replace" | "insertBelow";
+        selectedText: string;
+        resultText: string;
+        targetElement: HTMLElement | null;
+      }>;
+      const { mode, selectedText, resultText } = customEvent.detail || {};
+      if (!selectedText || !resultText) return;
+
+      const baseText = isEditingSummary ? summaryDraft : activeSummaryMarkdown;
+      const updated = replaceInMarkdown(baseText, selectedText, resultText, mode);
+      if (updated !== baseText) {
+        customEvent.preventDefault();
+        setSummaryDraft(updated);
+        updateAtelieAnalysis(analysis.id, {
+          customSummaryMarkdown: updated,
+        });
+      }
+    };
+
+    window.addEventListener("medsetup:apply-ai-selection", handleApplySelection);
+    return () => window.removeEventListener("medsetup:apply-ai-selection", handleApplySelection);
+  }, [summaryDraft, activeSummaryMarkdown, isEditingSummary, analysis.id, updateAtelieAnalysis]);
 
   // PDF Preview Modal
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -1584,7 +1663,6 @@ export default function AtelieResultView({ analysis, onBack }: AtelieResultViewP
     updateAtelieAnalysis(analysis.id, {
       customSummaryMarkdown: newMd,
     });
-    setIsEditingSummary(false);
     toast.success("Resumo teórico salvo com sucesso!");
   };
 
@@ -2264,19 +2342,15 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
       {/* ──────────────────────── Top Dossier Header ──────────────────────── */}
       <header className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 shadow-xs dark:border-slate-800 dark:bg-[#12151e]">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-2 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/40">
-                <Microscope className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                Resolução de Ateliê & SP
-              </span>
-              {result.tutoria && (
+          <div className="space-y-2 max-w-5xl">
+            {result.tutoria && (
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40">
                   <Stethoscope className="h-3.5 w-3.5" />
                   Caso da Tutoria Integrado
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               {result.title}
@@ -2308,26 +2382,6 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
                 <span>Visualizar PDF</span>
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={handleCopyFormatted}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-              title="Copiar com formatação perfeita para colar em qualquer aplicativo (Notion, Word, Docs, WhatsApp, etc.)"
-            >
-              {copiedText ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
-              <span>{copiedText ? "Copiado!" : "Copiar"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportPdf}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-              title="Exportar PDF com papel branco A4"
-            >
-              <FileDown className="h-3.5 w-3.5 text-slate-500" />
-              <span>Exportar PDF</span>
-            </button>
 
             <button
               type="button"
@@ -2498,112 +2552,60 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {isEditingSummary ? (
-                <>
-                  {/* 1. Cancelar */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSummaryDraft(activeSummaryMarkdown);
-                      setIsEditingSummary(false);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    title="Cancelar alterações"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Cancelar</span>
-                  </button>
+              {/* Indicador de Edição Direta e Salvamento Automático */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-2xs">
+                {saveStatusSummary === "saving" ? (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    <span className="text-amber-700 dark:text-amber-300">Salvando alterações...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Edição direta ativa • Salvo automaticamente</span>
+                  </>
+                )}
+              </div>
 
-                  {/* 2. Salvar */}
-                  <button
-                    type="button"
-                    onClick={() => handleSaveSummaryMarkdown(summaryDraft)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-transform active:scale-95 cursor-pointer"
-                    title="Salvar alterações no resumo"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Salvar</span>
-                  </button>
+              {/* Copiar */}
+              <button
+                type="button"
+                onClick={handleCopySummary}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
+                  copiedSummary
+                    ? "bg-blue-600 text-white"
+                    : "bg-blue-50 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60"
+                )}
+                title="Copiar texto formatado"
+              >
+                {copiedSummary ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedSummary ? "Copiado!" : "Copiar"}</span>
+              </button>
 
-                  {/* 3. Copiar */}
-                  <button
-                    type="button"
-                    onClick={handleCopySummary}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
-                      copiedSummary
-                        ? "bg-blue-600 text-white"
-                        : "bg-blue-50 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60"
-                    )}
-                    title="Copiar texto em edição"
-                  >
-                    {copiedSummary ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedSummary ? "Copiado!" : "Copiar"}</span>
-                  </button>
+              {/* Exportar PDF */}
+              <button
+                type="button"
+                onClick={handleExportSummaryPdf}
+                disabled={isExportingSummaryPdf}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-blue-500/20"
+                title="Exportar Resumo como PDF"
+              >
+                {isExportingSummaryPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                <span>Exportar PDF</span>
+              </button>
 
-                  {/* 4. Exportar PDF */}
-                  <button
-                    type="button"
-                    onClick={handleExportSummaryPdf}
-                    disabled={isExportingSummaryPdf}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-blue-500/20"
-                    title="Exportar Resumo como PDF"
-                  >
-                    {isExportingSummaryPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                    <span>{isExportingSummaryPdf ? "Exportando..." : "Exportar PDF"}</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSummaryDraft(activeSummaryMarkdown);
-                      setIsEditingSummary(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    <span>Editar Texto</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopySummary}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
-                      copiedSummary
-                        ? "bg-blue-600 text-white"
-                        : "bg-blue-50 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60"
-                    )}
-                    title="Copiar resumo teórico completo"
-                  >
-                    {copiedSummary ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedSummary ? "Copiado!" : "Copiar"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleExportSummaryPdf}
-                    disabled={isExportingSummaryPdf}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-blue-500/20"
-                    title="Exportar Resumo como PDF"
-                  >
-                    {isExportingSummaryPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                    <span>Exportar PDF</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleGenerateSummary}
-                    disabled={isSummaryLoading}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 transition-colors cursor-pointer disabled:opacity-60"
-                  >
-                    {isSummaryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    <span>Aprofundar com IA</span>
-                  </button>
-                </>
-              )}
+              {/* Aprofundar com IA */}
+              <button
+                type="button"
+                onClick={handleGenerateSummary}
+                disabled={isSummaryLoading}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 transition-colors cursor-pointer disabled:opacity-60"
+                title="Aprofundar e enriquecer este resumo com IA"
+              >
+                {isSummaryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span>Aprofundar com IA</span>
+              </button>
             </div>
           </div>
 
@@ -2620,34 +2622,22 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
             </div>
           )}
 
-          {/* Editor or Continuous Document View */}
-          {isEditingSummary ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-10 dark:border-slate-800 dark:bg-[#1A1D27] shadow-sm max-w-4xl mx-auto">
-              <div className="mb-4 pb-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Modo de Edição Direta
-                </span>
-                <span className="text-xs text-slate-400">
-                  Suporta Markdown e formatação rica
-                </span>
-              </div>
-              <RichTextEditor
-                value={summaryDraft}
-                onChange={setSummaryDraft}
-                onSave={() => handleSaveSummaryMarkdown(summaryDraft)}
-                onCancel={() => setIsEditingSummary(false)}
-                theme="azul"
-              />
-            </div>
-          ) : (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-12 dark:border-slate-800 dark:bg-[#1A1D27] shadow-sm max-w-4xl mx-auto transition-all">
-              <div className="space-y-1">
-                {renderSummaryDocumentLines(activeSummaryMarkdown, (url, caption) =>
-                  setPreviewImage({ url, caption })
-                )}
-              </div>
-            </div>
-          )}
+          {/* Document Sheet with Direct In-Place Editing */}
+          <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+            {/* Sumário Balão Flutuante do Lado Direito (sempre disponível) */}
+            <NotionOutline
+              content={summaryDraft || activeSummaryMarkdown}
+              accentColor="blue"
+            />
+
+            <RichTextEditor
+              value={summaryDraft}
+              onChange={handleSummaryEditorChange}
+              theme="azul"
+              placeholder="Edite o resumo de ateliê diretamente com formatação rica..."
+              minHeight="540px"
+            />
+          </div>
         </div>
       )}
 

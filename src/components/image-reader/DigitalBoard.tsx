@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Download, Copy, Check, Image as ImageIcon, Sparkles, ArrowDown, ArrowRight, CornerDownRight, Layout, Columns2 } from "lucide-react";
+import { 
+  Download, Copy, Check, Image as ImageIcon, Sparkles, ArrowDown, ArrowRight, 
+  CornerDownRight, Layout, Columns2, Table as TableIcon, AlertTriangle, 
+  AlertCircle, Lightbulb, ShieldAlert, Clock, Activity, CheckCircle2 
+} from "lucide-react";
 import { toPng } from "html-to-image";
 import { exportBoardToPdf } from "@/lib/pdf-export";
 import toast from "react-hot-toast";
-import MedicalIllustration, { IllustrationType } from "./MedicalIllustration";
 
 export interface FlowStep {
   text: string;
@@ -47,6 +50,35 @@ export interface BracketList {
   items: string[];
 }
 
+export interface BoardTable {
+  title?: string;
+  headers: string[];
+  rows: string[][];
+  caption?: string;
+}
+
+export interface BoardAlertBox {
+  type?: "warning" | "danger" | "tip" | "info" | "gold_rule";
+  title: string;
+  content: string;
+  items?: string[];
+}
+
+export interface TimelineStage {
+  stage: string;
+  timeframe?: string;
+  description: string;
+  highlight?: string;
+}
+
+export interface BoardMetric {
+  label: string;
+  value: string;
+  unit?: string;
+  status?: "normal" | "alert" | "critical";
+  description?: string;
+}
+
 export interface BoardCluster {
   id: string;
   title?: string;
@@ -54,7 +86,7 @@ export interface BoardCluster {
   headerStyle?: "highlighter_pink" | "highlighter_green" | "highlighter_blue" | "highlighter_purple" | "highlighter_amber";
   doodleRays?: boolean;
   badgeNumber?: string;
-  container?: "transparent" | "card" | "cloud" | "dashed_bubble" | "bracket";
+  container?: "transparent" | "card" | "cloud" | "dashed_bubble" | "bracket" | "table" | "alert";
   dashedHeaderLine?: boolean;
   flowSteps?: FlowStep[];
   branches?: Branch[];
@@ -62,6 +94,10 @@ export interface BoardCluster {
   bracketList?: BracketList;
   pills?: PillItem[];
   bulletPoints?: string[];
+  table?: BoardTable;
+  alertBox?: BoardAlertBox;
+  timeline?: TimelineStage[];
+  metrics?: BoardMetric[];
   incomingArrow?: { style?: string; label?: string };
   incomingDashedArrow?: { style?: string; label?: string };
   connectorLabel?: string;
@@ -77,7 +113,7 @@ export interface BoardData {
   title?: string;
   subtitle?: string;
   themeStyle?: string;
-  illustrationType?: IllustrationType | string;
+  illustrationType?: string;
   columns?: BoardColumn[];
   legends?: Array<{ abbr: string; meaning: string }>;
 
@@ -135,7 +171,6 @@ function adaptLegacyToColumns(data: BoardData): BoardColumn[] {
           id: "clust_main",
           title: data.title || "Conduta / Processo",
           headerStyle: "highlighter_pink",
-          doodleRays: true,
           flowSteps: c1Steps,
         },
       ],
@@ -157,7 +192,6 @@ function adaptLegacyToColumns(data: BoardData): BoardColumn[] {
       id: `sp_${idx}`,
       title: sp.title,
       headerStyle: idx === 0 ? "highlighter_green" : "highlighter_amber",
-      doodleRays: true,
       bulletPoints: sp.items || [],
       container: "dashed_bubble",
     }));
@@ -184,7 +218,6 @@ function adaptLegacyToColumns(data: BoardData): BoardColumn[] {
           id: "clust_default",
           title: data.title || "Quadro Clínico",
           headerStyle: "highlighter_pink",
-          doodleRays: true,
           bulletPoints: ["Informações processadas com sucesso."],
         },
       ],
@@ -256,40 +289,22 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
 
   const colCount = columns.length;
   const gridLayoutClass =
-    viewMode === "side_by_side"
-      ? colCount <= 2
-        ? "grid-cols-1 md:grid-cols-2"
-        : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
-      : colCount === 1
+    colCount === 1
       ? "grid-cols-1 max-w-2xl mx-auto"
       : colCount === 2
-      ? "grid-cols-1 md:grid-cols-2"
+      ? "grid-cols-2"
       : colCount === 3
-      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-      : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
+      ? "grid-cols-3"
+      : "grid-cols-4";
 
-  // Infer micro-illustration
-  const inferIllustration = (): string => {
-    if (data.illustrationType) return data.illustrationType;
-    const str = `${title} ${subtitle}`.toLowerCase();
-    if (str.includes("hpv") || str.includes("virus") || str.includes("viral")) return "virus";
-    if (str.includes("dna") || str.includes("gen") || str.includes("cromossom")) return "dna";
-    if (str.includes("epitel") || str.includes("celula") || str.includes("basal") || str.includes("pele")) return "cells_layer";
-    if (str.includes("papanicolau") || str.includes("citolog") || str.includes("lamina")) return "microscope";
-    if (str.includes("card") || str.includes("coraç") || str.includes("arter")) return "heart";
-    if (str.includes("pulm") || str.includes("respirat") || str.includes("asma")) return "lungs";
-    if (str.includes("neuro") || str.includes("cefale") || str.includes("cerebr")) return "brain";
-    return "general";
-  };
-
-  const illustration = inferIllustration();
 
   // 1. Download PNG Image (Exact user request: "fazendo literalmente uma imagem de um quadro")
   const handleDownloadPNG = async () => {
     if (!boardRef.current) return;
     setIsExporting(true);
     try {
-      const fullWidth = boardRef.current.scrollWidth || boardRef.current.offsetWidth || 1400;
+      const minW = colCount >= 4 ? 1380 : colCount === 3 ? 1150 : 850;
+      const fullWidth = Math.max(boardRef.current.scrollWidth || 0, boardRef.current.offsetWidth || 0, minW);
       const fullHeight = boardRef.current.scrollHeight || boardRef.current.offsetHeight || 800;
       const dataUrl = await toPng(boardRef.current, {
         pixelRatio: 2.5,
@@ -311,7 +326,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
       link.download = `quadro-digital-${cleanName}.png`;
       link.href = dataUrl;
       link.click();
-      toast.success("Imagem do Quadro baixada com sucesso (Alta Resolução PNG)!");
+      toast.success("Imagem horizontal do quadro baixada com sucesso!");
     } catch (e) {
       console.error(e);
       toast.error("Erro ao gerar imagem do quadro.");
@@ -494,43 +509,38 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
         )}
 
         {/* ─── O QUADRO BRANCO DIGITALIZADO E DIGITADO (PADRÃO STUDYGRAM) ─── */}
-        <div className="w-full flex justify-center overflow-x-auto p-1">
+        <div className="w-full flex justify-center overflow-x-auto p-1 scrollbar-thin">
           <div
             ref={boardRef}
-            className="w-full rounded-3xl select-none relative shadow-xl overflow-hidden transition-all"
+            className="rounded-3xl select-none relative shadow-xl overflow-hidden transition-all"
             style={{
-              maxWidth: viewMode === "side_by_side" ? "100%" : "1400px",
-              minHeight: "700px",
+              width: "100%",
+              minWidth: colCount >= 4 ? "1380px" : colCount === 3 ? "1150px" : "850px",
+              maxWidth: "1600px",
               backgroundColor: currentTheme.boardBg,
               border: `4px solid ${currentTheme.frameBorder}`,
               color: currentTheme.textPrimary,
-              padding: viewMode === "side_by_side" ? "28px 24px" : "36px 40px",
-              fontFamily: "'Nunito', 'Inter', -apple-system, sans-serif",
+              padding: viewMode === "side_by_side" ? "24px 20px" : "30px 36px",
+              fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
               boxSizing: "border-box",
             }}
           >
-            {/* Whiteboard Dry-Erase Frame Accents */}
+            {/* Whiteboard Frame Accents */}
             <div className="absolute top-2 left-4 flex items-center gap-1.5 opacity-40">
               <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
               <div className="w-2.5 h-2.5 rounded-full bg-slate-300" />
             </div>
-            <div className="absolute top-2 right-4 text-[10px] uppercase font-black tracking-widest text-slate-400 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-rose-400" />
+            <div className="absolute top-2.5 right-4 text-[10px] uppercase font-bold tracking-widest text-slate-400 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-rose-500" />
               Quadro Digital • MedSetup
             </div>
 
-            {/* ─── TOPO DO QUADRO: TÍTULO, SUBTÍTULO E ILUSTRAÇÃO ─── */}
-            <div className="flex items-start justify-between gap-6 pb-6 mb-8 border-b-2 border-dashed border-slate-200">
+            {/* ─── TOPO DO QUADRO: TÍTULO E SUBTÍTULO (LIMPO E SEM ELEMENTOS DECORATIVOS EXCESSIVOS) ─── */}
+            <div className="pb-5 mb-7 border-b border-slate-200">
               <div className="flex-1">
-                {/* Main Topic Header with Pastel Marker Brush and Doodle Rays */}
-                <div className="inline-flex items-center gap-3 relative">
-                  {/* Left Doodle Rays */}
-                  <div className="flex flex-col gap-0.5 text-rose-400 font-bold select-none text-xs -rotate-12">
-                    <span>//</span>
-                  </div>
-
+                <div className="inline-flex items-center gap-2">
                   <h1
-                    className="font-handwriting font-bold text-3xl sm:text-4xl px-4 py-1.5 rounded-2xl tracking-wide shadow-2xs inline-block"
+                    className="font-sans font-black text-2xl sm:text-3xl tracking-tight px-4 py-1.5 rounded-xl inline-block"
                     style={{
                       backgroundColor: currentTheme.pink.bg,
                       color: currentTheme.pink.text,
@@ -539,23 +549,13 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                   >
                     {title}
                   </h1>
-
-                  {/* Right Doodle Rays */}
-                  <div className="flex flex-col gap-0.5 text-rose-400 font-bold select-none text-xs rotate-12">
-                    <span>\\</span>
-                  </div>
                 </div>
 
                 {subtitle && (
-                  <p className="text-sm font-bold text-slate-600 mt-2 max-w-2xl leading-relaxed">
+                  <p className="text-[14px] sm:text-[15px] font-semibold text-slate-700 mt-2.5 max-w-3xl leading-relaxed">
                     {subtitle}
                   </p>
                 )}
-              </div>
-
-              {/* Medical / Scientific Micro-Illustration */}
-              <div className="flex-shrink-0 bg-white/90 p-2 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-center">
-                <MedicalIllustration type={illustration} size={76} color={currentTheme.pink.stroke} />
               </div>
             </div>
 
@@ -565,21 +565,27 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                 <div key={col.id || colIdx} className="space-y-6 flex flex-col">
                   {col.clusters.map((cluster, cIdx) => {
                     const cTheme = getHeaderTheme(cluster.headerStyle);
-                    const isCloud = cluster.container === "cloud" || cluster.headerStyle?.includes("cloud");
+                    const isCloud = cluster.container === "cloud";
                     const isDashed = cluster.container === "dashed_bubble";
                     const isCard = cluster.container === "card";
+                    const isTable = cluster.container === "table" || !!cluster.table;
+                    const isAlert = cluster.container === "alert" || !!cluster.alertBox;
 
                     return (
                       <div
                         key={cluster.id || cIdx}
-                        className={`transition-all relative ${
-                          isCloud
-                            ? "cloud-border p-5 border-2 border-rose-300 bg-rose-50/50 text-slate-800"
+                        className={`transition-all relative rounded-2xl p-4.5 border ${
+                          isAlert
+                            ? "bg-amber-50/40 border-amber-200/90 shadow-2xs"
+                            : isTable
+                            ? "bg-white border-slate-200 shadow-xs"
+                            : isCloud
+                            ? "bg-rose-50/40 border-rose-200/90 shadow-2xs"
                             : isDashed
-                            ? "rounded-3xl p-5 border-2 border-dashed border-purple-300 bg-purple-50/40 text-slate-800"
+                            ? "border-dashed border-purple-200 bg-purple-50/30 shadow-2xs"
                             : isCard
-                            ? "rounded-2xl p-5 border-2 border-sky-200 bg-sky-50/40 text-slate-800"
-                            : "space-y-4"
+                            ? "bg-sky-50/40 border-sky-200/90 shadow-2xs"
+                            : "bg-white/95 border-slate-200/80 shadow-2xs"
                         }`}
                       >
                         {/* Incoming bold arrow indicator */}
@@ -605,7 +611,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           <div className="flex items-center gap-2 flex-wrap mb-3">
                             {cluster.badgeNumber && (
                               <div
-                                className="w-7 h-7 rounded-full border-2 flex items-center justify-center font-bold text-xs shadow-2xs"
+                                className="w-6 h-6 rounded-lg border flex items-center justify-center font-bold text-xs shadow-2xs"
                                 style={{
                                   borderColor: cTheme.stroke,
                                   color: cTheme.text,
@@ -617,13 +623,8 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                             )}
 
                             <div className="inline-flex items-center gap-1.5">
-                              {cluster.doodleRays && (
-                                <span className="text-xs font-bold" style={{ color: cTheme.stroke }}>
-                                  //
-                                </span>
-                              )}
                               <h3
-                                className="font-handwriting font-bold text-xl sm:text-2xl px-3 py-1 rounded-xl shadow-2xs inline-block"
+                                className="font-sans font-bold text-base sm:text-lg px-2.5 py-1 rounded-lg shadow-2xs inline-block tracking-tight"
                                 style={{
                                   backgroundColor: cTheme.bg,
                                   color: cTheme.text,
@@ -633,13 +634,8 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                 {cluster.title}
                               </h3>
                               {cluster.subtitle && (
-                                <span className="text-xs font-bold text-slate-500 ml-1">
+                                <span className="text-xs font-semibold text-slate-500 ml-1">
                                   {cluster.subtitle}
-                                </span>
-                              )}
-                              {cluster.doodleRays && (
-                                <span className="text-xs font-bold" style={{ color: cTheme.stroke }}>
-                                  \\
                                 </span>
                               )}
                             </div>
@@ -659,25 +655,20 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           <div className="space-y-2">
                             {cluster.flowSteps.map((step, sIdx) => (
                               <div key={sIdx} className="space-y-2">
-                                <div className="flex items-start gap-3 bg-white/90 p-3 rounded-2xl border border-slate-200 shadow-2xs">
-                                  {step.illustration && (
-                                    <div className="flex-shrink-0 mt-0.5 p-1 bg-slate-50 rounded-xl border border-slate-100">
-                                      <MedicalIllustration type={step.illustration} size={36} color={cTheme.stroke} />
-                                    </div>
-                                  )}
+                                <div className="flex items-start gap-3 bg-white/95 p-3 rounded-xl border border-slate-200/80 shadow-2xs">
                                   <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-sm text-slate-900 leading-snug">
+                                    <div className="font-bold text-[14px] sm:text-[15.5px] text-slate-900 leading-relaxed">
                                       {step.text}{" "}
                                       {step.emphasis && (
-                                        <span className="font-extrabold ml-1 px-1.5 py-0.5 rounded-md text-xs" style={{ backgroundColor: cTheme.bg, color: cTheme.text }}>
+                                        <span className="font-bold ml-1 px-1.5 py-0.5 rounded-md text-xs" style={{ backgroundColor: cTheme.bg, color: cTheme.text }}>
                                           {step.emphasis}
                                         </span>
                                       )}
                                     </div>
                                     {step.bulletPoints && step.bulletPoints.length > 0 && (
-                                      <ul className="mt-1 space-y-0.5">
+                                      <ul className="mt-1.5 space-y-1">
                                         {step.bulletPoints.map((bp, bpIdx) => (
-                                          <li key={bpIdx} className="flex items-start gap-1.5 text-xs text-slate-700 font-semibold">
+                                          <li key={bpIdx} className="flex items-start gap-1.5 text-[13.5px] sm:text-[14px] text-slate-700 font-medium">
                                             <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: cTheme.stroke }} />
                                             <span>{bp}</span>
                                           </li>
@@ -703,9 +694,9 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           </div>
                         )}
 
-                        {/* 2. Branches (e.g. Infecções Transitórias vs Replicação) */}
+                        {/* 2. Branches (Lateral branches and decision paths) */}
                         {cluster.branches && cluster.branches.length > 0 && (
-                          <div className="space-y-4 pt-2">
+                          <div className="space-y-3 pt-1">
                             {cluster.branches.map((br, brIdx) => {
                               const bTheme = getHeaderTheme(br.color);
 
@@ -713,17 +704,15 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                 return (
                                   <div
                                     key={brIdx}
-                                    className="rounded-3xl p-4 border-2 border-dashed border-purple-300 bg-purple-50/50 text-slate-900 shadow-2xs"
+                                    className="rounded-xl p-3.5 border border-dashed border-purple-200 bg-purple-50/40 text-slate-900 shadow-2xs"
                                   >
-                                    <div className="font-handwriting font-bold text-lg text-purple-900 mb-2 flex items-center gap-1.5">
-                                      <span>//</span>
-                                      <span>{br.title || "Infecções transitórias"}</span>
-                                      <span>\\</span>
+                                    <div className="font-sans font-bold text-sm text-purple-900 mb-2 flex items-center gap-1.5 tracking-tight">
+                                      <span>{br.title || "Ramificação"}</span>
                                     </div>
                                     {br.bulletPoints && (
                                       <ul className="space-y-1">
                                         {br.bulletPoints.map((it, iIdx) => (
-                                          <li key={iIdx} className="flex items-start gap-2 text-xs font-bold text-slate-700">
+                                          <li key={iIdx} className="flex items-start gap-2 text-xs font-semibold text-slate-700">
                                             <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-purple-500" />
                                             <span>{it}</span>
                                           </li>
@@ -737,7 +726,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                               // flow_chain (lateral differentiation flow)
                               if (br.chainSteps && br.chainSteps.length > 0) {
                                 return (
-                                  <div key={brIdx} className="bg-white/95 rounded-2xl p-4 border border-rose-200 shadow-2xs space-y-2">
+                                  <div key={brIdx} className="bg-white/95 rounded-xl p-3.5 border border-rose-200/80 shadow-2xs space-y-2">
                                     {br.title && (
                                       <div className="font-bold text-xs text-rose-800 uppercase tracking-wider mb-1">
                                         {br.title}
@@ -745,7 +734,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                     )}
                                     {br.chainSteps.map((st, stIdx) => (
                                       <div key={stIdx} className="space-y-1.5">
-                                        <div className="text-xs font-bold text-slate-800 bg-rose-50/60 p-2 rounded-xl border border-rose-100 flex items-center gap-2">
+                                        <div className="text-xs font-semibold text-slate-800 bg-rose-50/60 p-2 rounded-lg border border-rose-100 flex items-center gap-2">
                                           <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
                                           <span>{st}</span>
                                         </div>
@@ -758,12 +747,9 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                     ))}
                                     {br.endBadge && (
                                       <div className="pt-2 flex items-center justify-between border-t border-rose-100 mt-2">
-                                        <span className="font-handwriting font-bold text-base text-rose-600 px-3 py-1 rounded-xl bg-rose-100 border border-rose-200 shadow-2xs">
+                                        <span className="font-sans font-bold text-xs text-rose-700 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-200 shadow-2xs">
                                           {br.endBadge}
                                         </span>
-                                        {br.illustration && (
-                                          <MedicalIllustration type={br.illustration} size={36} color="#E11D48" />
-                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -775,14 +761,14 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           </div>
                         )}
 
-                        {/* 3. SubClusters (e.g. Rastreamento steps, bracket lists) */}
+                        {/* 3. SubClusters (e.g. Protocol steps, procedures) */}
                         {cluster.subClusters && cluster.subClusters.length > 0 && (
-                          <div className="space-y-4 pt-1">
+                          <div className="space-y-3 pt-1">
                             {cluster.subClusters.map((sub, scIdx) => (
-                              <div key={scIdx} className="bg-white/90 p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                              <div key={scIdx} className="bg-white/90 p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-2">
                                 <div className="flex items-center gap-2">
                                   {sub.badgeNumber && (
-                                    <div className="w-6 h-6 rounded-full border-2 border-emerald-500 bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                                    <div className="w-5 h-5 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold text-[11px] flex-shrink-0">
                                       {sub.badgeNumber}
                                     </div>
                                   )}
@@ -793,7 +779,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                 {sub.bulletPoints && (
                                   <ul className="space-y-1 pl-1">
                                     {sub.bulletPoints.map((bp, bpIdx) => (
-                                      <li key={bpIdx} className="flex items-start gap-1.5 text-xs text-slate-700 font-semibold">
+                                      <li key={bpIdx} className="flex items-start gap-1.5 text-xs text-slate-700 font-medium">
                                         <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-emerald-500" />
                                         <span>{bp}</span>
                                       </li>
@@ -803,14 +789,14 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                                 {sub.chainSteps && (
                                   <div className="space-y-1.5 pt-1">
                                     {sub.chainSteps.map((cs, csIdx) => (
-                                      <div key={csIdx} className="text-xs font-semibold text-slate-800 bg-slate-50 p-2 rounded-xl border border-slate-200 flex items-center gap-2">
+                                      <div key={csIdx} className="text-xs font-semibold text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200 flex items-center gap-2">
                                         <ArrowRight className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                                         <span>{cs}</span>
                                       </div>
                                     ))}
                                     {sub.endBadge && (
                                       <div className="pt-1.5">
-                                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-300 inline-block">
+                                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300 inline-block">
                                           {sub.endBadge}
                                         </span>
                                       </div>
@@ -822,9 +808,143 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           </div>
                         )}
 
-                        {/* 4. Bracket List (e.g. Epithelial cell layers) */}
+                        {/* 4. Tabelas Comparativas / Matrizes Clínicas (Sem barras de rolagem, integradas na folha) */}
+                        {cluster.table && cluster.table.headers && cluster.table.headers.length > 0 && (
+                          <div className="w-full rounded-xl border border-slate-200 bg-white shadow-2xs my-2 overflow-hidden">
+                            {cluster.table.title && (
+                              <div className="px-2.5 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                <TableIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                <span className="truncate">{cluster.table.title}</span>
+                              </div>
+                            )}
+                            <table className="w-full text-left border-collapse table-fixed">
+                              <thead>
+                                <tr className="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200">
+                                  {cluster.table.headers.map((h, hIdx) => (
+                                    <th
+                                      key={hIdx}
+                                      className="px-2 py-1.5 text-slate-800 font-bold text-[9.5px] uppercase tracking-tight break-words"
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {cluster.table.rows && cluster.table.rows.map((row, rIdx) => (
+                                  <tr key={rIdx} className={rIdx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                                    {row.map((cell, cIdx) => (
+                                      <td
+                                        key={cIdx}
+                                        className="px-2 py-1.5 font-medium text-[9.5px] leading-snug break-words align-top"
+                                      >
+                                        {cell}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {cluster.table.caption && (
+                              <div className="px-2.5 py-1 bg-slate-50/80 text-[8.5px] text-slate-500 border-t border-slate-100 italic">
+                                {cluster.table.caption}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 5. Quadros de Alerta / Destaque Clínico / Regra de Ouro */}
+                        {cluster.alertBox && (
+                          <div className={`rounded-xl p-3.5 border my-2.5 shadow-2xs ${
+                            cluster.alertBox.type === "danger"
+                              ? "bg-rose-50/80 border-rose-200 text-rose-950"
+                              : cluster.alertBox.type === "warning" || cluster.alertBox.type === "gold_rule"
+                              ? "bg-amber-50/80 border-amber-200 text-amber-950"
+                              : cluster.alertBox.type === "tip"
+                              ? "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+                              : "bg-sky-50/80 border-sky-200 text-sky-950"
+                          }`}>
+                            <div className="flex items-center gap-1.5 mb-1.5 font-bold text-xs uppercase tracking-wider">
+                              {cluster.alertBox.type === "danger" && <ShieldAlert className="w-4 h-4 text-rose-600 flex-shrink-0" />}
+                              {(cluster.alertBox.type === "warning" || cluster.alertBox.type === "gold_rule") && <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />}
+                              {cluster.alertBox.type === "tip" && <Lightbulb className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
+                              {(!cluster.alertBox.type || cluster.alertBox.type === "info") && <AlertCircle className="w-4 h-4 text-sky-600 flex-shrink-0" />}
+                              <span>{cluster.alertBox.title || "Atenção Clínica"}</span>
+                            </div>
+                            <p className="text-xs font-medium leading-relaxed">
+                              {cluster.alertBox.content}
+                            </p>
+                            {cluster.alertBox.items && cluster.alertBox.items.length > 0 && (
+                              <ul className="mt-2 space-y-1">
+                                {cluster.alertBox.items.map((it, itIdx) => (
+                                  <li key={itIdx} className="text-xs font-medium flex items-start gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 opacity-70 bg-current" />
+                                    <span>{it}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 6. Linha do Tempo / Fases Clínicas */}
+                        {cluster.timeline && cluster.timeline.length > 0 && (
+                          <div className="my-2.5 space-y-2 border-l-2 border-slate-200 pl-3 ml-1.5">
+                            {cluster.timeline.map((step, tIdx) => (
+                              <div key={tIdx} className="relative pb-2">
+                                <div className="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-sky-500 border-2 border-white shadow-xs" />
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-900">{step.stage}</span>
+                                  {step.timeframe && (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex items-center gap-1">
+                                      <Clock className="w-2.5 h-2.5" />
+                                      {step.timeframe}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
+                                  {step.description}
+                                </p>
+                                {step.highlight && (
+                                  <div className="mt-1 text-[11px] font-bold text-sky-700 bg-sky-50 px-2 py-1 rounded-md border border-sky-100 inline-block">
+                                    {step.highlight}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 7. Métricas e Valores de Referência */}
+                        {cluster.metrics && cluster.metrics.length > 0 && (
+                          <div className="grid grid-cols-2 gap-2 my-2.5">
+                            {cluster.metrics.map((m, mIdx) => (
+                              <div
+                                key={mIdx}
+                                className={`p-2.5 rounded-xl border flex flex-col justify-between ${
+                                  m.status === "critical"
+                                    ? "bg-rose-50/70 border-rose-200 text-rose-950"
+                                    : m.status === "alert"
+                                    ? "bg-amber-50/70 border-amber-200 text-amber-950"
+                                    : "bg-slate-50/90 border-slate-200 text-slate-900"
+                                }`}
+                              >
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{m.label}</span>
+                                <div className="flex items-baseline gap-1 mt-1">
+                                  <span className="text-sm sm:text-base font-extrabold tracking-tight">{m.value}</span>
+                                  {m.unit && <span className="text-[10px] font-semibold text-slate-500">{m.unit}</span>}
+                                </div>
+                                {m.description && (
+                                  <span className="text-[10px] font-medium text-slate-600 mt-1 leading-tight">{m.description}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 8. Bracket List (e.g. Grouped categories) */}
                         {cluster.bracketList && (
-                          <div className="bg-white/95 rounded-2xl p-4 border border-sky-200 shadow-2xs">
+                          <div className="bg-white/95 rounded-xl p-3.5 border border-sky-200/80 shadow-2xs">
                             <div className="font-bold text-xs text-sky-900 mb-2">
                               {cluster.bracketList.title}
                             </div>
@@ -833,7 +953,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                               <div className="text-3xl font-light text-sky-400 select-none">{"{"}</div>
                               <ul className="space-y-1 flex-1">
                                 {cluster.bracketList.items.map((it, itIdx) => (
-                                  <li key={itIdx} className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                                  <li key={itIdx} className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                                     <span className="w-1.5 h-1.5 rounded-full bg-sky-500 flex-shrink-0" />
                                     <span>{it}</span>
                                   </li>
@@ -843,30 +963,30 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           </div>
                         )}
 
-                        {/* 5. Pills (e.g. E5, E6, E7 oncogenic proteins) */}
+                        {/* 9. Pills (e.g. Tags, markers, gene lists) */}
                         {cluster.pills && cluster.pills.length > 0 && (
-                          <div className="pt-2 space-y-3">
-                            <div className="grid grid-cols-3 gap-2">
+                          <div className="pt-2 space-y-2.5">
+                            <div className="flex flex-wrap gap-1.5">
                               {cluster.pills.map((pill, pIdx) => (
                                 <div
                                   key={pIdx}
-                                  className="text-center py-1.5 px-2 rounded-xl font-black text-sm bg-emerald-100 text-emerald-900 border-2 border-emerald-300 shadow-2xs"
+                                  className="text-center py-1 px-2.5 rounded-lg font-bold text-xs bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs"
                                 >
                                   {pill.label}
                                 </div>
                               ))}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                               {cluster.pills.map((pill, pIdx) => (
-                                <div key={pIdx} className="bg-white/90 p-3 rounded-2xl border border-emerald-200 shadow-2xs space-y-1">
+                                <div key={pIdx} className="bg-white/90 p-2.5 rounded-xl border border-emerald-200/80 shadow-2xs space-y-1">
                                   <div className="font-bold text-xs text-emerald-800">
                                     [{pill.label}] {pill.subTitle}
                                   </div>
                                   {pill.bulletPoints && (
                                     <ul className="space-y-0.5">
                                       {pill.bulletPoints.map((bp, bpIdx) => (
-                                        <li key={bpIdx} className="text-[11px] font-semibold text-slate-700 flex items-start gap-1.5">
+                                        <li key={bpIdx} className="text-[11px] font-medium text-slate-700 flex items-start gap-1.5">
                                           <span className="w-1 h-1 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
                                           <span>{bp}</span>
                                         </li>
@@ -879,11 +999,11 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                           </div>
                         )}
 
-                        {/* 6. General Bullet Points (e.g. Alterações no epitélio) */}
+                        {/* 10. General Bullet Points */}
                         {cluster.bulletPoints && cluster.bulletPoints.length > 0 && !cluster.branches && (
                           <ul className="space-y-1.5 pt-1">
                             {cluster.bulletPoints.map((bp, bpIdx) => (
-                              <li key={bpIdx} className="flex items-start gap-2 text-xs font-bold text-slate-800">
+                              <li key={bpIdx} className="flex items-start gap-2 text-xs font-medium text-slate-800">
                                 <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: cTheme.stroke }} />
                                 <span>{bp}</span>
                               </li>

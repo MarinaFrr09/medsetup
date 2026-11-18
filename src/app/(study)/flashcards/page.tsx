@@ -16,6 +16,8 @@ import { useAppStore, Deck } from "@/stores/useAppStore";
 import dynamic from "next/dynamic";
 import FlashcardDeck from "@/components/flashcards/FlashcardDeck";
 import VerticalFolderSidebar from "@/components/common/VerticalFolderSidebar";
+import FolderCardGrid, { SubfoldersGrid } from "@/components/common/FolderCardGrid";
+import FolderManagerModal from "@/components/common/FolderManagerModal";
 import toast from "react-hot-toast";
 
 const FlashcardEditor = dynamic(() => import("@/components/flashcards/FlashcardEditor"), { ssr: false });
@@ -44,10 +46,14 @@ export default function FlashcardsPage() {
   const [studyDeck, setStudyDeck] = useState<Deck | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [movingDeckId, setMovingDeckId] = useState<string | null>(null);
+  const [viewAllDecks, setViewAllDecks] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<any>(null);
 
   const handleSelectFolder = (folderId: string | null) => {
     setStudyDeck(null);
     setSelectedFolderId(folderId);
+    setViewAllDecks(false);
   };
 
   const handleDeckCreated = (newDeck: any) => {
@@ -112,8 +118,13 @@ export default function FlashcardsPage() {
     [folders]
   );
 
+  const flashcardFolderIds = useMemo(
+    () => new Set(flashcardFolders.map((f) => f.id)),
+    [flashcardFolders]
+  );
+
   const activeFolderIds = useMemo(() => {
-    if (selectedFolderId === null) return null;
+    if (!selectedFolderId || selectedFolderId === "unassigned") return null;
     const getDescendants = (id: string): string[] => {
       const children = flashcardFolders.filter((f) => f.parentId === id).map((f) => f.id);
       return [id, ...children.flatMap(getDescendants)];
@@ -123,9 +134,16 @@ export default function FlashcardsPage() {
 
   const filteredDecks = useMemo(() => {
     return flashcardDecks.filter((d) => {
-      const dFolder = d.folderId || "folder-fc-geral";
+      const dFolder =
+        !d.folderId || d.folderId === "folder-geral" || !flashcardFolderIds.has(d.folderId)
+          ? "folder-fc-geral"
+          : d.folderId;
       const matchesFolder =
-        activeFolderIds === null || activeFolderIds.has(dFolder);
+        selectedFolderId === null
+          ? true
+          : selectedFolderId === "unassigned"
+          ? !d.folderId || !flashcardFolderIds.has(d.folderId)
+          : activeFolderIds !== null && activeFolderIds.has(dFolder);
       const matchesSearch =
         !searchQuery.trim() ||
         d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -135,12 +153,39 @@ export default function FlashcardsPage() {
         !selectedDifficulty || getDeckDifficulty(d) === selectedDifficulty;
       return matchesFolder && matchesSearch && matchesDifficulty;
     });
-  }, [flashcardDecks, activeFolderIds, searchQuery, selectedDifficulty, flashcardReviews]);
+  }, [flashcardDecks, selectedFolderId, flashcardFolderIds, activeFolderIds, searchQuery, selectedDifficulty, flashcardReviews]);
+
+  const activeFolder = useMemo(() => {
+    if (!selectedFolderId) return null;
+    return flashcardFolders.find((f) => f.id === selectedFolderId) || null;
+  }, [flashcardFolders, selectedFolderId]);
+
+  const getFlashcardFolderCount = (folderId: string) => {
+    const getDescendants = (id: string): string[] => {
+      const children = flashcardFolders.filter((f) => f.parentId === id).map((f) => f.id);
+      return [id, ...children.flatMap(getDescendants)];
+    };
+    const targetIds = new Set(getDescendants(folderId));
+    return flashcardDecks.filter((d) => {
+      const eff =
+        !d.folderId || d.folderId === "folder-geral" || !flashcardFolderIds.has(d.folderId)
+          ? "folder-fc-geral"
+          : d.folderId;
+      return targetIds.has(eff);
+    }).length;
+  };
 
   const activeFolderName = useMemo(() => {
     if (selectedFolderId === null) return "Todas as Pastas";
+    if (selectedFolderId === "unassigned") return "Geral / Sem Pasta";
     return flashcardFolders.find((f) => f.id === selectedFolderId)?.name || "Pasta";
   }, [flashcardFolders, selectedFolderId]);
+
+  const isViewingFolders =
+    selectedFolderId === null &&
+    !searchQuery.trim() &&
+    !selectedDifficulty &&
+    !viewAllDecks;
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -190,23 +235,25 @@ export default function FlashcardsPage() {
         </div>
       )}
 
-      {/* When studying a flashcard deck: Sidebar on left + Flashcard Card in the EXACT horizontal center of the screen */}
+      {/* When studying a flashcard deck: 2-Column Layout (Sidebar on left + Centered Flashcard Study Area) */}
       {studyDeck ? (
-        <div className="w-full py-1 sm:py-3">
-          <div className="w-full grid grid-cols-1 lg:grid-cols-[288px_minmax(0,1fr)_288px] xl:grid-cols-[320px_minmax(0,1fr)_320px] gap-6 items-start">
+        <div className="w-full py-1 sm:py-2">
+          <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
             {/* Left Column: Vertical Folder Sidebar */}
-            <div className="w-full">
-              <VerticalFolderSidebar
-                selectedFolderId={selectedFolderId}
-                onSelectFolder={handleSelectFolder}
-                type="flashcards"
-                className="w-full shrink-0"
-              />
-            </div>
+            <VerticalFolderSidebar
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={handleSelectFolder}
+              onSelectItem={(deckId) => {
+                const d = flashcardDecks.find((deck) => deck.id === deckId);
+                if (d) setStudyDeck(d);
+              }}
+              type="flashcards"
+              className="w-full lg:w-64 xl:w-72 shrink-0"
+            />
 
-            {/* Center Column: Flashcard Study Card - Perfectly Centered in the Viewport */}
-            <div className="w-full flex justify-center min-w-0">
-              <div className="w-full max-w-2xl xl:max-w-3xl">
+            {/* Right Column: Balanced Flashcard Study Area centered in viewport */}
+            <div className="flex-1 min-w-0 w-full flex justify-start">
+              <div className="w-full max-w-4xl xl:max-w-[960px]">
                 <FlashcardStudy
                   cards={studyDeck.cards || []}
                   deckName={studyDeck.name}
@@ -216,9 +263,6 @@ export default function FlashcardsPage() {
                 />
               </div>
             </div>
-
-            {/* Right Column: Symmetrical Balancer ensuring 100% mathematical center */}
-            <div className="hidden lg:block w-full pointer-events-none invisible" aria-hidden="true" />
           </div>
         </div>
       ) : (
@@ -228,6 +272,10 @@ export default function FlashcardsPage() {
           <VerticalFolderSidebar
             selectedFolderId={selectedFolderId}
             onSelectFolder={handleSelectFolder}
+            onSelectItem={(deckId) => {
+              const d = flashcardDecks.find((deck) => deck.id === deckId);
+              if (d) setStudyDeck(d);
+            }}
             type="flashcards"
             className="w-full lg:w-72 xl:w-80 shrink-0"
             extraFilterSlot={
@@ -284,19 +332,84 @@ export default function FlashcardsPage() {
 
           {/* Right Column: Main Content */}
           <div className="flex-1 min-w-0 space-y-5 w-full">
-            {/* Dashboard & Estatísticas Gerais dos Flashcards */}
-            {!selectedFolderId && !searchQuery && !selectedDifficulty && (
-              <FlashcardsDashboard
-                onStudyDeck={(deckId) => {
-                  const d = flashcardDecks.find((deck) => deck.id === deckId);
-                  if (d) setStudyDeck(d);
-                }}
-                onOpenAIModal={() => setIsAIOpen(true)}
-                onSelectFolder={(fId) => handleSelectFolder(fId)}
-                onCreateDeck={() => setIsEditorOpen(true)}
-              />
-            )}
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between border-b border-gray-200 dark:border-[#2a2d3a] pb-3">
+            {isViewingFolders ? (
+              <div className="space-y-6">
+                {/* 1. PRIMEIRO: Pastas de Flashcards */}
+                <FolderCardGrid
+                  title="Pastas de Flashcards Médicos"
+                  subtitle="Selecione uma pasta para acessar seus baralhos ou crie uma nova pasta por especialidade médica."
+                  folders={flashcardFolders}
+                  getItemCount={getFlashcardFolderCount}
+                  getItemPreviews={(folderId) =>
+                    flashcardDecks
+                      .filter((d) => (d.folderId || "folder-fc-geral") === folderId)
+                      .map((d) => ({
+                        id: d.id,
+                        title: `${d.name} (${d.cardCount || d.cards?.length || 0} cards)`,
+                      }))
+                  }
+                  itemLabel={{ singular: "baralho", plural: "baralhos" }}
+                  onSelectFolder={(folderId) => {
+                    handleSelectFolder(folderId);
+                    setViewAllDecks(false);
+                  }}
+                  onCreateFolder={() => {
+                    setFolderToEdit(null);
+                    setIsFolderModalOpen(true);
+                  }}
+                  onViewAll={() => setViewAllDecks(true)}
+                  viewAllLabel="Ver Todos os Baralhos"
+                />
+
+                {/* 2. DEPOIS: Dashboard & Estatísticas Gerais dos Flashcards */}
+                <FlashcardsDashboard
+                  onStudyDeck={(deckId) => {
+                    const d = flashcardDecks.find((deck) => deck.id === deckId);
+                    if (d) setStudyDeck(d);
+                  }}
+                  onOpenAIModal={() => setIsAIOpen(true)}
+                  onSelectFolder={(fId) => handleSelectFolder(fId)}
+                  onCreateDeck={() => setIsEditorOpen(true)}
+                />
+              </div>
+            ) : (
+              <>
+                {/* Back to Folders Button */}
+                <div className="flex items-center justify-between pb-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parentId = activeFolder?.parentId || null;
+                      handleSelectFolder(parentId);
+                      setViewAllDecks(false);
+                      setSearchQuery("");
+                      setSelectedDifficulty("");
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    {activeFolder?.parentId
+                      ? `Voltar para "${flashcardFolders.find((f) => f.id === activeFolder.parentId)?.name || "Pasta Anterior"}"`
+                      : "Voltar para Pastas"}
+                  </button>
+                </div>
+
+                {/* Subpastas no início da pasta aberta */}
+                {selectedFolderId && (
+                  <SubfoldersGrid
+                    parentFolderId={selectedFolderId}
+                    parentFolderName={activeFolderName}
+                    folders={flashcardFolders}
+                    getItemCount={getFlashcardFolderCount}
+                    itemLabel={{ singular: "baralho", plural: "baralhos" }}
+                    onSelectFolder={(subId) => {
+                      handleSelectFolder(subId);
+                      setViewAllDecks(false);
+                    }}
+                  />
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between border-b border-gray-200 dark:border-[#2a2d3a] pb-3">
               <div>
                 <h2 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <Layers className="w-4 h-4 text-purple-600 dark:text-purple-400" />
@@ -458,6 +571,8 @@ export default function FlashcardsPage() {
                 </div>
               </div>
             )}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -493,6 +608,17 @@ export default function FlashcardsPage() {
           setAiTargetDeckId(targetDeckId);
           setIsAIOpen(true);
         }}
+      />
+
+      {/* Modal de Gerenciamento de Pastas */}
+      <FolderManagerModal
+        isOpen={isFolderModalOpen}
+        onClose={() => {
+          setIsFolderModalOpen(false);
+          setFolderToEdit(null);
+        }}
+        defaultType="flashcards"
+        folderToEdit={folderToEdit}
       />
     </div>
   );

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { SimuladoExam, SimuladoQuestion, useAppStore, Flashcard, Deck } from "@/stores/useAppStore";
 import { exportElementToPdf } from "@/lib/pdf-export";
+import { cleanFlashcardText } from "@/lib/text-sanitize";
 import AddErrorModal, { ErrorQuestionInput } from "@/components/caderno/AddErrorModal";
 import toast from "react-hot-toast";
 
@@ -204,8 +205,8 @@ export default function SimuladoCorrectionView({
 
       return {
         id: `card-${Date.now()}-${idx}`,
-        front,
-        back,
+        front: cleanFlashcardText(front),
+        back: cleanFlashcardText(back),
       };
     });
 

@@ -22,17 +22,19 @@ export default function DashboardPage() {
 
       <StatsCards />
 
-      {/* Pílula de Conhecimento & Curiosidade Médica Horária */}
-      <MedicalCuriosityWidget />
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         <div className="lg:col-span-2 space-y-6">
           <h2 className="text-xl font-semibold">Ações Rápidas</h2>
           <QuickActions />
         </div>
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold">Atividade Recente</h2>
-          <RecentActivity />
+          {/* Bloquinho Retangular Compacto: Curiosidade do Dia */}
+          <MedicalCuriosityWidget />
+
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Atividade Recente</h2>
+            <RecentActivity />
+          </div>
         </div>
       </div>
     </div>

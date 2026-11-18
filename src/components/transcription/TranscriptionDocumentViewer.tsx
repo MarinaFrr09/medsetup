@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
 import {
   Copy,
   Check,
@@ -22,8 +22,11 @@ import {
 } from "lucide-react";
 import { copyRichText, copyTableRichText } from "@/lib/notion-export";
 import { exportDocumentToProfessionalPdf, cleanLatexAndBadges } from "@/lib/pdf-export";
+import { reduceExcessiveBulletsInTranscription } from "@/lib/rich-text-utils";
+import { replaceInMarkdown } from "@/lib/selection-replace";
 import { getThemePalette } from "@/lib/theme-palettes";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { NotionOutline } from "@/components/shared/NotionOutline";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
@@ -124,7 +127,7 @@ export function cleanTranscriptionContent(raw: string): string {
     filteredLines.push(line);
   }
 
-  return filteredLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return reduceExcessiveBulletsInTranscription(filteredLines.join("\n"));
 }
 
 interface InlineSpan {
@@ -143,37 +146,88 @@ function cleanCssVal(val?: string): string | undefined {
 function parseInlineSpans(text: string): InlineSpan[] {
   if (!text) return [];
   const result: InlineSpan[] = [];
-  const regex = /(<span\s+style=["']color:\s*([^"';]+)[^"']*["']\s*>([\s\S]*?)<\/span>|<mark(?:\s+style=["']background-color:\s*([^"';]+)[^"']*["'])?\s*>([\s\S]*?)<\/mark>|<u>([\s\S]*?)<\/u>|\*\*([^*]+)\*\*|(?<!\*)\*([^*]+)\*(?!\*))/g;
+
+  // Decode ALL HTML entities first so &lt;span...&gt; doesn't get printed raw as literal text
+  const preDecoded = text
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+
+  const normalized = preDecoded
+    .replace(
+      /<mark(?:\s+[^>]*?style=["'][^"']*?background-color:\s*([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?[^>]*><span\s+[^>]*?style=["'][^"']*?color:\s*([^"';]+)[^"']*["'][^>]*>([\s\S]*?)<\/span><\/mark>/gi,
+      '<mark data-bg="$1" data-color="$3">$4</mark>'
+    )
+    .replace(
+      /<span\s+[^>]*?style=["'](?:[^"']*?color:\s*([^"';]+)[^"']*)["'][^>]*>([\s\S]*?)<\/span>/gi,
+      '<span data-color="$1">$2</span>'
+    )
+    .replace(
+      /<span\s+data-color=["']([^"';]+)["'][^>]*>([\s\S]*?)<\/span>/gi,
+      '<span data-color="$1">$2</span>'
+    )
+    .replace(
+      /<mark(?:\s+[^>]*?style=["'][^"']*?background-color:\s*([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?[^>]*>([\s\S]*?)<\/mark>/gi,
+      '<mark data-bg="$1" data-color="$2">$3</mark>'
+    )
+    .replace(
+      /<span\s+[^>]*?style=["'](?:[^"']*?color:\s*([^"';]+)[^"']*)["'][^>]*>([^<\n]+)(?=$|<|\n)/gi,
+      '<span data-color="$1">$2</span>'
+    );
+
+  const regex = /<mark(?:\s+data-bg=["']([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?\s*>([\s\S]*?)<\/mark>|<span\s+data-color=["']([^"';]+)[^"']*["']\s*>([\s\S]*?)<\/span>|<u>([\s\S]*?)<\/u>|\*\*([^*]+)\*\*|(?<!\*)\*([^*]+)\*(?!\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(normalized)) !== null) {
     if (match.index > lastIndex) {
-      const plain = text.slice(lastIndex, match.index).replace(/\*\*/g, "");
+      let plain = normalized.slice(lastIndex, match.index).replace(/\*\*/g, "");
+      plain = plain.replace(/<[^>]+>/g, "");
       if (plain) result.push({ type: "text", content: plain });
     }
-    const [, , spanColor, spanContent, markBg, markContent, uContent, boldContent, italicContent] = match;
+    const [, markBg, markColor, markContent, spanColor, spanContent, uContent, boldContent, italicContent] = match;
 
-    if (spanColor !== undefined && spanContent !== undefined) {
-      result.push({ type: "color", color: cleanCssVal(spanColor), content: spanContent });
-    } else if (markContent !== undefined) {
-      result.push({ type: "mark", bgColor: cleanCssVal(markBg) || "#FEF08A", content: markContent });
+    if (markContent !== undefined) {
+      const cleanContent = markContent.replace(/<[^>]+>/g, "").trim();
+      if (cleanContent) {
+        result.push({
+          type: "mark",
+          bgColor: cleanCssVal(markBg) || "#FEF08A",
+          color: cleanCssVal(markColor),
+          content: cleanContent,
+        });
+      }
+    } else if (spanColor !== undefined && spanContent !== undefined) {
+      const cleanContent = spanContent.replace(/<[^>]+>/g, "").trim();
+      if (cleanContent) {
+        result.push({
+          type: "color",
+          color: cleanCssVal(spanColor),
+          content: cleanContent,
+        });
+      }
     } else if (uContent !== undefined) {
-      result.push({ type: "underline", content: uContent });
+      const cleanContent = uContent.replace(/<[^>]+>/g, "").trim();
+      if (cleanContent) {
+        result.push({ type: "underline", content: cleanContent });
+      }
     } else if (boldContent !== undefined) {
-      result.push({ type: "bold", content: boldContent });
+      result.push({ type: "bold", content: boldContent.replace(/<[^>]+>/g, "") });
     } else if (italicContent !== undefined) {
-      result.push({ type: "italic", content: italicContent });
+      result.push({ type: "italic", content: italicContent.replace(/<[^>]+>/g, "") });
     }
     lastIndex = regex.lastIndex;
   }
 
-  if (lastIndex < text.length) {
-    const plain = text.slice(lastIndex).replace(/\*\*/g, "");
+  if (lastIndex < normalized.length) {
+    let plain = normalized.slice(lastIndex).replace(/\*\*/g, "");
+    plain = plain.replace(/<[^>]+>/g, "");
     if (plain) result.push({ type: "text", content: plain });
   }
 
-  return result.length > 0 ? result : [{ type: "text", content: text.replace(/\*\*/g, "") }];
+  return result.length > 0 ? result : [{ type: "text", content: text.replace(/\*\*/g, "").replace(/<[^>]+>/g, "") }];
 }
 
 const TranscriptionDocumentViewer = forwardRef<TranscriptionViewerHandle, TranscriptionDocumentViewerProps>(
@@ -202,19 +256,66 @@ function TranscriptionDocumentViewer({
   const [copied, setCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
-  // Editing state
-  const [isEditing, setIsEditing] = useState(false);
+  // Editing state - direct in-place editing active by default
+  const [isEditing, setIsEditing] = useState(editable !== false);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [localContent, setLocalContent] = useState<string>("");
   const [editedText, setEditedText] = useState("");
 
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [zoomImageCaption, setZoomImageCaption] = useState<string>("");
 
-  const activeRawText = content ?? transcription ?? summary ?? "";
-  const cleanedContent = isEditing ? editedText : cleanTranscriptionContent(activeRawText);
+  const activeRawText = localContent || (content ?? transcription ?? summary ?? "");
+  const cleanedContent = isEditing ? (editedText || activeRawText) : cleanTranscriptionContent(activeRawText);
 
   useEffect(() => {
-    setEditedText(cleanTranscriptionContent(activeRawText));
-  }, [activeRawText]);
+    const raw = content ?? transcription ?? summary ?? "";
+    setLocalContent(raw);
+    setEditedText(cleanTranscriptionContent(raw));
+  }, [content, transcription, summary]);
+
+  const handleEditorChange = useCallback((newText: string) => {
+    setEditedText(newText);
+    setLocalContent(newText);
+    setSaveStatus("saving");
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      onSaveContent?.(newText, "transcription");
+      setSaveStatus("saved");
+    }, 800);
+  }, [onSaveContent]);
+
+  // Handle direct in-place AI selection apply (replace selection or insert below)
+  useEffect(() => {
+    const handleApplySelection = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        mode: "replace" | "insertBelow";
+        selectedText: string;
+        resultText: string;
+        targetElement: HTMLElement | null;
+      }>;
+      const { mode, selectedText, resultText } = customEvent.detail || {};
+      if (!selectedText || !resultText) return;
+
+      const baseText = isEditing ? editedText : (localContent || (content ?? transcription ?? summary ?? ""));
+      const updated = replaceInMarkdown(baseText, selectedText, resultText, mode);
+      if (updated !== baseText) {
+        customEvent.preventDefault();
+        setLocalContent(updated);
+        setEditedText(updated);
+        setSaveStatus("saving");
+        onSaveContent?.(updated, "transcription");
+        setTimeout(() => setSaveStatus("saved"), 300);
+      }
+    };
+
+    window.addEventListener("medsetup:apply-ai-selection", handleApplySelection);
+    return () => window.removeEventListener("medsetup:apply-ai-selection", handleApplySelection);
+  }, [localContent, editedText, isEditing, content, transcription, summary, onSaveContent]);
 
   const handleCopy = async () => {
     const success = await copyRichText(cleanedContent);
@@ -275,11 +376,9 @@ function TranscriptionDocumentViewer({
 
   const handleCancelEditing = () => {
     setEditedText(cleanTranscriptionContent(activeRawText));
-    setIsEditing(false);
   };
 
   const handleSaveEditing = () => {
-    setIsEditing(false);
     onSaveContent?.(editedText, "transcription");
     toast.success("Alterações salvas com sucesso!", { icon: "💾" });
   };
@@ -291,14 +390,14 @@ function TranscriptionDocumentViewer({
       if (span.type === "bold") {
         return (
           <strong key={i} className="font-bold text-gray-950 dark:text-white">
-            {span.content}
+            {renderInlineMarkdown(span.content)}
           </strong>
         );
       }
       if (span.type === "italic") {
         return (
           <em key={i} className="italic text-gray-800 dark:text-gray-300">
-            {span.content}
+            {renderInlineMarkdown(span.content)}
           </em>
         );
       }
@@ -335,21 +434,22 @@ function TranscriptionDocumentViewer({
     const arrowOutsideBold = body.match(/^\s*\*\*([^*]+?)\*\*\s*(?:->|→|&rarr;)\s*(.*)$/);
     const colonInsideBold = body.match(/^\s*\*\*([^*]+?):\*\*\s*(.*)$/);
     const colonOutsideBold = body.match(/^\s*\*\*([^*]+?)\*\*\s*:\s*(.*)$/);
+    const spanColonMatch = !colonInsideBold && !colonOutsideBold && body.match(/^\s*(<span\b[^>]*>[\s\S]*?<\/span>)\s*(:)\s*(.*)$/i);
     const plainArrowMatch = !arrowInsideBold && !arrowOutsideBold && body.match(/^\s*([^<*:\->—\n]{2,60})\s*(?:->|→|&rarr;)\s*(.*)$/);
-    const plainColonMatch = !colonInsideBold && !colonOutsideBold && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
+    const plainColonMatch = !colonInsideBold && !colonOutsideBold && !spanColonMatch && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
       ? body.match(/^\s*([^<*:\->—\n]{2,60}):\s*(.*)$/)
       : null;
 
     const arrowM = arrowInsideBold || arrowOutsideBold || plainArrowMatch;
-    const colonM = colonInsideBold || colonOutsideBold || plainColonMatch;
+    const colonM = colonInsideBold || colonOutsideBold || spanColonMatch || plainColonMatch;
 
     if (arrowM) {
       const term = arrowM[1].trim();
       const rest = arrowM[2].trim();
       return (
-        <span className="text-[13.5px] sm:text-sm leading-relaxed text-gray-800 dark:text-gray-200 inline-flex flex-wrap items-baseline">
+        <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
           <strong className="font-bold text-gray-950 dark:text-white mr-1.5">
-            {term}
+            {renderInlineMarkdown(term)}
           </strong>
           <span className={`font-semibold mx-1.5 select-none ${palette.tailwind.minorText}`}>
             -&gt;
@@ -363,9 +463,9 @@ function TranscriptionDocumentViewer({
       const term = colonM[1].trim();
       const rest = colonM[2].trim();
       return (
-        <span className="text-[13.5px] sm:text-sm leading-relaxed text-gray-800 dark:text-gray-200 inline-flex flex-wrap items-baseline">
+        <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
           <strong className="font-bold text-gray-950 dark:text-white mr-1.5">
-            {term}:
+            {renderInlineMarkdown(term)}:
           </strong>
           <span>{renderInlineMarkdown(rest)}</span>
         </span>
@@ -373,7 +473,7 @@ function TranscriptionDocumentViewer({
     }
 
     return (
-      <span className="text-[13.5px] sm:text-sm leading-relaxed text-gray-800 dark:text-gray-200 inline-flex flex-wrap items-baseline">
+      <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
         {renderInlineMarkdown(body)}
       </span>
     );
@@ -383,6 +483,7 @@ function TranscriptionDocumentViewer({
   const renderDocumentLines = () => {
     const lines = cleanedContent.split("\n");
     const elements: React.ReactNode[] = [];
+    let headingCounter = 0;
 
     for (let idx = 0; idx < lines.length; idx++) {
       const line = lines[idx];
@@ -434,10 +535,12 @@ function TranscriptionDocumentViewer({
       // H1 Main Title (# Title)
       if (trimmed.startsWith("# ")) {
         const text = trimmed.replace(/^#\s+/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
           <h1
             key={`h1-${idx}`}
-            className={`text-xl sm:text-2xl font-extrabold ${palette.tailwind.primaryText} mb-4 tracking-tight leading-tight`}
+            id={headingId}
+            className={`text-xl sm:text-2xl font-extrabold ${palette.tailwind.primaryText} mb-4 tracking-tight leading-tight scroll-mt-24`}
           >
             {renderInlineMarkdown(text)}
           </h1>
@@ -448,9 +551,10 @@ function TranscriptionDocumentViewer({
       // H2 Section (## Section) — with underline divider
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
-          <div key={`h2-wrap-${idx}`} className="mt-7 mb-3">
-            <h2 className={`text-lg sm:text-xl font-bold ${palette.tailwind.primaryText} pb-2 border-b ${palette.tailwind.dividerBorder} tracking-tight leading-snug`}>
+          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-8 mb-3.5 scroll-mt-24">
+            <h2 className={`text-xl sm:text-2xl font-bold ${palette.tailwind.primaryText} pb-2 border-b ${palette.tailwind.dividerBorder} tracking-tight leading-snug`}>
               {renderInlineMarkdown(text)}
             </h2>
           </div>
@@ -461,10 +565,12 @@ function TranscriptionDocumentViewer({
       // H3 Subsection (### Subsection)
       if (trimmed.startsWith("### ")) {
         const text = trimmed.replace(/^###\s+/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
           <h3
             key={`h3-${idx}`}
-            className={`text-[15px] sm:text-base font-bold ${palette.tailwind.secondaryText} mt-5 mb-2 tracking-tight`}
+            id={headingId}
+            className={`text-[17px] sm:text-[18.5px] font-bold ${palette.tailwind.secondaryText} mt-6 mb-2.5 tracking-tight scroll-mt-24`}
           >
             {renderInlineMarkdown(text)}
           </h3>
@@ -475,10 +581,12 @@ function TranscriptionDocumentViewer({
       // H4 Sub-subsection (#### Sub-subsection)
       if (trimmed.startsWith("#### ")) {
         const text = trimmed.replace(/^####\s+/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
           <h4
             key={`h4-${idx}`}
-            className={`text-[13.5px] sm:text-[14px] font-bold ${palette.tailwind.subText} mt-4 mb-1.5 tracking-tight flex items-center gap-2`}
+            id={headingId}
+            className={`text-[15.5px] sm:text-[16.5px] font-bold ${palette.tailwind.subText} mt-4.5 mb-2 tracking-tight flex items-center gap-2 scroll-mt-24`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${palette.tailwind.accentBg} shrink-0`} />
             <span>{renderInlineMarkdown(text)}</span>
@@ -494,7 +602,7 @@ function TranscriptionDocumentViewer({
         elements.push(
           <h5
             key={`h5-${idx}`}
-            className={`text-[13px] sm:text-[13.5px] font-bold ${palette.tailwind.minorText} mt-3 mb-1 tracking-tight`}
+            className={`text-[14.5px] sm:text-[15px] font-bold ${palette.tailwind.minorText} mt-3.5 mb-1.5 tracking-tight`}
           >
             {renderInlineMarkdown(text)}
           </h5>
@@ -517,7 +625,7 @@ function TranscriptionDocumentViewer({
         elements.push(
           <div
             key={`callout-${idx}`}
-            className={`my-4 p-4 rounded-xl border-l-4 ${palette.tailwind.calloutBorder} ${palette.tailwind.calloutBg} text-gray-800 dark:text-gray-200 text-xs sm:text-sm shadow-xs`}
+            className={`my-4 p-4 rounded-xl border-l-4 ${palette.tailwind.calloutBorder} ${palette.tailwind.calloutBg} text-gray-800 dark:text-gray-200 text-[14.5px] sm:text-[15.5px] leading-relaxed shadow-xs`}
           >
             {renderInlineMarkdown(calloutText)}
           </div>
@@ -696,7 +804,7 @@ function TranscriptionDocumentViewer({
               <span className={`font-extrabold text-xs sm:text-sm px-2.5 py-1 rounded-lg ${palette.tailwind.badgeBg} ${palette.tailwind.badgeText} shrink-0 shadow-xs`}>
                 {num}.
               </span>
-              <h4 className="text-[15.5px] sm:text-[17px] font-bold text-gray-950 dark:text-white tracking-tight">
+              <h4 className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white tracking-tight">
                 {renderInlineMarkdown(itemText)}
               </h4>
             </div>
@@ -706,7 +814,7 @@ function TranscriptionDocumentViewer({
 
         elements.push(
           <div key={`num-${idx}`} className={`my-2 flex items-start ${isNested ? "pl-5 sm:pl-7" : ""}`}>
-            <span className={`text-xs font-bold ${palette.tailwind.minorText} min-w-[24px] mt-0.5`}>
+            <span className={`text-sm font-bold ${palette.tailwind.minorText} min-w-[24px] mt-0.5`}>
               {num}.
             </span>
             <div className="flex-1">{renderItemContent(itemText)}</div>
@@ -721,7 +829,7 @@ function TranscriptionDocumentViewer({
         elements.push(
           <div
             key={`fb-h-${idx}`}
-            className={`text-[14px] font-bold ${palette.tailwind.primaryText} mt-3.5 mb-1.5`}
+            className={`text-[15.5px] font-bold ${palette.tailwind.primaryText} mt-3.5 mb-1.5`}
           >
             {renderInlineMarkdown(fallbackHashMatch[1])}
           </div>
@@ -733,7 +841,7 @@ function TranscriptionDocumentViewer({
       elements.push(
         <p
           key={`p-${idx}`}
-          className="text-gray-700 dark:text-gray-300 text-[13px] sm:text-[13.5px] md:text-sm leading-relaxed mb-3"
+          className="text-gray-800 dark:text-gray-200 text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed mb-3.5"
         >
           {renderInlineMarkdown(trimmed)}
         </p>
@@ -793,11 +901,12 @@ function TranscriptionDocumentViewer({
     const arrowOutsideBold = body.match(/^\s*\*\*([^*]+?)\*\*\s*(?:->|→|&rarr;)\s*(.*)$/);
     const colonInsideBold = body.match(/^\s*\*\*([^*]+?):\*\*\s*(.*)$/);
     const colonOutsideBold = body.match(/^\s*\*\*([^*]+?)\*\*\s*:\s*(.*)$/);
+    const spanColonMatch = !colonInsideBold && !colonOutsideBold && body.match(/^\s*(<span\b[^>]*>[\s\S]*?<\/span>)\s*(:)\s*(.*)$/i);
     const plainArrowMatch = !arrowInsideBold && !arrowOutsideBold && body.match(/^\s*([^<*:\->—\n]{2,60})\s*(?:->|→|&rarr;)\s*(.*)$/);
-    const plainColonMatch = !colonInsideBold && !colonOutsideBold && !body.trim().startsWith("<") && body.match(/^\s*([^<*:\->—\n]{2,60}):\s*(.*)$/);
+    const plainColonMatch = !colonInsideBold && !colonOutsideBold && !spanColonMatch && !body.trim().startsWith("<") && body.match(/^\s*([^<*:\->—\n]{2,60}):\s*(.*)$/);
 
     const m = arrowInsideBold || arrowOutsideBold || plainArrowMatch;
-    const c = colonInsideBold || colonOutsideBold || plainColonMatch;
+    const c = colonInsideBold || colonOutsideBold || spanColonMatch || plainColonMatch;
 
     if (m) {
       const term = m[1].trim();
@@ -805,7 +914,7 @@ function TranscriptionDocumentViewer({
       return (
         <span style={{ fontSize: "inherit", lineHeight: "inherit", color: "#334155" }}>
           <strong style={{ fontWeight: 700, color: "#0F172A", marginRight: "4px" }}>
-            {term}
+            {renderPrintInlineMarkdown(term)}
           </strong>
           <span style={{ color: "#2563EB", fontWeight: 600, margin: "0 5px" }}>
             -&gt;
@@ -821,7 +930,7 @@ function TranscriptionDocumentViewer({
       return (
         <span style={{ fontSize: "inherit", lineHeight: "inherit", color: "#334155" }}>
           <strong style={{ fontWeight: 700, color: "#0F172A", marginRight: "4px" }}>
-            {term}:
+            {renderPrintInlineMarkdown(term)}:
           </strong>
           <span>{renderPrintInlineMarkdown(rest)}</span>
         </span>
@@ -1159,234 +1268,99 @@ function TranscriptionDocumentViewer({
               Conteúdo Expandido
             </span>
           )}
-          {isEditing ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-              <Pencil className="w-3 h-3" />
-              Editando Conteúdo
-            </span>
-          ) : (
-            <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
-              Texto integral estruturado em tópicos e subtópicos
-            </span>
+
+          {/* Indicador de Edição Direta e Salvamento Automático */}
+          {editable !== false && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-2xs">
+              {saveStatus === "saving" ? (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  <span className="text-amber-700 dark:text-amber-300">Salvando alterações...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Edição direta ativa • Salvo automaticamente</span>
+                </>
+              )}
+            </div>
           )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {isEditing ? (
-            <>
-              {/* Botão Cancelar Edição */}
-              <button
-                type="button"
-                onClick={handleCancelEditing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Cancelar alterações"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Cancelar</span>
-              </button>
 
-              {/* Botão Salvar Edição */}
-              <button
-                type="button"
-                onClick={handleSaveEditing}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white shadow-sm transition-transform active:scale-95 cursor-pointer",
-                  activeTheme === "vermelho"
-                    ? "bg-red-600 hover:bg-red-700 shadow-red-500/20"
-                    : activeTheme === "roxo"
-                    ? "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20"
-                    : activeTheme === "azul"
-                    ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
-                    : activeTheme === "cinza"
-                    ? "bg-zinc-800 hover:bg-zinc-900 shadow-zinc-500/20"
-                    : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
-                )}
-                title="Salvar alterações no texto"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>Salvar</span>
-              </button>
-
-              {/* Botão Copiar durante edição */}
-              <button
-                type="button"
-                onClick={handleCopy}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
-                  copied
-                    ? (activeTheme === "vermelho" ? "bg-red-600 text-white" :
-                       activeTheme === "roxo" ? "bg-purple-600 text-white" :
-                       activeTheme === "azul" ? "bg-blue-600 text-white" :
-                       activeTheme === "cinza" ? "bg-zinc-800 text-white" :
-                       "bg-emerald-600 text-white")
-                    : (activeTheme === "vermelho" ? "bg-red-50 text-red-800 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800/60" :
-                       activeTheme === "roxo" ? "bg-purple-50 text-purple-800 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/50 border border-purple-200 dark:border-purple-800/60" :
-                       activeTheme === "azul" ? "bg-blue-50 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60" :
-                       activeTheme === "cinza" ? "bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-300 dark:hover:bg-zinc-800/60 border border-zinc-300 dark:border-zinc-700" :
-                       "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60")
-                )}
-                title="Copiar texto em edição"
-              >
-                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? "Copiado!" : "Copiar"}</span>
-              </button>
-
-              {/* Botão Exportar PDF durante edição */}
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white disabled:opacity-50 transition-colors cursor-pointer shadow-sm",
-                  activeTheme === "vermelho" ? "bg-red-600 hover:bg-red-700 shadow-red-500/20" :
-                  activeTheme === "roxo" ? "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20" :
-                  activeTheme === "azul" ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20" :
-                  activeTheme === "cinza" ? "bg-zinc-800 hover:bg-zinc-900 shadow-zinc-500/20" :
-                  "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
-                )}
-                title="Exportar PDF com as alterações atuais"
-              >
-                {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                <span>{isExportingPdf ? "Exportando..." : "Exportar PDF"}</span>
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Botão Editar (Solicitado pelo usuário) */}
-              {editable && (
-                <button
-                  type="button"
-                  onClick={handleStartEditing}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                  title="Editar qualquer parte do texto gerado"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Editar Texto</span>
-                </button>
-              )}
-
-              {/* Botão Visualizar PDF (Solicitado pelo usuário) */}
-              {(onViewPdf || fileUrl) && (
-                <button
-                  type="button"
-                  onClick={() => onViewPdf ? onViewPdf() : (fileUrl ? window.open(fileUrl, "_blank") : null)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-all cursor-pointer shadow-2xs"
-                  title="Visualizar o PDF original anexado"
-                >
-                  <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Visualizar PDF</span>
-                </button>
-              )}
-
-              {/* Botão Copiar Universal (Notion, Docs, Word, WhatsApp) */}
-              <button
-                type="button"
-                onClick={handleCopy}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-md cursor-pointer ${
-                  activeTheme === "roxo"
-                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-purple-500/20"
-                    : activeTheme === "vermelho"
-                    ? "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 shadow-red-500/20"
-                    : activeTheme === "cinza"
-                    ? "bg-gradient-to-r from-zinc-700 to-zinc-900 hover:from-zinc-800 hover:to-black shadow-zinc-500/20"
-                    : activeTheme === "esmeralda"
-                    ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/20"
-                    : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20"
-                }`}
-                title="Copiar com formatação perfeita para colar em qualquer aplicativo"
-              >
-                {copied ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-200" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                <span>{copied ? "Copiado!" : "Copiar"}</span>
-              </button>
-
-              {/* Exportar PDF */}
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50"
-                title="Exportar como documento PDF em formato A4 proporcional"
-              >
-                <FileDown className={`w-3.5 h-3.5 ${palette.tailwind.minorText}`} />
-                <span>{isExportingPdf ? "Gerando PDF..." : "Exportar PDF"}</span>
-              </button>
-            </>
+          {/* Botão Visualizar PDF original */}
+          {(onViewPdf || fileUrl) && (
+            <button
+              type="button"
+              onClick={() => onViewPdf ? onViewPdf() : (fileUrl ? window.open(fileUrl, "_blank") : null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-all cursor-pointer shadow-2xs"
+              title="Visualizar o PDF original anexado"
+            >
+              <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Visualizar PDF</span>
+            </button>
           )}
+
+          {/* Botão Copiar */}
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
+              copied
+                ? "bg-blue-600 text-white"
+                : "bg-blue-50 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60"
+            )}
+            title="Copiar texto formatado"
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? "Copiado!" : "Copiar"}</span>
+          </button>
+
+          {/* Exportar PDF */}
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50"
+            title="Exportar como documento PDF em formato A4 proporcional"
+          >
+            <FileDown className={`w-3.5 h-3.5 ${palette.tailwind.minorText}`} />
+            <span>{isExportingPdf ? "Gerando PDF..." : "Exportar PDF"}</span>
+          </button>
         </div>
       </div>
 
-      {/* Editor View or Clean Document Sheet */}
-      {isEditing ? (
-        <div className="max-w-4xl mx-auto space-y-3">
-          <RichTextEditor
-            value={editedText}
-            onChange={setEditedText}
-            onSave={handleSaveEditing}
-            onCancel={handleCancelEditing}
-            onRestoreOriginal={() => {
-              if (onRestoreOriginal) {
-                onRestoreOriginal();
-              }
-              setEditedText(cleanTranscriptionContent(activeRawText));
-              toast.success("Texto original restaurado!", { icon: "↩️" });
-            }}
-            theme={theme}
-            placeholder="Digite ou edite o conteúdo do documento com ferramentas de formatação..."
-            minHeight="540px"
-          />
-          <div className="flex items-center justify-between pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setEditedText(cleanTranscriptionContent(activeRawText));
-                toast.success("Texto original restaurado!", { icon: "↩️" });
-              }}
-              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restaurar original</span>
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCancelEditing}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEditing}
-                className={cn(
-                  "px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-sm cursor-pointer",
-                  activeTheme === "vermelho"
-                    ? "bg-red-600 hover:bg-red-700"
-                    : activeTheme === "roxo"
-                    ? "bg-purple-600 hover:bg-purple-700"
-                    : activeTheme === "azul"
-                    ? "bg-blue-600 hover:bg-blue-700"
-                    : activeTheme === "cinza"
-                    ? "bg-zinc-800 hover:bg-zinc-900"
-                    : "bg-emerald-600 hover:bg-emerald-700"
-                )}
-              >
-                Salvar Alterações
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div
-          ref={documentRef}
-          className="bg-white dark:bg-[#1A1D27] p-5 sm:p-7 md:p-9 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs max-w-4xl mx-auto selection:bg-blue-100 dark:selection:bg-blue-900/40"
-        >
-          {renderDocumentLines()}
-        </div>
-      )}
+      {/* Document Sheet with Direct In-Place Editing */}
+      <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+        {/* Sumário Balão Flutuante do Lado Direito (Hover-to-Open, sempre presente) */}
+        <NotionOutline
+          content={cleanedContent}
+          accentColor={
+            activeTheme === "vermelho"
+              ? "rose"
+              : activeTheme === "roxo"
+              ? "purple"
+              : activeTheme === "esmeralda"
+              ? "emerald"
+              : "blue"
+          }
+        />
+
+        <RichTextEditor
+          value={editedText}
+          onChange={handleEditorChange}
+          onRestoreOriginal={onRestoreOriginal ? () => {
+            onRestoreOriginal();
+            setEditedText(cleanTranscriptionContent(activeRawText));
+            toast.success("Texto original restaurado!", { icon: "↩️" });
+          } : undefined}
+          theme={theme}
+          placeholder="Digite ou edite o documento diretamente com formatação rica..."
+          minHeight="540px"
+        />
+      </div>
       </>
       )}
 

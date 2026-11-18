@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X, Save, Folder as FolderIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAppStore } from "@/stores/useAppStore";
+import { cleanFlashcardText } from "@/lib/text-sanitize";
 import toast from "react-hot-toast";
 
 interface FlashcardEditorProps {
@@ -28,7 +29,10 @@ export default function FlashcardEditor({
   if (!isOpen) return null;
 
   const handleSave = () => {
-    if (!frontText.trim() || !backText.trim()) {
+    const cleanFront = cleanFlashcardText(frontText.trim());
+    const cleanBack = cleanFlashcardText(backText.trim());
+
+    if (!cleanFront || !cleanBack) {
       toast.error("Preencha a frente e o verso do flashcard.");
       return;
     }
@@ -38,14 +42,15 @@ export default function FlashcardEditor({
 
     if (onCardSaved) {
       onCardSaved({
-        front: frontText.trim(),
-        back: backText.trim(),
+        front: cleanFront,
+        back: cleanBack,
         deckName: finalDeckName,
         folderId: finalFolderId,
       });
     } else {
-      addCardToDeck(finalDeckName, { front: frontText.trim(), back: backText.trim() }, finalFolderId);
+      addCardToDeck(finalDeckName, { front: cleanFront, back: cleanBack }, finalFolderId);
     }
+
 
     toast.success("Flashcard salvo com sucesso!");
     onClose();
@@ -55,12 +60,20 @@ export default function FlashcardEditor({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="flex w-full max-w-2xl flex-col max-h-[90vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] dark:border dark:border-[#2a2d3a] overflow-hidden"
+        className="flex w-full max-w-2xl flex-col max-h-[90vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] dark:border dark:border-[#2a2d3a] overflow-hidden cursor-default"
       >
         <div className="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2d3a] px-6 py-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Novo Flashcard</h2>

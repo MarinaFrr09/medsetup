@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, Sparkles, Clock, History, Calendar, FileText, ArrowRight, GitBranch, Trash2, Timer, Zap } from "lucide-react";
+import { Mic, Sparkles, Clock, History, Calendar, FileText, ArrowRight, GitBranch, Trash2, Timer, Zap, ChevronLeft } from "lucide-react";
 import { useState, useEffect } from "react";
 import AudioRecorder from "@/components/audio/AudioRecorder";
 import dynamic from "next/dynamic";
@@ -143,91 +143,102 @@ export default function AudioPage() {
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <AudioRecorder
-            onComplete={handleRecordingComplete}
-            isProcessing={isProcessing}
-            expandMode={expandMode}
-            onFileAttached={setHasAttachedFile}
-          />
-
-          {/* Unified "Expand" Toggle — Só exibe após anexar arquivo */}
-          {hasAttachedFile && (
-            <div
-              onClick={() => setExpandMode((v) => !v)}
-              className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
-                expandMode
-                  ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-500 shadow-xs"
-                  : "border-gray-200 dark:border-[#2a2d3a] bg-white dark:bg-[#1A1D27] hover:border-amber-300 dark:hover:border-amber-700"
-              }`}
+      {currentResult && !isProcessing ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2">
+            <button
+              type="button"
+              onClick={() => setCurrentResult(null)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
             >
+              <ChevronLeft className="w-4 h-4" />
+              Voltar para Nova Gravação
+            </button>
+          </div>
+          <TranscriptView data={currentResult} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <AudioRecorder
+              onComplete={handleRecordingComplete}
+              isProcessing={isProcessing}
+              expandMode={expandMode}
+              onFileAttached={setHasAttachedFile}
+            />
+
+            {/* Unified "Expand" Toggle — Só exibe após anexar arquivo */}
+            {hasAttachedFile && (
               <div
-                className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                  expandMode ? "border-amber-500 bg-amber-500" : "border-gray-400 bg-transparent"
+                onClick={() => setExpandMode((v) => !v)}
+                className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
+                  expandMode
+                    ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-500 shadow-xs"
+                    : "border-gray-200 dark:border-[#2a2d3a] bg-white dark:bg-[#1A1D27] hover:border-amber-300 dark:hover:border-amber-700"
                 }`}
               >
-                {expandMode && <div className="w-2 h-2 bg-white rounded-full" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <Zap className={`w-4 h-4 ${expandMode ? "text-amber-500" : "text-gray-400"}`} />
-                  <span
-                    className={`font-bold text-sm ${
-                      expandMode ? "text-amber-700 dark:text-amber-400" : "text-gray-700 dark:text-gray-300"
-                    }`}
-                  >
-                    Expandir
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      expandMode
-                        ? "bg-amber-500 text-white"
-                        : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                    }`}
-                  >
-                    OPCIONAL
-                  </span>
-                </div>
-                <p
-                  className={`text-xs mt-1 leading-relaxed ${
-                    expandMode
-                      ? "text-amber-700/90 dark:text-amber-400/90 font-medium"
-                      : "text-gray-500 dark:text-gray-400"
+                <div
+                  className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                    expandMode ? "border-amber-500 bg-amber-500" : "border-gray-400 bg-transparent"
                   }`}
                 >
-                  {expandMode
-                    ? "✅ Ativado para Resumo Completo e Mapa Mental — a IA aprofundará as explicações com definições completas, contexto clínico/prático, fisiopatologia, exemplos e mapa mental ampliado."
-                    : "Ative para aprofundar e enriquecer as informações na geração do Resumo Completo e do Mapa Mental da aula."}
+                  {expandMode && <div className="w-2 h-2 bg-white rounded-full" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Zap className={`w-4 h-4 ${expandMode ? "text-amber-500" : "text-gray-400"}`} />
+                    <span
+                      className={`font-bold text-sm ${
+                        expandMode ? "text-amber-700 dark:text-amber-400" : "text-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      Expandir
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        expandMode
+                          ? "bg-amber-500 text-white"
+                          : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                      }`}
+                    >
+                      OPCIONAL
+                    </span>
+                  </div>
+                  <p
+                    className={`text-xs mt-1 leading-relaxed ${
+                      expandMode
+                        ? "text-amber-700/90 dark:text-amber-400/90 font-medium"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
+                    {expandMode
+                      ? "✅ Ativado para Resumo Completo e Mapa Mental — a IA aprofundará as explicações com definições completas, contexto clínico/prático, fisiopatologia, exemplos e mapa mental ampliado."
+                      : "Ative para aprofundar e enriquecer as informações na geração do Resumo Completo e do Mapa Mental da aula."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isProcessing && (
+              <div className="bg-white dark:bg-[#1A1D27] rounded-2xl p-8 border border-gray-200 dark:border-[#2a2d3a] shadow-sm text-center">
+                <div className="inline-flex p-4 bg-red-50 dark:bg-red-950/30 rounded-full mb-4">
+                  <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center justify-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  Analisando e Transcrevendo o Áudio Completo...
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto text-xs sm:text-sm">
+                  Ouvindo a gravação do início ao fim sem cortes, filtrando ruídos, gerando a transcrição integral, o resumo aprofundado e o mapa mental.
                 </p>
-              </div>
-            </div>
-          )}
 
-          {isProcessing && (
-            <div className="bg-white dark:bg-[#1A1D27] rounded-2xl p-8 border border-gray-200 dark:border-[#2a2d3a] shadow-sm text-center">
-              <div className="inline-flex p-4 bg-red-50 dark:bg-red-950/30 rounded-full mb-4">
-                <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
+                <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-mono font-medium">
+                  <Timer className="w-3.5 h-3.5 text-red-500" />
+                  <span>Tempo em processamento: {formatElapsed(elapsedSeconds)}</span>
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center justify-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                Analisando e Transcrevendo o Áudio Completo...
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto text-xs sm:text-sm">
-                Ouvindo a gravação do início ao fim sem cortes, filtrando ruídos, gerando a transcrição integral, o resumo aprofundado e o mapa mental.
-              </p>
-
-              <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-mono font-medium">
-                <Timer className="w-3.5 h-3.5 text-red-500" />
-                <span>Tempo em processamento: {formatElapsed(elapsedSeconds)}</span>
-              </div>
-            </div>
-          )}
-
-          {currentResult && !isProcessing && (
-            <TranscriptView data={currentResult} />
-          )}
-        </div>
+            )}
+          </div>
 
         {/* Histórico Lateral Persistido */}
         <div className="space-y-4">
@@ -295,6 +306,7 @@ export default function AudioPage() {
           </div>
         </div>
       </div>
+    )}
     </div>
   );
 }

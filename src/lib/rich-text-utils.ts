@@ -8,13 +8,538 @@ function escapeRegex(str: string) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function capitalizeFirstAlpha(str: string): string {
+  if (!str) return "";
+  return str.replace(/^(\s*(?:\*\*)?\s*)([a-záàâãéêíóôõúç])/i, (_, prefix, ch) => prefix + ch.toUpperCase());
+}
+
+function stripLeadingArticles(str: string): string {
+  return str
+    .trim()
+    .replace(/^(?:pelos|pelas|pelo|pela|dos|das|do|da|nos|nas|no|na|aos|às|ao|à|os|as|o|a|uns|umas|um|uma|seus|suas|seu|sua)\s+/i, "")
+    .trim();
+}
+
+function splitSentencesRespectingParens(paragraph: string): string[] {
+  const sentences: string[] = [];
+  let current = "";
+  let parenDepth = 0;
+
+  for (let i = 0; i < paragraph.length; i++) {
+    const ch = paragraph[i];
+    if (ch === "(" || ch === "[") parenDepth++;
+    else if ((ch === ")" || ch === "]") && parenDepth > 0) parenDepth--;
+
+    current += ch;
+
+    if (parenDepth === 0 && ch === ".") {
+      const nextChar = paragraph[i + 1];
+      const afterSpace = paragraph.slice(i + 1).match(/^\s+([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ*])/);
+      if (!nextChar || afterSpace) {
+        const beforeDot = current.slice(0, -1).trim();
+        const lastWord = (beforeDot.split(/\s+/).pop() || "").replace(/[^a-zA-ZÀ-ÿ]/g, "").toLowerCase();
+        const abbrevs = new Set(["ex", "dr", "dra", "fig", "aprox", "etc", "vs", "ref", "pag", "pág", "cap", "vol", "sr", "sra", "prof", "obs"]);
+        if (!abbrevs.has(lastWord)) {
+          sentences.push(current.trim());
+          current = "";
+          while (i + 1 < paragraph.length && /\s/.test(paragraph[i + 1])) {
+            i++;
+          }
+        }
+      }
+    }
+  }
+
+  if (current.trim()) {
+    sentences.push(current.trim());
+  }
+
+  return sentences;
+}
+
+function extractTrailingClauseAfterEnumeration(text: string): { coreList: string; trailing: string } {
+  let parenDepth = 0;
+  let inBold = false;
+  let topLevelEIndex = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    if (text.slice(i, i + 2) === "**") {
+      inBold = !inBold;
+      i++;
+      continue;
+    }
+    if (inBold) continue;
+    const ch = text[i];
+    if (ch === "(" || ch === "[") parenDepth++;
+    else if ((ch === ")" || ch === "]") && parenDepth > 0) parenDepth--;
+
+    if (parenDepth === 0 && /^(\s+e\s+|\s+ou\s+)/i.test(text.slice(i))) {
+      topLevelEIndex = i;
+    }
+  }
+
+  if (topLevelEIndex !== -1) {
+    // Look for a top-level comma AFTER topLevelEIndex
+    parenDepth = 0;
+    inBold = false;
+    for (let j = topLevelEIndex + 3; j < text.length; j++) {
+      if (text.slice(j, j + 2) === "**") {
+        inBold = !inBold;
+        j++;
+        continue;
+      }
+      if (inBold) continue;
+      const ch = text[j];
+      if (ch === "(" || ch === "[") parenDepth++;
+      else if ((ch === ")" || ch === "]") && parenDepth > 0) parenDepth--;
+
+      if (parenDepth === 0 && ch === ",") {
+        const afterComma = text.slice(j + 1).trim();
+        if (afterComma.length > 5) {
+          return {
+            coreList: text.slice(0, j).trim(),
+            trailing: afterComma.replace(/\.$/, "").trim(),
+          };
+        }
+      }
+    }
+  }
+
+  return { coreList: text.trim(), trailing: "" };
+}
+
+function splitTopLevelEnumeration(listStr: string): string[] {
+  const commaParts: string[] = [];
+  let current = "";
+  let parenDepth = 0;
+  let inBold = false;
+
+  for (let i = 0; i < listStr.length; i++) {
+    if (listStr.slice(i, i + 2) === "**") {
+      inBold = !inBold;
+      current += "**";
+      i++;
+      continue;
+    }
+    const ch = listStr[i];
+    if (!inBold) {
+      if (ch === "(" || ch === "[") parenDepth++;
+      else if ((ch === ")" || ch === "]") && parenDepth > 0) parenDepth--;
+    }
+
+    if (!inBold && parenDepth === 0 && ch === ",") {
+      if (current.trim()) commaParts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) commaParts.push(current.trim());
+
+  const finalItems: string[] = [];
+  for (let idx = 0; idx < commaParts.length; idx++) {
+    const part = commaParts[idx];
+    // Split on top-level " e " if it's the last comma part or if there are only 1-2 commaParts with bold items
+    if (idx === commaParts.length - 1 || commaParts.length === 1) {
+      let subCurrent = "";
+      let pDepth = 0;
+      let bState = false;
+      let splitHappened = false;
+
+      for (let k = 0; k < part.length; k++) {
+        if (part.slice(k, k + 2) === "**") {
+          bState = !bState;
+          subCurrent += "**";
+          k++;
+          continue;
+        }
+        const c = part[k];
+        if (!bState) {
+          if (c === "(" || c === "[") pDepth++;
+          else if ((c === ")" || c === "]") && pDepth > 0) pDepth--;
+        }
+
+        const eMatch = !bState && pDepth === 0 ? part.slice(k).match(/^(\s+e\s+)/i) : null;
+        if (eMatch) {
+          const left = subCurrent.trim();
+          const right = part.slice(k + eMatch[1].length).trim();
+          const canSplitE =
+            commaParts.length >= 2 ||
+            (left.includes("**") && right.includes("**"));
+          if (canSplitE && left && right) {
+            finalItems.push(left);
+            subCurrent = "";
+            k += eMatch[1].length - 1;
+            splitHappened = true;
+            continue;
+          }
+        }
+        subCurrent += c;
+      }
+      if (subCurrent.trim()) finalItems.push(subCurrent.trim());
+      if (splitHappened) continue;
+    } else {
+      finalItems.push(part);
+    }
+  }
+
+  return finalItems.map((it) => it.replace(/\.$/, "").trim()).filter(Boolean);
+}
+
+function formatLeadSubjectAndPredicate(leadText: string): string {
+  const cleaned = leadText.replace(/,\s*$/, "").trim();
+  // Check if starts with [Artigo] **Estrutura**
+  const boldStart = cleaned.match(/^(?:(?:o|a|os|as|um|uma|seus|suas|seu|sua)\s+)?(\*\*[^*]+\*\*(?:\s*\([^)]*\))?(?:\s+e\s+(?:o|a|os|as)?\s*\*\*[^*]+\*\*(?:\s*\([^)]*\))?)?)\s*(.*)$/i);
+  if (boldStart) {
+    const subject = capitalizeFirstAlpha(boldStart[1].trim());
+    let rest = boldStart[2].trim();
+    rest = rest.replace(/^(?:é\s+um[a]?\s+|é\s+o\s+|é\s+a\s+|é\s+|são\s+os\s+|são\s+as\s+|são\s+)/i, "");
+    if (!rest) return subject;
+    return `${subject}: ${rest}`;
+  }
+
+  // Unbolded subject (e.g. "A estrutura óssea do nariz" or "Suas cartilagens principais")
+  const stripped = stripLeadingArticles(cleaned);
+  return `**${capitalizeFirstAlpha(stripped)}**`;
+}
+
+function formatSubBulletItem(item: string): string {
+  const stripped = stripLeadingArticles(item.replace(/\.$/, "").trim());
+  if (stripped.startsWith("**")) {
+    return capitalizeFirstAlpha(stripped);
+  }
+  // If unbolded item like "parte respiratória (revestida por...)" or "vestíbulo"
+  const parenIdx = stripped.search(/\s*[\(\[']/);
+  if (parenIdx > 0) {
+    const head = capitalizeFirstAlpha(stripped.slice(0, parenIdx).trim());
+    const tail = stripped.slice(parenIdx).trim();
+    return `**${head}** ${tail}`;
+  }
+  return `**${capitalizeFirstAlpha(stripped)}**`;
+}
+
+function convertSentenceToStructuredMarkdownLines(sentence: string): string[] {
+  const cleanSent = sentence.replace(/\.$/, "").trim();
+  if (!cleanSent) return [];
+
+  // Look for top-level list connector
+  const connectorRegex = /\b(inclui(?:ndo)?|incluem|compreende(?:ndo)?|compreendem|contendo|contém|contêm|possui(?:ndo)?|possuem|apresenta(?:ndo)?|apresentam|(?:é\s+|são\s+)?formad[ao]s?\s+(?:por|pelo|pela|pelos|pelas)|(?:é\s+|são\s+)?compost[ao]s?\s+(?:por|pelo|pela|pelos|pelas)|(?:é\s+|são\s+)?constituíd[ao]s?\s+(?:por|pelo|pela|pelos|pelas)|(?:é\s+|são\s+)?dividid[ao]s?\s+em|divide-se\s+em|dividem-se\s+em|são\s+(?=(?:o|a|os|as)\s+\*\*)|com\s+(?=\*\*))/i;
+
+  // Find match at parenDepth === 0
+  let parenDepth = 0;
+  let inBold = false;
+  let matchIndex = -1;
+  let matchConnector = "";
+
+  for (let i = 0; i < cleanSent.length; i++) {
+    if (cleanSent.slice(i, i + 2) === "**") {
+      inBold = !inBold;
+      i++;
+      continue;
+    }
+    if (inBold) continue;
+    const ch = cleanSent[i];
+    if (ch === "(" || ch === "[") parenDepth++;
+    else if ((ch === ")" || ch === "]") && parenDepth > 0) parenDepth--;
+
+    if (parenDepth === 0 && (i === 0 || /[\s,]/.test(cleanSent[i - 1]))) {
+      const m = cleanSent.slice(i).match(connectorRegex);
+      if (m && m.index === 0) {
+        matchIndex = i;
+        matchConnector = m[1];
+        break;
+      }
+    }
+  }
+
+  if (matchIndex > 0) {
+    const beforeConnector = cleanSent.slice(0, matchIndex).trim();
+    const afterConnector = cleanSent.slice(matchIndex + matchConnector.length).trim();
+    const { coreList, trailing } = extractTrailingClauseAfterEnumeration(afterConnector);
+    const items = splitTopLevelEnumeration(coreList);
+
+    // Check if valid bolded enumeration (2+ items where every item starts with optional article + **)
+    const allBoldItems =
+      items.length >= 2 &&
+      items.every((it) => /^(?:(?:pelos|pelas|pelo|pela|dos|das|do|da|nos|nas|no|na|os|as|o|a|um|uma|seus|suas)\s+)*\*\*[^*]+\*\*/i.test(it));
+
+    // Or valid unbolded structural division/inclusion list (3+ concise noun items)
+    const isDivisionOrInclusion = /dividid|divide-se|inclui|compreende|compost|formad|constituíd/i.test(matchConnector);
+    const allConciseStructuralItems =
+      isDivisionOrInclusion &&
+      items.length >= 3 &&
+      items.every((it) => {
+        const coreWordPart = stripLeadingArticles(it.replace(/\([\s\S]*?\)/g, "").replace(/'[^']*'/g, "")).trim();
+        const wordCount = coreWordPart.split(/\s+/).filter(Boolean).length;
+        return wordCount >= 1 && wordCount <= 5 && !/\b(é|são|está|estão|foi|foram|atua|atuam)\b/i.test(coreWordPart);
+      });
+
+    if (allBoldItems || allConciseStructuralItems) {
+      let headerLine = formatLeadSubjectAndPredicate(beforeConnector);
+      const cleanConn = matchConnector
+        .replace(/^(?:é|são)\s+/i, "")
+        .replace(/\s+(?:pelo|pela|pelos|pelas)$/i, " por")
+        .trim()
+        .toLowerCase();
+
+      if (trailing) {
+        headerLine += ` (${trailing})`;
+      } else if (/dividid|divide-se/i.test(cleanConn) && !headerLine.toLowerCase().includes("dividid")) {
+        headerLine += headerLine.includes(":") ? `, ${cleanConn}` : `: ${cleanConn}`;
+      }
+
+      if (!headerLine.endsWith(":")) {
+        headerLine = headerLine.replace(/[.,;]+$/, "") + ":";
+      }
+
+      const out: string[] = [`* ${headerLine}`];
+      for (const item of items) {
+        out.push(`  * ${formatSubBulletItem(item)}`);
+      }
+      return out;
+    }
+  }
+
+  // Single concept / structure sentence (Pattern D)
+  const boldSubjectMatch = cleanSent.match(
+    /^(?:(?:o|a|os|as|um|uma|seus|suas|seu|sua)\s+)?(\*\*[^*]+\*\*(?:\s*\([^)]*\))?(?:\s+e\s+(?:o|a|os|as)?\s*\*\*[^*]+\*\*(?:\s*\([^)]*\))?)?)\s+(.*)$/i
+  );
+  if (boldSubjectMatch) {
+    const subj = capitalizeFirstAlpha(boldSubjectMatch[1].trim());
+    let pred = boldSubjectMatch[2].trim();
+    pred = pred.replace(/^(?:é\s+um[a]?\s+|é\s+o\s+|é\s+a\s+|é\s+|são\s+os\s+|são\s+as\s+|são\s+)/i, "");
+    return [`* ${subj}: ${pred}.`];
+  }
+
+  return [`* ${capitalizeFirstAlpha(cleanSent)}.`];
+}
+
+/**
+ * Automatically organizes dense continuous prose paragraphs that enumerate multiple
+ * anatomical/histological/pharmacological structures, types, or characteristics into
+ * clean Markdown bullets (`* `) and indented sub-bullets (`  * `).
+ * Only activates when the paragraph genuinely contains a structural enumeration list.
+ */
+export function formatDenseProseParagraphsIntoBullets(markdown: string): string {
+  if (!markdown) return "";
+
+  const lines = markdown.split("\n");
+  const outLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Do not touch headings, lists, blockquotes, tables, images, HTML blocks, or short lines
+    if (
+      !trimmed ||
+      trimmed.length < 220 ||
+      /^(?:#{1,6}\s|[\*\-•]\s|\d+[\.\)]\s|>\s|\||!\[|<\/?(?:div|table|ul|ol|li|blockquote|figure|h[1-6]))/i.test(trimmed)
+    ) {
+      outLines.push(rawLine);
+      continue;
+    }
+
+    const boldMatches = trimmed.match(/\*\*[^*]+\*\*/g) || [];
+    if (boldMatches.length < 4) {
+      outLines.push(rawLine);
+      continue;
+    }
+
+    const sentences = splitSentencesRespectingParens(trimmed);
+    if (sentences.length < 3) {
+      outLines.push(rawLine);
+      continue;
+    }
+
+    // Check if at least one sentence actually contains a multi-item enumeration (produces sub-bullets)
+    const convertedPerSentence = sentences.map((s) => ({
+      raw: s,
+      structured: convertSentenceToStructuredMarkdownLines(s),
+    }));
+    const hasTrueEnumeration = convertedPerSentence.some((item) => item.structured.length > 1);
+    if (!hasTrueEnumeration) {
+      outLines.push(rawLine);
+      continue;
+    }
+
+    let proseBuffer: string[] = [];
+    const flushProseBuffer = () => {
+      if (proseBuffer.length > 0) {
+        outLines.push(proseBuffer.join(" "));
+        outLines.push("");
+        proseBuffer = [];
+      }
+    };
+
+    for (const item of convertedPerSentence) {
+      if (item.structured.length > 1) {
+        flushProseBuffer();
+        outLines.push(...item.structured);
+      } else {
+        proseBuffer.push(item.raw);
+      }
+    }
+    flushProseBuffer();
+  }
+
+  return outLines.join("\n");
+}
+
+/**
+ * Reduces excessive bullet points (`• ... ->`) in PDF transcriptions and summaries:
+ * 1. Converts empty bullets with trailing arrows (`- **Aspectos Essenciais** ->`) into `####` subheadings.
+ * 2. Converts lead-in bullets ending in `:` (`- **Monitoramento** -> Atenção a:`) into clean paragraphs.
+ * 3. Converts narrative/explanatory bullets (`Princípios`, `Controle`, `Avaliação`, or multi-sentence/long explanations)
+ *    into fluid paragraphs (`**Termo:** Explicação`), keeping bullet markers ONLY for concise enumerated items.
+ */
+export function reduceExcessiveBulletsInTranscription(markdown: string): string {
+  if (!markdown) return "";
+
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let inShortColonList = false;
+
+  const narrativeLabelRegex =
+    /^(?:princ[íi]pios?|introdu[çc][ãa]o|defini[çc][ãa]o|conceito|fisiopatologia|mecanismo|epidemiologia|etiologia|patog[êe]nese|diagn[óo]stico|tratamento|conduta|manejo|controle|avalia[çc][ãa]o|retorno|acompanhamento|preven[çc][ãa]o|progn[óo]stico|conclus[ãa]o|observa[çc][ãa]o|nota|importante|resumo|vis[ãa]o geral|objetivo|indica[çc][ãa]o|contextualiza[çc][ãa]o|orienta[çc][õo]es|recomenda[çc][õo]es|considera[çc][õo]es)\b/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      out.push("");
+      continue;
+    }
+
+    // Any heading resets colon list state
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      inShortColonList = false;
+      out.push(rawLine.replace(/\s*(?:->|→)\s*$/, ""));
+      continue;
+    }
+
+    // 1. Bullet with ONLY a bold title and optional trailing arrow/colon (e.g. "- **Aspectos Pré-Natais Essenciais** ->")
+    const emptyBulletHeadingMatch = rawLine.match(
+      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*([^*]+?)\*\*\s*(?:->|→|:|—|–|-)?\s*$/
+    );
+    if (emptyBulletHeadingMatch) {
+      inShortColonList = false;
+      const cleanHeading = emptyBulletHeadingMatch[2]
+        .replace(/\s*(?:->|→|:|—|–|-)+\s*$/, "")
+        .trim();
+      out.push("");
+      out.push(`#### ${cleanHeading}`);
+      out.push("");
+      continue;
+    }
+
+    // 2. Bullet with "**Label** -> Description" or "**Label**: Description"
+    const labeledBulletMatch = rawLine.match(
+      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*([^*]+?)\*\*\s*(?:->|→|:|—|–)?\s*(.+)$/
+    );
+    const hasExplicitSeparator =
+      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*[^*]+?\*\*\s*(?:->|→|:|—|–)\s*/.test(rawLine) ||
+      Boolean(labeledBulletMatch && /(?:->|→|:)$/.test(labeledBulletMatch[2].trim()));
+
+    if (labeledBulletMatch && hasExplicitSeparator) {
+      const indent = labeledBulletMatch[1].replace(/\t/g, "  ");
+      const cleanLabel = labeledBulletMatch[2]
+        .replace(/\s*(?:->|→|:|—|–|-)+\s*$/, "")
+        .trim();
+      const desc = labeledBulletMatch[3]
+        .replace(/^(?:->|→|:|—|–)\s*/, "")
+        .replace(/\s*(?:->|→)\s*$/, "")
+        .trim();
+
+      if (!desc) {
+        inShortColonList = false;
+        out.push("");
+        out.push(`#### ${cleanLabel}`);
+        out.push("");
+        continue;
+      }
+
+      // 2a. If description ends with ":" (e.g., "Atenção especial a:" or "Para HAC leve sem outras complicações:")
+      if (desc.endsWith(":")) {
+        inShortColonList = true;
+        out.push("");
+        out.push(`**${cleanLabel}:** ${desc}`);
+        continue;
+      }
+
+      const sentenceCount = desc
+        .split(/\.\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ])/)
+        .filter((s) => s.trim().length > 0).length;
+
+      const isNarrativeLabel = narrativeLabelRegex.test(cleanLabel);
+      const isLongOrMultiSentence = desc.length > 105 || sentenceCount >= 2;
+      const isIndentedSubBullet = indent.length >= 2;
+
+      // Keep as bullet ONLY when it's an indented sub-bullet that is concise,
+      // OR a concise single-sentence item (<= 105 chars) that belongs to a short list
+      if (!isLongOrMultiSentence && !isNarrativeLabel && (inShortColonList || isIndentedSubBullet || desc.length <= 85)) {
+        const prefix = isIndentedSubBullet ? "  * " : "* ";
+        out.push(`${prefix}**${cleanLabel}:** ${desc}`);
+        continue;
+      }
+
+      // Otherwise convert into a clean paragraph without a bullet dot
+      inShortColonList = false;
+      out.push("");
+      out.push(`**${cleanLabel}:** ${desc}`);
+      out.push("");
+      continue;
+    }
+
+    // 3. Plain bullet without bold label: "- Texto..."
+    const plainBulletMatch = rawLine.match(/^(\s*)(?:[\*\-]|\u2022)\s+(.+)$/);
+    if (plainBulletMatch) {
+      const indent = plainBulletMatch[1].replace(/\t/g, "  ");
+      const content = plainBulletMatch[2].replace(/\s*(?:->|→)\s*/g, ": ").trim();
+      const sentenceCount = content
+        .split(/\.\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ])/)
+        .filter((s) => s.trim().length > 0).length;
+
+      if (content.endsWith(":")) {
+        inShortColonList = true;
+        out.push("");
+        out.push(content);
+        continue;
+      }
+
+      if (content.length > 115 || sentenceCount >= 2) {
+        inShortColonList = false;
+        out.push("");
+        out.push(content);
+        out.push("");
+        continue;
+      }
+
+      const prefix = indent.length >= 2 ? "  * " : "* ";
+      out.push(`${prefix}${content}`);
+      continue;
+    }
+
+    // Regular paragraph line
+    inShortColonList = trimmed.endsWith(":");
+    out.push(rawLine);
+  }
+
+  return out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
  * Converts Markdown into semantic, beautifully formatted HTML for WYSIWYG contenteditable.
  */
 export function markdownToHtml(markdown: string): string {
   if (!markdown) return "<p><br></p>";
 
-  const lines = markdown.split("\n");
+  const structuredMd = formatDenseProseParagraphsIntoBullets(markdown);
+  const lines = structuredMd.split("\n");
   const htmlParts: string[] = [];
 
   let inUl = false;
@@ -103,6 +628,13 @@ export function markdownToHtml(markdown: string): string {
       continue;
     }
 
+    // Horizontal rule
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      closeListsAndBlocks();
+      htmlParts.push('<hr class="my-5 border-gray-200 dark:border-gray-800" />');
+      continue;
+    }
+
     // Markdown Image: ![alt](url)
     const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
     if (imgMatch) {
@@ -138,7 +670,13 @@ export function markdownToHtml(markdown: string): string {
       continue;
     }
 
-    // Heading 4
+    // Heading 4 & 5
+    if (trimmed.startsWith("##### ")) {
+      closeListsAndBlocks();
+      htmlParts.push(`<h5 class="text-sm font-bold text-gray-800 dark:text-gray-200 mt-2.5 mb-1">${formatInlineHtml(trimmed.replace(/^#####\s+/, ""))}</h5>`);
+      continue;
+    }
+
     if (trimmed.startsWith("#### ")) {
       closeListsAndBlocks();
       htmlParts.push(`<h4 class="text-base font-bold text-gray-800 dark:text-gray-200 mt-3 mb-1.5">${formatInlineHtml(trimmed.replace(/^####\s+/, ""))}</h4>`);
@@ -159,7 +697,7 @@ export function markdownToHtml(markdown: string): string {
       inBlockquote = false;
     }
 
-    // Bullet list
+    // Bullet list (supporting nested sub-bullets with 2+ spaces indentation)
     const bulletMatch = rawLine.match(/^(\s*)(?:[\*\-]|\u2022)\s+(.*)$/);
     if (bulletMatch) {
       if (inOl) {
@@ -167,10 +705,21 @@ export function markdownToHtml(markdown: string): string {
         inOl = false;
       }
       if (!inUl) {
-        htmlParts.push('<ul class="list-disc list-outside pl-6 my-2 space-y-1 text-gray-800 dark:text-gray-200">');
+        htmlParts.push('<ul class="list-disc list-outside pl-6 my-2.5 space-y-1.5 text-gray-800 dark:text-gray-200">');
         inUl = true;
       }
-      htmlParts.push(`<li>${formatInlineHtml(bulletMatch[2])}</li>`);
+      const indentSpaces = bulletMatch[1].replace(/\t/g, "  ").length;
+      if (indentSpaces >= 4) {
+        htmlParts.push(
+          `<li data-indent="2" class="ml-12 list-[square] text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+        );
+      } else if (indentSpaces >= 2) {
+        htmlParts.push(
+          `<li data-indent="1" class="ml-6 list-[circle] text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+        );
+      } else {
+        htmlParts.push(`<li class="leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`);
+      }
       continue;
     }
 
@@ -232,12 +781,17 @@ export function formatInlineHtml(text: string): string {
     .replace(/(?<!_)_([^_]+)_(?!_)/g, '<em class="italic">$1</em>')
     // Underline <u>text</u> (unescape previously escaped tags)
     .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, '<u>$1</u>')
+    // Subscript / superscript
+    .replace(/&lt;sub&gt;(.*?)&lt;\/sub&gt;/gi, '<sub>$1</sub>')
+    .replace(/&lt;sup&gt;(.*?)&lt;\/sup&gt;/gi, '<sup>$1</sup>')
+    // Links [text](url)
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:|\/)[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     // Color spans: <span style="color: #...">text</span>
-    .replace(/&lt;span\s+style=["']color:\s*([^"']+)["']&gt;(.*?)&lt;\/span&gt;/gi, '<span style="color: $1;">$2</span>')
+    .replace(/&lt;span\s+[^&]*?style=["'][^"']*?color:\s*([^"';]+)[^"']*["'][^&]*&gt;([\s\S]*?)&lt;\/span&gt;/gi, '<span style="color: $1;">$2</span>')
     // Highlights: <mark style="background-color: #...">text</mark> or <mark>text</mark>
     .replace(/&lt;mark(?:\s+[^&]*)?&gt;\s*&lt;\/mark&gt;/gi, "")
     .replace(/&lt;span(?:\s+[^&]*)?&gt;\s*&lt;\/span&gt;/gi, "")
-    .replace(/&lt;mark\s+style=["']background-color:\s*([^"']+)["']&gt;(.*?)&lt;\/mark&gt;/gi, (_, bg, c) => c.trim() ? `<mark style="background-color: ${bg};" class="px-1 py-0.5 rounded">${c}</mark>` : '')
+    .replace(/&lt;mark\s+[^&]*?style=["'][^"']*?background-color:\s*([^"';]+)[^"']*["'][^&]*&gt;([\s\S]*?)&lt;\/mark&gt;/gi, (_, bg, c) => c.trim() ? `<mark style="background-color: ${bg};" class="px-1 py-0.5 rounded">${c}</mark>` : '')
     .replace(/&lt;mark&gt;(.*?)&lt;\/mark&gt;/gi, (_, c) => c.trim() ? `<mark style="background-color: #FEF08A;" class="px-1 py-0.5 rounded text-gray-950">${c}</mark>` : '')
     // Strikethrough ~~text~~
     .replace(/~~([^~]+)~~/g, '<del class="line-through text-gray-400">$1</del>')
@@ -295,6 +849,8 @@ export function htmlToMarkdown(html: string): string {
         return `\n\n### ${getChildrenText().trim()}\n\n`;
       case "h4":
         return `\n\n#### ${getChildrenText().trim()}\n\n`;
+      case "h5":
+        return `\n\n##### ${getChildrenText().trim()}\n\n`;
       case "strong":
       case "b": {
         const text = getChildrenText().trim();
@@ -335,6 +891,21 @@ export function htmlToMarkdown(html: string): string {
         const text = getChildrenText().trim();
         return text ? `~~${text}~~` : "";
       }
+      case "sub": {
+        const text = getChildrenText();
+        return text.trim() ? `<sub>${text}</sub>` : "";
+      }
+      case "sup": {
+        const text = getChildrenText();
+        return text.trim() ? `<sup>${text}</sup>` : "";
+      }
+      case "a": {
+        const text = getChildrenText().trim();
+        const href = el.getAttribute("href") || "";
+        return text && href ? `[${text}](${href})` : text;
+      }
+      case "hr":
+        return "\n\n---\n\n";
       case "code": {
         const text = getChildrenText();
         return `\`${text}\``;
@@ -347,8 +918,22 @@ export function htmlToMarkdown(html: string): string {
         let ulResult = "\n";
         for (let i = 0; i < el.childNodes.length; i++) {
           const child = el.childNodes[i];
-          if (child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName.toLowerCase() === "li") {
-            ulResult += `* ${traverseNode(child).trim()}\n`;
+          if (child.nodeType === Node.ELEMENT_NODE) {
+            const childEl = child as HTMLElement;
+            const childTag = childEl.tagName.toLowerCase();
+            if (childTag === "li") {
+              const indentAttr = Number(childEl.getAttribute("data-indent") || "0");
+              const hasSquare = childEl.classList.contains("list-[square]") || childEl.classList.contains("ml-12");
+              const hasCircle = childEl.classList.contains("list-[circle]") || childEl.classList.contains("ml-6");
+              const indentLevel = indentAttr || (hasSquare ? 2 : hasCircle ? 1 : 0);
+              const prefix = "  ".repeat(indentLevel);
+              ulResult += `${prefix}* ${traverseNode(childEl).trim()}\n`;
+            } else if (childTag === "ul") {
+              const nestedLines = traverseNode(childEl).trim().split("\n");
+              for (const nl of nestedLines) {
+                if (nl.trim()) ulResult += `  ${nl}\n`;
+              }
+            }
           }
         }
         return ulResult + "\n";

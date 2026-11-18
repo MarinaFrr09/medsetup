@@ -7,6 +7,8 @@ import VerticalFolderSidebar from "@/components/common/VerticalFolderSidebar";
 
 import FolderMasteryCard from "@/components/questions/FolderMasteryCard";
 import QuestionsStatsCards from "@/components/questions/QuestionsStatsCards";
+import FolderCardGrid, { SubfoldersGrid } from "@/components/common/FolderCardGrid";
+import FolderManagerModal from "@/components/common/FolderManagerModal";
 const QuestionEditor = dynamic(() => import("@/components/questions/QuestionEditor"), { ssr: false });
 const AIGenerateModal = dynamic(() => import("@/components/questions/AIGenerateModal"), { ssr: false });
 const QuizMode = dynamic(() => import("@/components/questions/QuizMode"), { ssr: false });
@@ -22,11 +24,15 @@ import {
   Filter,
   CheckCircle2,
   Folder as FolderIcon,
+  Trash2,
+  CheckSquare,
 } from "lucide-react";
 import { useAppStore, Question } from "@/stores/useAppStore";
+import toast from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
 export default function QuestionsPage() {
-  const { questions, folders, addQuestions } = useAppStore();
+  const { questions, folders, addQuestions, deleteQuestions, clearQuestionsByFolder } = useAppStore();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isAIOpen, setIsAIOpen] = useState(false);
@@ -38,12 +44,19 @@ export default function QuestionsPage() {
   const [selectedDifficulty, setSelectedDifficulty] = useState("");
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [selectedQuestionForDetail, setSelectedQuestionForDetail] = useState<Question | null>(null);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
+  const [viewAllQuestions, setViewAllQuestions] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<any>(null);
 
   const handleSelectFolder = (folderId: string | null) => {
     setIsQuizMode(false);
     setQuizQuestions(null);
     setQuizInitialIndex(0);
     setSelectedFolderId(folderId);
+    setViewAllQuestions(false);
   };
 
   const questionFolders = useMemo(
@@ -99,8 +112,13 @@ export default function QuestionsPage() {
     addQuestions(formatted);
   };
 
+  const questionFolderIds = useMemo(
+    () => new Set(questionFolders.map((f) => f.id)),
+    [questionFolders]
+  );
+
   const activeFolderIds = useMemo(() => {
-    if (selectedFolderId === null) return null;
+    if (!selectedFolderId || selectedFolderId === "unassigned") return null;
     const getDescendants = (id: string): string[] => {
       const children = questionFolders.filter((f) => f.parentId === id).map((f) => f.id);
       return [id, ...children.flatMap(getDescendants)];
@@ -108,18 +126,50 @@ export default function QuestionsPage() {
     return new Set(getDescendants(selectedFolderId));
   }, [selectedFolderId, questionFolders]);
 
+  const getQuestionFolderCount = (folderId: string) => {
+    const getDescendants = (id: string): string[] => {
+      const children = questionFolders.filter((f) => f.parentId === id).map((f) => f.id);
+      return [id, ...children.flatMap(getDescendants)];
+    };
+    const targetIds = new Set(getDescendants(folderId));
+    return questions.filter((q) => {
+      const eff =
+        !q.folderId || q.folderId === "folder-geral" || !questionFolderIds.has(q.folderId)
+          ? "folder-q-geral"
+          : q.folderId;
+      return targetIds.has(eff);
+    }).length;
+  };
+
   // All questions belonging to active folder tree (for statistics)
   const folderQuestions = useMemo(() => {
-    if (!selectedFolderId || !activeFolderIds) return [];
-    return questions.filter((q) => activeFolderIds.has(q.folderId || "folder-q-geral"));
-  }, [questions, selectedFolderId, activeFolderIds]);
+    if (!selectedFolderId) return [];
+    if (selectedFolderId === "unassigned") {
+      return questions.filter((q) => !q.folderId || !questionFolderIds.has(q.folderId));
+    }
+    if (!activeFolderIds) return [];
+    return questions.filter((q) => {
+      const eff =
+        !q.folderId || q.folderId === "folder-geral" || !questionFolderIds.has(q.folderId)
+          ? "folder-q-geral"
+          : q.folderId;
+      return activeFolderIds.has(eff);
+    });
+  }, [questions, selectedFolderId, activeFolderIds, questionFolderIds]);
 
   // Filtered questions
   const displayedQuestions = useMemo(() => {
     return questions.filter((q) => {
-      const qFolder = q.folderId || "folder-geral";
-      const matchesFolder =
-        activeFolderIds === null || activeFolderIds.has(qFolder);
+      const qFolder =
+        !q.folderId || q.folderId === "folder-geral" || !questionFolderIds.has(q.folderId)
+          ? "folder-q-geral"
+          : q.folderId;
+      let matchesFolder = true;
+      if (selectedFolderId === "unassigned") {
+        matchesFolder = !q.folderId || !questionFolderIds.has(q.folderId);
+      } else if (selectedFolderId !== null) {
+        matchesFolder = activeFolderIds !== null && activeFolderIds.has(qFolder);
+      }
       const matchesSearch =
         !searchQuery.trim() ||
         (q.text && q.text.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -134,11 +184,55 @@ export default function QuestionsPage() {
     });
   }, [
     questions,
+    questionFolders,
+    selectedFolderId,
     activeFolderIds,
     searchQuery,
     selectedType,
     selectedDifficulty,
   ]);
+
+  const hasActiveView = Boolean(
+    selectedFolderId || searchQuery.trim() || selectedType || selectedDifficulty || viewAllQuestions
+  );
+
+  const handleToggleSelectQuestion = (id: string) => {
+    setSelectedQuestionIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllDisplayed = () => {
+    if (selectedQuestionIds.length === displayedQuestions.length) {
+      setSelectedQuestionIds([]);
+    } else {
+      setSelectedQuestionIds(displayedQuestions.map((q) => q.id));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedQuestionIds.length === 0) return;
+    deleteQuestions(selectedQuestionIds);
+    toast.success(`${selectedQuestionIds.length} questões movidas para a lixeira.`);
+    setSelectedQuestionIds([]);
+    setIsSelectMode(false);
+  };
+
+  const handleClearAllQuestions = () => {
+    if (selectedFolderId === null) {
+      clearQuestionsByFolder(null);
+      toast.success("Todas as questões foram movidas para a lixeira.");
+    } else if (selectedFolderId === "unassigned") {
+      clearQuestionsByFolder("unassigned");
+      toast.success("Questões sem pasta movidas para a lixeira.");
+    } else {
+      clearQuestionsByFolder(selectedFolderId);
+      toast.success(`Questões da pasta "${activeFolder?.name || "selecionada"}" movidas para a lixeira.`);
+    }
+    setClearAllConfirmOpen(false);
+    setSelectedQuestionIds([]);
+    setIsSelectMode(false);
+  };
 
   const handleStartQuiz = (customList?: Question[], startIndex: number = 0) => {
     setQuizInitialIndex(startIndex);
@@ -190,7 +284,7 @@ export default function QuestionsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {displayedQuestions.length > 0 && (
+            {hasActiveView && displayedQuestions.length > 0 && (
               <button
                 onClick={() => handleStartQuiz(displayedQuestions)}
                 className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-all shadow-xs cursor-pointer"
@@ -198,6 +292,42 @@ export default function QuestionsPage() {
                 <Play size={13} className="fill-white" />
                 <span>
                   Praticar Quiz ({displayedQuestions.length})
+                </span>
+              </button>
+            )}
+
+            {hasActiveView && displayedQuestions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSelectMode(!isSelectMode);
+                  setSelectedQuestionIds([]);
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition-all cursor-pointer shadow-xs",
+                  isSelectMode
+                    ? "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/50 dark:text-blue-300"
+                    : "border-gray-200 dark:border-[#2a2d3a] bg-white dark:bg-[#1A1D27] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                )}
+                title="Selecionar questões para excluir ou gerenciar"
+              >
+                <CheckSquare size={13} />
+                <span>{isSelectMode ? "Cancelar Seleção" : "Selecionar"}</span>
+              </button>
+            )}
+
+            {hasActiveView && displayedQuestions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setClearAllConfirmOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 px-3.5 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 transition-colors shadow-xs cursor-pointer"
+                title="Excluir todas as questões desta visualização"
+              >
+                <Trash2 size={13} />
+                <span>
+                  {selectedFolderId
+                    ? "Limpar Pasta"
+                    : `Excluir Todas (${displayedQuestions.length})`}
                 </span>
               </button>
             )}
@@ -224,23 +354,25 @@ export default function QuestionsPage() {
         </div>
       )}
 
-      {/* When in QuizMode: Sidebar on left + Question Card in the EXACT horizontal center of the screen */}
+      {/* When in QuizMode: 2-Column Layout (Sidebar on left + Wide Rectangular Question Card) */}
       {isQuizMode ? (
-        <div className="w-full py-1 sm:py-3">
-          <div className="w-full grid grid-cols-1 lg:grid-cols-[288px_minmax(0,1fr)_288px] xl:grid-cols-[320px_minmax(0,1fr)_320px] gap-6 items-start">
+        <div className="w-full py-1 sm:py-2">
+          <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
             {/* Left Column: Vertical Folder Sidebar */}
-            <div className="w-full">
-              <VerticalFolderSidebar
-                selectedFolderId={selectedFolderId}
-                onSelectFolder={handleSelectFolder}
-                type="questions"
-                className="w-full shrink-0"
-              />
-            </div>
+            <VerticalFolderSidebar
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={handleSelectFolder}
+              type="questions"
+              className="w-full lg:w-72 xl:w-80 shrink-0"
+              onSelectItem={(questionId) => {
+                const q = questions.find((item) => item.id === questionId);
+                if (q) setSelectedQuestionForDetail(q);
+              }}
+            />
 
-            {/* Center Column: QuizMode Card - Perfectly Centered in the Viewport */}
-            <div className="w-full flex justify-center min-w-0">
-              <div className="w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
+            {/* Right Column: QuizMode Card with balanced readable width */}
+            <div className="flex-1 min-w-0 w-full flex justify-start">
+              <div className="w-full max-w-4xl xl:max-w-[980px]">
                 <QuizMode
                   questions={quizQuestions || questions}
                   initialIndex={quizInitialIndex}
@@ -253,9 +385,6 @@ export default function QuestionsPage() {
                 />
               </div>
             </div>
-
-            {/* Right Column: Symmetrical Balancer ensuring 100% mathematical center */}
-            <div className="hidden lg:block w-full pointer-events-none invisible" aria-hidden="true" />
           </div>
         </div>
       ) : (
@@ -267,6 +396,10 @@ export default function QuestionsPage() {
             onSelectFolder={handleSelectFolder}
             type="questions"
             className="w-full lg:w-72 xl:w-80 shrink-0"
+            onSelectItem={(questionId) => {
+              const q = questions.find((item) => item.id === questionId);
+              if (q) setSelectedQuestionForDetail(q);
+            }}
             extraFilterSlot={
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
@@ -365,98 +498,215 @@ export default function QuestionsPage() {
               />
             )}
 
-            {/* Estatísticas Gerais (Atividade 7 dias + Progresso por Pasta - Idêntico aos Flashcards) */}
-            {!selectedFolderId && !searchQuery && !selectedType && !selectedDifficulty && (
-              <QuestionsStatsCards onSelectFolder={handleSelectFolder} />
+            {/* Pastas de Questões e Estatísticas Gerais */}
+            {!hasActiveView && (
+              <div className="space-y-6">
+                <FolderCardGrid
+                  title="Pastas do Banco de Questões"
+                  subtitle="Selecione uma pasta para resolver e revisar questões ou crie uma nova pasta por especialidade médica."
+                  folders={questionFolders}
+                  getItemCount={getQuestionFolderCount}
+                  getItemPreviews={(folderId) =>
+                    questions
+                      .filter((q) => (q.folderId || "folder-q-geral") === folderId)
+                      .map((q) => ({ id: q.id, title: q.text }))
+                  }
+                  itemLabel={{ singular: "questão", plural: "questões" }}
+                  onSelectFolder={(folderId) => {
+                    handleSelectFolder(folderId);
+                    setViewAllQuestions(false);
+                  }}
+                  onCreateFolder={() => {
+                    setFolderToEdit(null);
+                    setIsFolderModalOpen(true);
+                  }}
+                  onViewAll={() => setViewAllQuestions(true)}
+                  viewAllLabel="Ver Todas as Questões"
+                />
+
+                <QuestionsStatsCards onSelectFolder={handleSelectFolder} />
+              </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between border-b border-gray-200 dark:border-[#2a2d3a] pb-3">
-              <div>
-                <h2 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  {selectedFolderId ? (
-                    <FolderIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  ) : (
-                    <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  )}
-                  <span>
-                    {selectedFolderId
-                      ? `Questões em "${activeFolder?.name}"`
-                      : searchQuery || selectedType || selectedDifficulty
-                      ? "Resultados da Busca & Filtros"
-                      : "Todas as Questões Cadastradas"}
-                  </span>
-                </h2>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  {displayedQuestions.length}{" "}
-                  {displayedQuestions.length === 1
-                    ? "questão disponível"
-                    : "questões disponíveis"}
-                </p>
-              </div>
-
-              <div className="relative w-full sm:w-64">
-                <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  size={14}
-                />
-                <input
-                  type="text"
-                  placeholder="Buscar questões..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-white pl-8 pr-3 py-1.5 text-xs text-gray-900 shadow-2xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-[#2a2d3a] dark:bg-[#1A1D27] dark:text-white"
-                />
-              </div>
-            </div>
-
-            {/* Questions Grid */}
-            {displayedQuestions.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {displayedQuestions.map((q) => (
-                  <QuestionCard
-                    key={q.id}
-                    question={q}
+            {/* Lista e Grid de Questões (Apenas quando uma pasta for aberta ou filtros/busca ativos) */}
+            {hasActiveView && (
+              <div className="space-y-4">
+                {/* Back to Folders Button */}
+                <div className="flex items-center justify-between pb-1">
+                  <button
+                    type="button"
                     onClick={() => {
-                      const idx = displayedQuestions.findIndex((item) => item.id === q.id);
-                      handleStartQuiz(displayedQuestions, idx >= 0 ? idx : 0);
+                      const parentId = activeFolder?.parentId || null;
+                      handleSelectFolder(parentId);
+                      setViewAllQuestions(false);
+                      setSearchQuery("");
+                      setSelectedType("");
+                      setSelectedDifficulty("");
                     }}
-                    onEdit={(question) => {
-                      setEditingQuestion(question);
-                      setIsEditorOpen(true);
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    {activeFolder?.parentId
+                      ? `Voltar para "${questionFolders.find((f) => f.id === activeFolder.parentId)?.name || "Pasta Anterior"}"`
+                      : "Voltar para Pastas"}
+                  </button>
+                </div>
+
+                {/* Subpastas no início da pasta aberta */}
+                {selectedFolderId && (
+                  <SubfoldersGrid
+                    parentFolderId={selectedFolderId}
+                    parentFolderName={activeFolder?.name}
+                    folders={questionFolders}
+                    getItemCount={getQuestionFolderCount}
+                    itemLabel={{ singular: "questão", plural: "questões" }}
+                    onSelectFolder={(subId) => {
+                      handleSelectFolder(subId);
+                      setViewAllQuestions(false);
                     }}
                   />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-white dark:bg-[#1A1D27] rounded-2xl border border-dashed border-gray-300 dark:border-[#2a2d3a]">
-                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 mb-2">
-                  <HelpCircle className="w-7 h-7" />
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between border-b border-gray-200 dark:border-[#2a2d3a] pb-3">
+                  <div>
+                    <h2 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      {selectedFolderId ? (
+                        <FolderIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      ) : (
+                        <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      )}
+                      <span>
+                        {selectedFolderId
+                          ? `Questões em "${activeFolder?.name}"`
+                          : "Resultados da Busca & Filtros"}
+                      </span>
+                    </h2>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {displayedQuestions.length}{" "}
+                      {displayedQuestions.length === 1
+                        ? "questão disponível"
+                        : "questões disponíveis"}
+                    </p>
+                  </div>
+
+                  <div className="relative w-full sm:w-64">
+                    <Search
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                      size={14}
+                    />
+                    <input
+                      type="text"
+                      placeholder={
+                        selectedFolderId
+                          ? "Buscar nesta pasta..."
+                          : "Buscar questões..."
+                      }
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 bg-white pl-8 pr-3 py-1.5 text-xs text-gray-900 shadow-2xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-[#2a2d3a] dark:bg-[#1A1D27] dark:text-white"
+                    />
+                  </div>
                 </div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1">
-                  Nenhuma questão encontrada
-                </h3>
-                <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto text-xs mb-4">
-                  Gere novas questões com IA para esta pasta ou crie manualmente para começar a praticar.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsAIOpen(true)}
-                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
-                  >
-                    <Sparkles size={13} />
-                    <span>Gerar com IA</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingQuestion(null);
-                      setIsEditorOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-[#2a2d3a] bg-white dark:bg-[#1A1D27] px-3.5 py-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-                  >
-                    <Plus size={13} />
-                    <span>Criar Manualmente</span>
-                  </button>
-                </div>
+
+                {/* Selection Action Bar */}
+                {isSelectMode && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 rounded-xl animate-in fade-in duration-150">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
+                        {selectedQuestionIds.length} de {displayedQuestions.length} selecionadas
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllDisplayed}
+                        className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        {selectedQuestionIds.length === displayedQuestions.length
+                          ? "Desmarcar Todas"
+                          : "Selecionar Todas"}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={selectedQuestionIds.length === 0}
+                        onClick={handleDeleteSelected}
+                        className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs"
+                      >
+                        <Trash2 size={13} />
+                        <span>Excluir Selecionadas ({selectedQuestionIds.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSelectMode(false);
+                          setSelectedQuestionIds([]);
+                        }}
+                        className="text-xs font-semibold text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 cursor-pointer px-2 py-1"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Questions Grid */}
+                {displayedQuestions.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {displayedQuestions.map((q) => (
+                      <QuestionCard
+                        key={q.id}
+                        question={q}
+                        selectable={isSelectMode}
+                        isSelected={selectedQuestionIds.includes(q.id)}
+                        onToggleSelect={handleToggleSelectQuestion}
+                        onClick={() => {
+                          if (isSelectMode) {
+                            handleToggleSelectQuestion(q.id);
+                            return;
+                          }
+                          const idx = displayedQuestions.findIndex((item) => item.id === q.id);
+                          handleStartQuiz(displayedQuestions, idx >= 0 ? idx : 0);
+                        }}
+                        onEdit={(question) => {
+                          setEditingQuestion(question);
+                          setIsEditorOpen(true);
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-white dark:bg-[#1A1D27] rounded-2xl border border-dashed border-gray-300 dark:border-[#2a2d3a]">
+                    <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 mb-2">
+                      <HelpCircle className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+                      Nenhuma questão encontrada
+                    </h3>
+                    <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto text-xs mb-4">
+                      Gere novas questões com IA para esta pasta ou crie manualmente para começar a praticar.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsAIOpen(true)}
+                        className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                      >
+                        <Sparkles size={13} />
+                        <span>Gerar com IA</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingQuestion(null);
+                          setIsEditorOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-[#2a2d3a] bg-white dark:bg-[#1A1D27] px-3.5 py-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                      >
+                        <Plus size={13} />
+                        <span>Criar Manualmente</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -493,6 +743,69 @@ export default function QuestionsPage() {
         }}
         allQuestions={displayedQuestions.length > 0 ? displayedQuestions : questions}
         onSelectQuestion={(q) => setSelectedQuestionForDetail(q)}
+      />
+
+      {/* Clear / Delete All Confirmation Modal */}
+      {clearAllConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setClearAllConfirmOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] p-6 max-w-sm w-full shadow-2xl space-y-4"
+          >
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                  {selectedFolderId
+                    ? `Esvaziar "${activeFolder?.name || "esta pasta"}"?`
+                    : `Excluir todas as ${questions.length} questões?`}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {selectedFolderId
+                    ? `${folderQuestions.length} questões serão excluídas`
+                    : "Todas as questões cadastradas serão apagadas"}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+              Todas as questões serão movidas para a lixeira do MedSetup e poderão ser restauradas a qualquer momento pela aba Lixeira.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setClearAllConfirmOpen(false)}
+                className="px-3.5 py-2 text-xs font-semibold rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllQuestions}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer shadow-xs"
+              >
+                Sim, Mover para Lixeira
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Gerenciamento de Pastas */}
+      <FolderManagerModal
+        isOpen={isFolderModalOpen}
+        onClose={() => {
+          setIsFolderModalOpen(false);
+          setFolderToEdit(null);
+        }}
+        defaultType="questions"
+        folderToEdit={folderToEdit}
       />
     </div>
   );

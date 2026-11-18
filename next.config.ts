@@ -1,8 +1,22 @@
 import type { NextConfig } from "next";
 
+const isGithubPages = process.env.GITHUB_PAGES === "true";
+
 const nextConfig: NextConfig = {
   reactStrictMode: false,
-  serverExternalPackages: ["@prisma/client"],
+  ...(isGithubPages
+    ? {
+        output: "export",
+        basePath: "/medsetup",
+        assetPrefix: "/medsetup/",
+        trailingSlash: true,
+        images: {
+          unoptimized: true,
+        },
+      }
+    : {
+        serverExternalPackages: ["@prisma/client"],
+      }),
   compress: true,
   poweredByHeader: false,
   compiler: {
@@ -27,9 +41,13 @@ const nextConfig: NextConfig = {
       "react-hot-toast",
       "zustand"
     ],
-    serverActions: {
-      bodySizeLimit: "100mb",
-    },
+    ...(!isGithubPages
+      ? {
+          serverActions: {
+            bodySizeLimit: "100mb",
+          },
+        }
+      : {}),
   },
 };
 

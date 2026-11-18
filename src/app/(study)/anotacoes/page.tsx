@@ -62,9 +62,9 @@ import {
   Folder,
 } from "@/stores/useAppStore";
 import VerticalFolderSidebar from "@/components/common/VerticalFolderSidebar";
+import { SubfoldersGrid } from "@/components/common/FolderCardGrid";
 import FolderManagerModal from "@/components/common/FolderManagerModal";
-import AddAnotacaoModal from "@/components/anotacoes/AddAnotacaoModal";
-import { renderFormattedText } from "@/lib/questionUtils";
+import { renderFormattedText, cleanFlashcardText } from "@/lib/questionUtils";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
@@ -134,6 +134,16 @@ function AnotacoesContent() {
 
   // Pastas exclusivas de anotações (cada aba é independente)
   const relevantFolders = useMemo(() => folders.filter((f) => f.type === "anotacoes"), [folders]);
+  const relevantFolderIds = useMemo(() => new Set(relevantFolders.map((f) => f.id)), [relevantFolders]);
+
+  const activeFolderIds = useMemo(() => {
+    if (!selectedFolderId || selectedFolderId === "unassigned") return null;
+    const getDescendants = (id: string): string[] => {
+      const children = relevantFolders.filter((f) => f.parentId === id).map((f) => f.id);
+      return [id, ...children.flatMap(getDescendants)];
+    };
+    return new Set(getDescendants(selectedFolderId));
+  }, [selectedFolderId, relevantFolders]);
 
   const displayFolders = useMemo(() => {
     const root = relevantFolders.filter((f) => !f.parentId);
@@ -142,6 +152,15 @@ function AnotacoesContent() {
 
   const activeFolder = useMemo(() => {
     if (!selectedFolderId) return null;
+    if (selectedFolderId === "unassigned") {
+      return {
+        id: "unassigned",
+        name: "Geral / Sem Pasta",
+        color: "#F59E0B",
+        type: "anotacoes" as const,
+        createdAt: "Hoje",
+      };
+    }
     return relevantFolders.find((f) => f.id === selectedFolderId) || null;
   }, [relevantFolders, selectedFolderId]);
 
@@ -345,16 +364,23 @@ function AnotacoesContent() {
         }),
       });
       const data = await res.json();
-      if (data.cards && data.cards.length > 0) {
+      const rawCards = Array.isArray(data.cards) ? data.cards : [];
+      if (rawCards.length > 0) {
+        const sanitizedCards = rawCards.map((c: any, idx: number) => ({
+          id: c.id || `card-anot-${Date.now()}-${idx}`,
+          front: cleanFlashcardText(c.front),
+          back: cleanFlashcardText(c.back),
+        }));
+
         addDeck({
           id: `deck-${Date.now()}`,
           name: editTitle || "Baralho de Anotações",
           subject: editMateria || "Geral",
           folderId: editFolderId || "folder-geral",
-          cards: data.cards,
-          cardCount: data.cards.length,
+          cards: sanitizedCards,
+          cardCount: sanitizedCards.length,
         });
-        toast.success(`🎉 ${data.cards.length} Flashcards gerados e salvos na pasta!`);
+        toast.success(`🎉 ${sanitizedCards.length} Flashcards gerados e salvos na pasta!`);
       } else {
         toast.error("A IA não retornou cartões válidos.");
       }
@@ -428,8 +454,14 @@ function AnotacoesContent() {
   const filteredNotes = useMemo(() => {
     return anotacoes.filter((item) => {
       // Folder filter
-      if (selectedFolderId !== null) {
-        if (item.folderId !== selectedFolderId) return false;
+      if (selectedFolderId === "unassigned") {
+        if (item.folderId && relevantFolderIds.has(item.folderId)) return false;
+      } else if (selectedFolderId !== null && activeFolderIds !== null) {
+        const eff =
+          !item.folderId || item.folderId === "folder-geral" || !relevantFolderIds.has(item.folderId)
+            ? "anot-macetes"
+            : item.folderId;
+        if (!activeFolderIds.has(eff)) return false;
       }
 
       // Quick filter
@@ -477,7 +509,7 @@ function AnotacoesContent() {
   const renderPriorityBadge = (priority: "alta" | "media" | "baixa") => {
     if (priority === "alta") {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40">
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40">
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
           Alta Prioridade
         </span>
@@ -485,14 +517,14 @@ function AnotacoesContent() {
     }
     if (priority === "media") {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
           Média Prioridade
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
         Baixa Prioridade
       </span>
@@ -578,6 +610,10 @@ function AnotacoesContent() {
             setSelectedFolderId(folderId);
             setViewAllNotes(false);
             if (editingNote) closeEditor();
+          }}
+          onSelectItem={(itemId) => {
+            const note = anotacoes.find((n) => n.id === itemId);
+            if (note) openEditor(note, false);
           }}
           type="anotacoes"
           className="w-full lg:w-72 xl:w-80 shrink-0"
@@ -1249,7 +1285,7 @@ function AnotacoesContent() {
               </div>
 
               {/* Folders Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
                 {displayFolders.map((folder) => {
                   const folderNotes = anotacoes.filter((a) => (a.folderId || "folder-geral") === folder.id);
                   const folderColor = folder.color || "#F59E0B";
@@ -1262,69 +1298,45 @@ function AnotacoesContent() {
                         setSelectedFolderId(folder.id);
                         setViewAllNotes(false);
                       }}
-                      className="group relative bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-2xl p-5 hover:border-amber-400 dark:hover:border-amber-500/80 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between text-left"
+                      className="group relative bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-xl p-4 hover:border-amber-400 dark:hover:border-amber-500/80 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between text-left"
                     >
                       <div>
                         {/* Top Row: Icon & Badges */}
                         <div className="flex items-center justify-between gap-2">
                           <div
-                            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
                             style={{
                               backgroundColor: `${folderColor}18`,
                               color: folderColor,
                               border: `1px solid ${folderColor}30`,
                             }}
                           >
-                            <FolderIcon size={22} className="fill-current" />
+                            <FolderIcon size={18} className="fill-current" />
                           </div>
 
                           <div className="flex items-center gap-1.5">
                             {pinnedCount > 0 && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/40">
-                                <Pin size={10} className="fill-amber-500" />
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/40">
+                                <Pin size={9} className="fill-amber-500" />
                                 <span>{pinnedCount}</span>
                               </span>
                             )}
-                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                               {folderNotes.length} {folderNotes.length === 1 ? "nota" : "notas"}
                             </span>
                           </div>
                         </div>
 
                         {/* Folder Title */}
-                        <h3 className="font-bold text-base text-gray-900 dark:text-white mt-3.5 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        <h3 className="font-bold text-sm text-gray-900 dark:text-white mt-2.5 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                           {folder.name}
                         </h3>
-
-                        {/* Notes Preview in this folder */}
-                        {folderNotes.length > 0 ? (
-                          <div className="mt-3 space-y-1.5 border-t border-gray-100 dark:border-gray-800/80 pt-2.5">
-                            {folderNotes.slice(0, 3).map((n) => (
-                              <div key={n.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 truncate">
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: folderColor }} />
-                                <span className="truncate">{n.title}</span>
-                                {n.isPinned && <Pin size={10} className="text-amber-500 fill-amber-500 shrink-0" />}
-                              </div>
-                            ))}
-                            {folderNotes.length > 3 && (
-                              <p className="text-[10px] text-gray-400 font-medium pt-0.5">
-                                + {folderNotes.length - 3} outra{folderNotes.length - 3 > 1 ? "s" : ""} anotaç{folderNotes.length - 3 > 1 ? "ões" : "ão"}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="mt-3 border-t border-gray-100 dark:border-gray-800/80 pt-2.5">
-                            <p className="text-xs text-gray-400 dark:text-gray-500 italic">
-                              Nenhuma anotação nesta pasta ainda.
-                            </p>
-                          </div>
-                        )}
                       </div>
 
                       {/* Footer: Open action */}
-                      <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
+                      <div className="mt-3.5 pt-2.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[11px] font-bold text-amber-600 dark:text-amber-400">
                         <span>Abrir pasta</span>
-                        <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
                   );
@@ -1336,16 +1348,16 @@ function AnotacoesContent() {
                     setFolderToEdit(null);
                     setIsFolderModalOpen(true);
                   }}
-                  className="border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-amber-500 dark:hover:border-amber-500 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-gray-50/40 dark:bg-gray-800/20 hover:bg-amber-50/20 dark:hover:bg-amber-950/20 group min-h-[190px]"
+                  className="border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-amber-500 dark:hover:border-amber-500 rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-gray-50/40 dark:bg-gray-800/20 hover:bg-amber-50/20 dark:hover:bg-amber-950/20 group min-h-[140px]"
                 >
-                  <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-2xs">
-                    <Plus size={22} />
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-2xs">
+                    <Plus size={18} />
                   </div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400">
+                  <h4 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400">
                     Criar Nova Pasta
                   </h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs">
-                    Organize suas anotações médicas por disciplina, ciclo ou tema.
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 max-w-xs">
+                    Organize suas anotações médicas.
                   </p>
                 </div>
               </div>
@@ -1407,7 +1419,8 @@ function AnotacoesContent() {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedFolderId(null);
+                      const parentId = (activeFolder as any)?.parentId || null;
+                      setSelectedFolderId(parentId);
                       setViewAllNotes(false);
                       setSearchQuery("");
                       setQuickFilter("all");
@@ -1417,7 +1430,11 @@ function AnotacoesContent() {
                     title="Voltar ao Sistema de Pastas"
                   >
                     <ArrowLeft size={14} />
-                    <span>Voltar para Pastas</span>
+                    <span>
+                      {(activeFolder as any)?.parentId
+                        ? `Voltar para "${relevantFolders.find((f) => f.id === (activeFolder as any).parentId)?.name || "Pasta Anterior"}"`
+                        : "Voltar para Pastas"}
+                    </span>
                   </button>
 
                   <div className="flex items-center gap-2">
@@ -1458,6 +1475,35 @@ function AnotacoesContent() {
                   <span>{selectedFolderId ? "Nova Anotação nesta Pasta" : "Nova Anotação"}</span>
                 </button>
               </div>
+
+              {/* Subpastas no início da pasta aberta */}
+              {selectedFolderId && (
+                <SubfoldersGrid
+                  parentFolderId={selectedFolderId}
+                  parentFolderName={activeFolder?.name}
+                  folders={relevantFolders}
+                  getItemCount={(folderId) => {
+                    const getDescendants = (id: string): string[] => {
+                      const children = relevantFolders.filter((f) => f.parentId === id).map((f) => f.id);
+                      return [id, ...children.flatMap(getDescendants)];
+                    };
+                    const targetIds = new Set(getDescendants(folderId));
+                    return anotacoes.filter((a) => {
+                      const eff =
+                        !a.folderId || a.folderId === "folder-geral" || !relevantFolderIds.has(a.folderId)
+                          ? "anot-macetes"
+                          : a.folderId;
+                      return targetIds.has(eff);
+                    }).length;
+                  }}
+                  itemLabel={{ singular: "anotação", plural: "anotações" }}
+                  onSelectFolder={(subId) => {
+                    setSelectedFolderId(subId);
+                    setViewAllNotes(false);
+                  }}
+                />
+              )}
+
               {/* Sub-header Controls */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#1A1D27] p-3.5 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
                 {/* Search */}
@@ -1531,10 +1577,10 @@ function AnotacoesContent() {
               {filteredNotes.length > 0 ? (
                 <div
                   className={cn(
-                    "grid gap-4",
+                    "grid gap-3",
                     viewMode === "grid"
-                      ? "grid-cols-1 md:grid-cols-2"
-                      : "grid-cols-1"
+                      ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
+                      : "grid-cols-1 max-w-2xl"
                   )}
                 >
                   {filteredNotes.map((note) => {
@@ -1545,26 +1591,26 @@ function AnotacoesContent() {
                         key={note.id}
                         onClick={() => openEditor(note, false)}
                         className={cn(
-                          "group relative bg-white dark:bg-[#1A1D27] border rounded-2xl p-5 transition-all hover:border-amber-400/80 hover:shadow-md cursor-pointer flex flex-col justify-between text-left",
+                          "group relative bg-white dark:bg-[#1A1D27] border rounded-xl p-3.5 sm:p-4 transition-all hover:border-amber-400/80 hover:shadow-md cursor-pointer flex flex-col justify-between text-left",
                           note.isPinned
                             ? "border-amber-300 dark:border-amber-800/80 bg-amber-50/20 dark:bg-amber-950/10"
                             : "border-gray-200 dark:border-[#2a2d3a]"
                         )}
                       >
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {/* Top row: Priority, Folder & Action Icons */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                               {renderPriorityBadge(note.priority)}
                               {noteFolder && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
-                                  <FolderIcon size={11} className="text-amber-500" />
-                                  <span>{noteFolder.name}</span>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded truncate max-w-[130px]">
+                                  <FolderIcon size={10} className="text-amber-500 shrink-0" />
+                                  <span className="truncate">{noteFolder.name}</span>
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5 shrink-0">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1572,12 +1618,12 @@ function AnotacoesContent() {
                                   togglePinAnotacao(note.id);
                                 }}
                                 className={cn(
-                                  "p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer",
+                                  "p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer",
                                   note.isPinned ? "text-amber-500" : "text-gray-400 opacity-0 group-hover:opacity-100"
                                 )}
                                 title={note.isPinned ? "Desafixar" : "Fixar no topo"}
                               >
-                                <Pin size={14} className={note.isPinned ? "fill-amber-500" : ""} />
+                                <Pin size={12} className={note.isPinned ? "fill-amber-500" : ""} />
                               </button>
 
                               <button
@@ -1587,59 +1633,59 @@ function AnotacoesContent() {
                                   toggleFavoriteAnotacao(note.id);
                                 }}
                                 className={cn(
-                                  "p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer",
+                                  "p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer",
                                   note.isFavorite ? "text-yellow-500" : "text-gray-400 opacity-0 group-hover:opacity-100"
                                 )}
                                 title={note.isFavorite ? "Favorita" : "Favoritar"}
                               >
-                                <Star size={14} className={note.isFavorite ? "fill-yellow-500" : ""} />
+                                <Star size={12} className={note.isFavorite ? "fill-yellow-500" : ""} />
                               </button>
                             </div>
                           </div>
 
                           {/* Title */}
-                          <h3 className="text-base font-bold text-gray-900 dark:text-white line-clamp-2 leading-snug group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                          <h3 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white line-clamp-1 leading-snug group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                             {note.title}
                           </h3>
 
                           {/* Content Snippet */}
-                          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 line-clamp-3 leading-relaxed whitespace-pre-wrap">
-                            {note.content.replace(/[#*>`]/g, "").slice(0, 220)}...
+                          <p className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed whitespace-pre-wrap">
+                            {note.content.replace(/[#*>`]/g, "").slice(0, 160)}...
                           </p>
 
                           {/* Origin Question info if available */}
                           {note.source && (
-                            <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-900/40 flex items-center gap-1.5">
-                              <HelpCircle size={12} />
+                            <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900/40 flex items-center gap-1 truncate">
+                              <HelpCircle size={10} className="shrink-0" />
                               <span className="truncate">Origem: {note.source.title}</span>
                             </div>
                           )}
                         </div>
 
                         {/* Card Footer: Tags & Actions */}
-                        <div className="pt-3.5 mt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between gap-2 text-xs text-gray-400">
-                          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                            <span className="text-[11px] font-medium shrink-0">{note.createdAt || "Hoje"}</span>
+                        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between gap-2 text-[10px] text-gray-400">
+                          <div className="flex flex-wrap items-center gap-1 min-w-0">
+                            <span className="font-medium shrink-0">{note.createdAt || "Hoje"}</span>
                             {note.tags && note.tags.length > 0 && (
                               <div className="flex flex-wrap items-center gap-1">
-                                {note.tags.slice(0, 3).map((tag) => (
+                                {note.tags.slice(0, 2).map((tag) => (
                                   <span
                                     key={tag}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+                                    className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
                                   >
                                     #{tag}
                                   </span>
                                 ))}
-                                {note.tags.length > 3 && (
-                                  <span className="text-[10px] text-gray-400 font-medium">
-                                    +{note.tags.length - 3}
+                                {note.tags.length > 2 && (
+                                  <span className="text-[9px] text-gray-400 font-medium">
+                                    +{note.tags.length - 2}
                                   </span>
                                 )}
                               </div>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1647,10 +1693,10 @@ function AnotacoesContent() {
                                 navigator.clipboard.writeText(`${note.title}\n\n${note.content}`);
                                 toast.success("Anotação copiada!");
                               }}
-                              className="p-1.5 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg cursor-pointer"
+                              className="p-1 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded cursor-pointer"
                               title="Copiar texto"
                             >
-                              <Copy size={13} />
+                              <Copy size={12} />
                             </button>
 
                             <button
@@ -1660,10 +1706,10 @@ function AnotacoesContent() {
                                 deleteAnotacao(note.id);
                                 toast.success("Anotação enviada para a lixeira.");
                               }}
-                              className="p-1.5 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                              className="p-1 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded cursor-pointer"
                               title="Excluir"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={12} />
                             </button>
                           </div>
                         </div>

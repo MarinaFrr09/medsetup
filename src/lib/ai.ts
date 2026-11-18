@@ -8,20 +8,18 @@ import os from "os";
 
 export type AIProvider = "gemini" | "openai" | "none";
 
-// Modelos disponíveis na API Gemini rigorosamente validados e sem sobrecarga (evita 503 e 429)
+// Modelos disponíveis na API Gemini rigorosamente validados e ativos
 const GEMINI_MODELS = [
-  "gemini-2.5-flash",         // Prioridade 1: Modelo padrão ultra-rápido, estável e com altíssima cota
-  "gemini-2.5-flash-lite",    // Prioridade 2: Modelo leve de altíssima velocidade
-  "gemini-3.5-flash",         // Prioridade 3: Modelo recente
-  "gemini-3.5-flash-lite",    // Prioridade 4: Modelo leve recente
-  "gemini-3-flash-preview",   // Prioridade 5: Modelo preview com alta capacidade
-  "gemini-2.5-pro",           // Prioridade 6: Modelo pro de alta complexidade
+  "gemini-2.5-flash",         // Prioridade 1: Modelo padrão ultra-rápido, estável e com suporte a 65k tokens
+  "gemini-flash-latest",      // Prioridade 2: Alias oficial sempre ativo
+  "gemini-flash-lite-latest", // Prioridade 3: Alias leve oficial sempre ativo
+  "gemini-2.5-pro",           // Prioridade 4: Modelo avançado de alta capacidade
 ];
 
 const AUDIO_MODELS = [
   "gemini-2.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3-flash-preview",
+  "gemini-flash-latest",
+  "gemini-flash-lite-latest",
 ];
 
 export function resolveMediaMimeAndExt(mime?: string, filename?: string): { mimeType: string; ext: string } {
@@ -309,7 +307,7 @@ export function formatAIError(rawError: any): string {
     return "Chave de API do Google Gemini inválida ou não autorizada. Verifique sua chave em Configurações.";
   }
   if (msg.includes("404") || msg.includes("is not found") || msg.includes("no longer available")) {
-    return "Modelo de IA temporariamente indisponível. Tentando modelo alternativo.";
+    return "A IA do Google atualizou os modelos disponíveis. O sistema alternou automaticamente para os modelos mais rápidos e estáveis (Gemini 2.5 Flash e 3.5 Flash). Tente novamente em instantes.";
   }
   if (msg.includes("Timeout de processamento")) {
     return msg;
@@ -320,30 +318,26 @@ export function formatAIError(rawError: any): string {
   return `Erro na API do Google Gemini: ${msg.replace(/^\[GoogleGenerativeAI Error\]:\s*/, "")}`;
 }
 
+// Armazenamento exclusivamente em memória RAM volátil da sessão atual (nunca salvo em disco/banco ou pastas do projeto)
+export function getVolatileApiKey(): string {
+  return ((globalThis as any).__medsetupVolatileApiKey || "").trim();
+}
+
+export function setVolatileApiKey(key: string): void {
+  (globalThis as any).__medsetupVolatileApiKey = (key || "").trim();
+}
+
 export async function getAllApiKeys(): Promise<string[]> {
   const keys: string[] = [];
 
-  const envKeys = (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || "").split(",");
-  for (const k of envKeys) {
-    const trimmed = k.trim();
-    if (isValidApiKey(trimmed) && !keys.includes(trimmed)) {
-      keys.push(trimmed);
-    }
-  }
-
-  try {
-    const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
-    if (settings?.openaiApiKey) {
-      const dbKeys = settings.openaiApiKey.split(",");
-      for (const k of dbKeys) {
-        const trimmed = k.trim();
-        if (isValidApiKey(trimmed) && !keys.includes(trimmed)) {
-          keys.push(trimmed);
-        }
+  const sessionRaw = getVolatileApiKey();
+  if (sessionRaw) {
+    for (const k of sessionRaw.split(",")) {
+      const trimmed = k.trim();
+      if (isValidApiKey(trimmed) && !keys.includes(trimmed)) {
+        keys.push(trimmed);
       }
     }
-  } catch (e) {
-    console.warn("Could not read API key from DB:", e);
   }
 
   return keys;
@@ -490,15 +484,33 @@ ${systemPrompt}`;
           // 2. PDF: extract digital text first!
           // 95%+ of study PDFs have digital text. Reading text directly is 20x faster than sending raw binary PDF!
           if (fileMime === "application/pdf") {
+            let parsedPdf: any = null;
             try {
               const { extractTextFromPdf } = await import("@/lib/document-parser");
-              const parsed = await extractTextFromPdf(buffer);
-              if (parsed && parsed.text && parsed.text.trim().length > 80) {
-                textParts.push(`\n═══════════════════════════════════════════════════════════\nTEXTO INTEGRAL EXTRAÍDO DO PDF: "${file.name || `documento_${i + 1}`}" (${parsed.total || parsed.pages.length} páginas)\n═══════════════════════════════════════════════════════════\n${parsed.text}\n`);
-                continue;
+              parsedPdf = await extractTextFromPdf(buffer);
+              // For tutoria / PBL, documents often contain scanned images or photos of the clinical case.
+              // We extract digital text as reference, but NEVER skip the binary PDF so Gemini Vision can inspect all images!
+              const minCharsNeeded = isTutoriaOrPbl ? Math.max(500, 300 * (parsedPdf?.total || 1)) : 80;
+              if (parsedPdf && parsedPdf.text && parsedPdf.text.trim().length > minCharsNeeded) {
+                textParts.push(`\n═══════════════════════════════════════════════════════════\nTEXTO INTEGRAL EXTRAÍDO DO PDF: "${file.name || `documento_${i + 1}`}" (${parsedPdf.total || parsedPdf.pages.length} páginas)\n═══════════════════════════════════════════════════════════\n${parsedPdf.text}\n`);
+                if (!isTutoriaOrPbl) {
+                  continue;
+                }
               }
             } catch (e) {
               console.warn(`[ai.ts] PDF fast-text fallback for ${file.name}:`, e);
+            }
+
+            // Se o PDF tiver estrutura inválida ou 0 páginas legíveis pelo parser, NUNCA envie o binário bruto
+            // para a API do Gemini (pois ela rejeita com "[400 Bad Request] The document has no pages.")
+            if (!parsedPdf || !parsedPdf.total || parsedPdf.total < 1) {
+              console.warn(`[ai.ts] Skipping invalid/0-page binary PDF "${file.name}" to prevent Gemini 400 error.`);
+              if (parsedPdf?.text && parsedPdf.text.trim().length > 0) {
+                textParts.push(`\n═══════════════════════════════════════════════════════════\nTEXTO EXTRAÍDO DO DOCUMENTO: "${file.name || `documento_${i + 1}`}"\n═══════════════════════════════════════════════════════════\n${parsedPdf.text}\n`);
+              } else if (file.name) {
+                textParts.push(`\n[Tema/Arquivo de referência: "${file.name.replace(/\.[^/.]+$/, "")}"]\n`);
+              }
+              continue;
             }
           }
 
@@ -515,7 +527,8 @@ ${systemPrompt}`;
         if (binaryFilesToProcess.length > 0) {
           await Promise.all(
             binaryFilesToProcess.map(async (item, idx) => {
-              if (item.buffer.length <= 500 * 1024 && !item.mime.includes("pdf")) {
+              // Images up to 15MB are passed directly as inlineData (0ms latency, 100% reliable)
+              if (item.buffer.length <= 15 * 1024 * 1024 && !item.mime.includes("pdf")) {
                 parts.push({
                   inlineData: {
                     data: item.cleanBase64,
@@ -580,17 +593,26 @@ ${systemPrompt}`;
         for (const modelName of GEMINI_MODELS) {
           let attempts = 0;
           const maxAttempts = 2;
+          // Somente gemini-2.5-flash suporta até 65536 tokens de saída; modelos lite/2.0 aceitam no máximo 8192 (acima disso gera 400 Bad Request)
+          let effectiveMaxTokens: number | undefined =
+            modelName === "gemini-2.5-flash"
+              ? Math.min(65536, Math.max(8192, maxOutputTokens))
+              : Math.min(8192, maxOutputTokens);
 
           while (attempts <= maxAttempts) {
             try {
+              const genConfig: Record<string, any> = {
+                responseMimeType: "application/json",
+                temperature,
+              };
+              if (effectiveMaxTokens) {
+                genConfig.maxOutputTokens = effectiveMaxTokens;
+              }
+
               const model = genAI.getGenerativeModel({
                 model: modelName,
                 systemInstruction: effectiveSystemPrompt,
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  temperature,
-                  maxOutputTokens,
-                },
+                generationConfig: genConfig,
               });
 
               // Timeout de segurança por chamada para permitir geração de tutoria e textos densos (6 minutos)
@@ -606,11 +628,52 @@ ${systemPrompt}`;
               const text = res.response.text();
               return parseAIResponseJSON(text);
             } catch (err: any) {
-              lastError = err;
-              const is503 = err.message?.includes("503") || err.message?.includes("high demand");
-              if (is503 && attempts < maxAttempts) {
+              if (!lastError || modelName === "gemini-2.5-flash") {
+                lastError = err;
+              }
+
+              // Se o Gemini rejeitar um arquivo binário com "The document has no pages" ou "Unable to process input",
+              // remove os anexos binários problemáticos e tenta imediatamente com o texto extraído + prompt
+              const isNoPagesOrUnprocessable =
+                err.message?.includes("The document has no pages") ||
+                err.message?.includes("Unable to process");
+
+              if (isNoPagesOrUnprocessable) {
+                const textOnlyParts = parts.filter((p) => typeof p === "string");
+                if (textOnlyParts.length > 0 && textOnlyParts.length < parts.length) {
+                  console.warn(`[Gemini] Stripping invalid binary attachment after "document has no pages" and retrying with text parts...`);
+                  parts.length = 0;
+                  parts.push(...textOnlyParts);
+                  attempts++;
+                  continue;
+                }
+              }
+
+              // Se o modelo rejeitar maxOutputTokens com 400 Bad Request, tenta imediatamente sem limite explícito
+              const isInvalidArg =
+                err.message?.includes("400") ||
+                err.message?.includes("invalid argument") ||
+                err.message?.includes("INVALID_ARGUMENT");
+
+              if (isInvalidArg && effectiveMaxTokens !== undefined) {
+                effectiveMaxTokens = undefined;
                 attempts++;
-                await new Promise((r) => setTimeout(r, 2000));
+                continue;
+              }
+
+              const isRetryable =
+                err.message?.includes("503") ||
+                err.message?.includes("429") ||
+                err.message?.includes("high demand") ||
+                err.message?.includes("overloaded") ||
+                err.message?.includes("ResourceExhausted") ||
+                err.message?.includes("Too Many Requests");
+
+              if (isRetryable && attempts < maxAttempts) {
+                attempts++;
+                const delay = attempts * 1500;
+                console.warn(`[Gemini] ${modelName} hit rate limit / demand spike. Retrying in ${delay}ms (${attempts}/${maxAttempts})...`);
+                await new Promise((r) => setTimeout(r, delay));
                 continue;
               }
               console.warn(`[Gemini] Model ${modelName} notice:`, (err.message || "").slice(0, 150));

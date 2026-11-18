@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Copy,
   Check,
@@ -10,7 +10,6 @@ import {
   Save,
   Eye,
   BookOpen,
-  GraduationCap,
   Stethoscope,
   CheckCircle2,
   FileText,
@@ -35,8 +34,10 @@ import { cleanQuestionTitle, extractCleanSubject, shortenCardAnswer } from "@/li
 import { cn } from "@/lib/utils";
 import { copyRichText, copyTableRichText } from "@/lib/notion-export";
 import { exportDocumentToProfessionalPdf, cleanLatexAndBadges } from "@/lib/pdf-export";
+import { replaceInMarkdown } from "@/lib/selection-replace";
 import { getThemePalette } from "@/lib/theme-palettes";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { NotionOutline } from "@/components/shared/NotionOutline";
 import toast from "react-hot-toast";
 
 const EmbeddedMindMapView = dynamic(
@@ -73,26 +74,52 @@ export function parseInlineSpans(text: string): InlineSpan[] {
   if (!text) return [];
   const result: InlineSpan[] = [];
 
-  // Normalize nested mark and span: <mark style="background-color: BG;"><span style="color: COL;">TEXT</span></mark>
-  const normalized = text.replace(
-    /<mark(?:\s+style=["']background-color:\s*([^"']+)["'])?\s*><span\s+style=["']color:\s*([^"']+)["']\s*>([\s\S]*?)<\/span><\/mark>/gi,
-    '<mark style="background-color: $1;" data-color="$2">$3</mark>'
-  );
+  // Decode ALL HTML entities first so &lt;span...&gt; doesn't get printed raw as literal text
+  const preDecoded = text
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
 
-  const regex = /(<mark(?:\s+style=["']background-color:\s*([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?\s*>([\s\S]*?)<\/mark>|<span\s+style=["']color:\s*([^"';]+)[^"']*["']\s*>([\s\S]*?)<\/span>|<u>([\s\S]*?)<\/u>|\*\*([^*]+)\*\*|(?<!\*)\*([^*]+)\*(?!\*))/g;
+  // Normalize style attributes with varying quotes/spacing and normalize nested mark and span
+  const normalized = preDecoded
+    .replace(
+      /<mark(?:\s+[^>]*?style=["'][^"']*?background-color:\s*([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?[^>]*><span\s+[^>]*?style=["'][^"']*?color:\s*([^"';]+)[^"']*["'][^>]*>([\s\S]*?)<\/span><\/mark>/gi,
+      '<mark data-bg="$1" data-color="$3">$4</mark>'
+    )
+    .replace(
+      /<span\s+[^>]*?style=["'](?:[^"']*?color:\s*([^"';]+)[^"']*)["'][^>]*>([\s\S]*?)<\/span>/gi,
+      '<span data-color="$1">$2</span>'
+    )
+    .replace(
+      /<span\s+data-color=["']([^"';]+)["'][^>]*>([\s\S]*?)<\/span>/gi,
+      '<span data-color="$1">$2</span>'
+    )
+    .replace(
+      /<mark(?:\s+[^>]*?style=["'][^"']*?background-color:\s*([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?[^>]*>([\s\S]*?)<\/mark>/gi,
+      '<mark data-bg="$1" data-color="$2">$3</mark>'
+    )
+    // Clean unclosed <span style="..."> tags by converting up to next tag/newline to colored span
+    .replace(
+      /<span\s+[^>]*?style=["'](?:[^"']*?color:\s*([^"';]+)[^"']*)["'][^>]*>([^<\n]+)(?=$|<|\n)/gi,
+      '<span data-color="$1">$2</span>'
+    );
+
+  const regex = /<mark(?:\s+data-bg=["']([^"';]+)[^"']*["'])?(?:\s+data-color=["']([^"';]+)[^"']*["'])?\s*>([\s\S]*?)<\/mark>|<span\s+data-color=["']([^"';]+)[^"']*["']\s*>([\s\S]*?)<\/span>|<u>([\s\S]*?)<\/u>|\*\*([^*]+)\*\*|(?<!\*)\*([^*]+)\*(?!\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(normalized)) !== null) {
     if (match.index > lastIndex) {
       let plain = normalized.slice(lastIndex, match.index).replace(/\*\*/g, "");
-      plain = plain.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+      plain = plain.replace(/<[^>]+>/g, ""); // Strip any unhandled HTML tags from plain text
       if (plain) result.push({ type: "text", content: plain });
     }
-    const [, markMatch, markBg, markColor, markContent, spanColor, spanContent, uContent, boldContent, italicContent] = match;
+    const [, markBg, markColor, markContent, spanColor, spanContent, uContent, boldContent, italicContent] = match;
 
-    if (markMatch !== undefined) {
-      const cleanContent = (markContent || "").replace(/<\/?[a-zA-Z][^>]*>/g, "").trim();
+    if (markContent !== undefined) {
+      const cleanContent = markContent.replace(/<[^>]+>/g, "").trim();
       if (cleanContent) {
         result.push({
           type: "mark",
@@ -102,7 +129,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
         });
       }
     } else if (spanColor !== undefined && spanContent !== undefined) {
-      const cleanContent = spanContent.replace(/<\/?[a-zA-Z][^>]*>/g, "").trim();
+      const cleanContent = spanContent.replace(/<[^>]+>/g, "").trim();
       if (cleanContent) {
         result.push({
           type: "color",
@@ -111,25 +138,25 @@ export function parseInlineSpans(text: string): InlineSpan[] {
         });
       }
     } else if (uContent !== undefined) {
-      const cleanContent = uContent.replace(/<\/?[a-zA-Z][^>]*>/g, "").trim();
+      const cleanContent = uContent.replace(/<[^>]+>/g, "").trim();
       if (cleanContent) {
         result.push({ type: "underline", content: cleanContent });
       }
     } else if (boldContent !== undefined) {
-      result.push({ type: "bold", content: boldContent.replace(/<\/?[a-zA-Z][^>]*>/g, "") });
+      result.push({ type: "bold", content: boldContent.replace(/<[^>]+>/g, "") });
     } else if (italicContent !== undefined) {
-      result.push({ type: "italic", content: italicContent.replace(/<\/?[a-zA-Z][^>]*>/g, "") });
+      result.push({ type: "italic", content: italicContent.replace(/<[^>]+>/g, "") });
     }
     lastIndex = regex.lastIndex;
   }
 
   if (lastIndex < normalized.length) {
     let plain = normalized.slice(lastIndex).replace(/\*\*/g, "");
-    plain = plain.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+    plain = plain.replace(/<[^>]+>/g, "");
     if (plain) result.push({ type: "text", content: plain });
   }
 
-  return result.length > 0 ? result : [{ type: "text", content: text.replace(/\*\*/g, "").replace(/<\/?[a-zA-Z][^>]*>/g, "") }];
+  return result.length > 0 ? result : [{ type: "text", content: text.replace(/\*\*/g, "").replace(/<[^>]+>/g, "") }];
 }
 
 export function TutoriaViewer({
@@ -145,20 +172,75 @@ export function TutoriaViewer({
 }: TutoriaViewerProps) {
   const [copied, setCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(true); // Edição direta instantânea ativa por padrão!
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [localContent, setLocalContent] = useState<string>(markdownContent || "");
   const [editedText, setEditedText] = useState("");
   const [viewMode, setViewMode] = useState<"document" | "mindmap">("document");
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
+  const [isDeepeningLoading, setIsDeepeningLoading] = useState(false);
 
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [zoomImageCaption, setZoomImageCaption] = useState<string>("");
 
-  const currentContent = isEditing ? editedText : cleanLatexAndBadges(markdownContent);
+  const currentContent = isEditing ? (editedText || localContent) : cleanLatexAndBadges(localContent);
 
   useEffect(() => {
-    setEditedText(cleanLatexAndBadges(markdownContent));
+    setLocalContent(markdownContent || "");
+    setEditedText(cleanLatexAndBadges(markdownContent || ""));
   }, [markdownContent]);
+
+  const handleEditorChange = useCallback((newText: string) => {
+    setEditedText(newText);
+    setLocalContent(newText);
+    setSaveStatus("saving");
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      onSaveContent?.(newText);
+      if (analysis) {
+        onUpdateAnalysis?.({ customMarkdown: newText });
+        useAppStore.getState().updateTutoriaAnalysis(analysis.id, { customMarkdown: newText });
+      }
+      setSaveStatus("saved");
+    }, 800);
+  }, [onSaveContent, onUpdateAnalysis, analysis]);
+
+  // Handle direct in-place AI selection apply (replace selection or insert below)
+  useEffect(() => {
+    const handleApplySelection = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        mode: "replace" | "insertBelow";
+        selectedText: string;
+        resultText: string;
+        targetElement: HTMLElement | null;
+      }>;
+      const { mode, selectedText, resultText } = customEvent.detail || {};
+      if (!selectedText || !resultText) return;
+
+      const baseText = isEditing ? editedText : localContent;
+      const updated = replaceInMarkdown(baseText, selectedText, resultText, mode);
+      if (updated !== baseText) {
+        customEvent.preventDefault();
+        setLocalContent(updated);
+        setEditedText(updated);
+        setSaveStatus("saving");
+        onSaveContent?.(updated);
+        if (analysis) {
+          onUpdateAnalysis?.({ customMarkdown: updated });
+          useAppStore.getState().updateTutoriaAnalysis(analysis.id, { customMarkdown: updated });
+        }
+        setTimeout(() => setSaveStatus("saved"), 300);
+      }
+    };
+
+    window.addEventListener("medsetup:apply-ai-selection", handleApplySelection);
+    return () => window.removeEventListener("medsetup:apply-ai-selection", handleApplySelection);
+  }, [localContent, editedText, isEditing, onSaveContent, onUpdateAnalysis, analysis]);
 
   const handleCopy = async () => {
     const success = await copyRichText(cleanLatexAndBadges(currentContent));
@@ -198,19 +280,65 @@ export function TutoriaViewer({
   };
 
   const handleStartEditing = () => {
-    setEditedText(markdownContent);
+    setEditedText(localContent);
     setIsEditing(true);
   };
 
   const handleCancelEditing = () => {
-    setEditedText(markdownContent);
-    setIsEditing(false);
+    setEditedText(localContent);
   };
 
   const handleSaveEditing = () => {
-    setIsEditing(false);
+    setLocalContent(editedText);
     onSaveContent?.(editedText);
+    if (analysis) {
+      onUpdateAnalysis?.({ customMarkdown: editedText });
+      useAppStore.getState().updateTutoriaAnalysis(analysis.id, { customMarkdown: editedText });
+    }
     toast.success("Alterações salvas com sucesso!", { icon: "💾" });
+  };
+
+  const handleAprofundarComIA = async () => {
+    setIsDeepeningLoading(true);
+    const toastId = toast.loading("Aprofundando raciocínio do caso clínico com IA...");
+    try {
+      const cleanSubject = extractCleanSubject(title, analysis?.title || "Caso Clínico");
+      const res = await fetch("/api/ai/expand-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `Aprofundamento clínico, diagnósticos diferenciais e raciocínio fisiopatológico integrado sobre o tema ${cleanSubject}.`,
+          action: "expand",
+          context: currentContent.slice(0, 3000),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Não foi possível aprofundar no momento.");
+      }
+
+      const data = await res.json();
+      const expandedText = data.result || "";
+
+      if (!expandedText) {
+        throw new Error("Nenhum conteúdo adicional retornado.");
+      }
+
+      const updated = `${currentContent}\n\n---\n\n## Aprofundamento Clínico & Fisiopatologia Aplicada\n\n${expandedText}`;
+      setLocalContent(updated);
+      setEditedText(updated);
+      onSaveContent?.(updated);
+      if (analysis) {
+        onUpdateAnalysis?.({ customMarkdown: updated });
+        useAppStore.getState().updateTutoriaAnalysis(analysis.id, { customMarkdown: updated });
+      }
+
+      toast.success("Caso Clínico aprofundado com sucesso!", { id: toastId });
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao aprofundar caso clínico.", { id: toastId });
+    } finally {
+      setIsDeepeningLoading(false);
+    }
   };
 
   /* ───── Gerar Flashcards a partir da Tutoria ───── */
@@ -457,14 +585,14 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
       if (span.type === "bold") {
         return (
           <strong key={i} className="font-bold text-gray-950 dark:text-white">
-            {span.content}
+            {renderInlineMarkdown(span.content)}
           </strong>
         );
       }
       if (span.type === "italic") {
         return (
           <em key={i} className="italic text-gray-800 dark:text-gray-300">
-            {span.content}
+            {renderInlineMarkdown(span.content)}
           </em>
         );
       }
@@ -533,10 +661,11 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
     }
 
     const boldColonMatch = body.match(/^\s*\*\*([^*]+)\*\*(\s*(?:->|→|&rarr;|:)\s*)(.*)$/);
-    const plainColonMatch = !boldColonMatch && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
+    const spanColonMatch = !boldColonMatch && body.match(/^\s*(<span\b[^>]*>[\s\S]*?<\/span>)\s*(:)\s*(.*)$/i);
+    const plainColonMatch = !boldColonMatch && !spanColonMatch && !body.trim().startsWith("<") && !/<[a-zA-Z][^>]*:[^>]*>/.test(body.slice(0, 60))
       ? body.match(/^\s*([^<*:\->—\n]{2,60})(\s*(?:->|→|&rarr;|:)\s*)(.*)$/)
       : null;
-    const colonOrArrowMatch = boldColonMatch || plainColonMatch;
+    const colonOrArrowMatch = boldColonMatch || spanColonMatch || plainColonMatch;
     if (colonOrArrowMatch) {
       const term = colonOrArrowMatch[1].trim().replace(/\*\*/g, "");
       const isArrow = colonOrArrowMatch[2].includes("->") || colonOrArrowMatch[2].includes("→");
@@ -545,7 +674,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
       return (
         <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
           <strong className="font-bold text-gray-950 dark:text-white mr-1.5">
-            {term}{isArrow ? "" : ":"}
+            {renderInlineMarkdown(term)}{isArrow ? "" : ":"}
           </strong>
           {isArrow && (
             <span className="text-blue-500/80 dark:text-blue-400 font-semibold mx-1.5 select-none">
@@ -570,6 +699,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
   const renderDocumentLines = () => {
     const elements: React.ReactNode[] = [];
     const hasH1 = lines.some((l) => l.trim().startsWith("# "));
+    let headingCounter = 0;
 
     if (!hasH1 && displayTitle) {
       elements.push(
@@ -592,10 +722,12 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
 
       // H1: Document Main Title
       if (trimmed.startsWith("# ")) {
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
           <h1
             key={`h1-${idx}`}
-            className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight pb-3 border-b border-slate-200 dark:border-slate-800 mt-2 mb-6"
+            id={headingId}
+            className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight pb-3 border-b border-slate-200 dark:border-slate-800 mt-2 mb-6 scroll-mt-24"
           >
             {renderInlineMarkdown(trimmed.replace(/^#\s+/, ""))}
           </h1>
@@ -606,10 +738,12 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
       // H2: Major Section Heading (e.g. ## Caso Clínico, ## Termos e Perguntas Desconhecidas)
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
           <h2
             key={`h2-${idx}`}
-            className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-8 mb-3 flex items-center gap-2.5"
+            id={headingId}
+            className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-8 mb-3 flex items-center gap-2.5 scroll-mt-24"
           >
             <span className="w-2 h-6 rounded-full bg-emerald-600 dark:bg-emerald-400 shrink-0" />
             <span>{renderInlineMarkdown(text)}</span>
@@ -638,11 +772,13 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
         let text = trimmed.replace(/^###\s+/, "");
         // Clean duplicate question numbering if present (e.g., "Questão 1: 1. Pergunta" -> "Questão 1: Pergunta")
         text = text.replace(/^(Quest[aã]o\s+\d+)\s*[:.\-–)]*\s*(?:\d+\s*[:.\-–)]*\s*)+/i, "$1: ");
+        const headingId = `heading-sec-${headingCounter++}`;
 
         elements.push(
           <h3
             key={`h3-${idx}`}
-            className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight mt-6 mb-2"
+            id={headingId}
+            className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight mt-6 mb-2 scroll-mt-24"
           >
             {renderInlineMarkdown(text)}
           </h3>
@@ -655,12 +791,14 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
         const text = trimmed.replace(/^####\s+/, "");
         const isCuriosidade = /curiosidade/i.test(text);
         const cleanHeading = text.replace(/^\d+\.\s*/, "");
+        const headingId = `heading-sec-${headingCounter++}`;
 
         if (isCuriosidade) {
           elements.push(
             <div
               key={`h4-${idx}`}
-              className="mt-6 mb-3 p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/50 shadow-xs"
+              id={headingId}
+              className="mt-6 mb-3 p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/50 shadow-xs scroll-mt-24"
             >
               <h4 className="text-base sm:text-lg font-bold text-amber-900 dark:text-amber-200 flex items-center gap-2">
                 <Lightbulb className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -674,7 +812,8 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
         elements.push(
           <h4
             key={`h4-${idx}`}
-            className="text-[15.5px] sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-5 mb-1.5"
+            id={headingId}
+            className="text-[15.5px] sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-5 mb-1.5 scroll-mt-24"
           >
             {renderInlineMarkdown(cleanHeading)}
           </h4>
@@ -951,15 +1090,6 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
     return elements;
   };
 
-  const stats = React.useMemo(() => {
-    const res = analysis?.result;
-    const objectives = res?.learningQuestions?.length || 0;
-    const hypotheses = res?.hypothesisAnalysis?.length || 0;
-    const terms = res?.unknownTerms?.length || 0;
-    const references = (selectedBookTitles?.length || 0) + (res?.references?.length || 0);
-    return { objectives, hypotheses, terms, references };
-  }, [analysis, selectedBookTitles]);
-
   const rawSubtitle =
     analysis?.result?.clinicalConclusion?.summary ||
     analysis?.result?.clinicalConclusion?.clinicalReasoning ||
@@ -970,6 +1100,23 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
     ? rawSubtitle.replace(/<[^>]*>/g, "").replace(/\*\*/g, "").trim()
     : "";
 
+  const conciseSubtitle = React.useMemo(() => {
+    if (!subtitle) return "";
+    // Extrai no máximo 1 a 2 sentenças curtas e objetivas
+    const sentences = subtitle.match(/[^.!?]+[.!?]+/g);
+    if (sentences && sentences.length > 0) {
+      let combined = sentences[0].trim();
+      if (sentences.length > 1 && (combined.length + sentences[1].trim().length) <= 220) {
+        combined += " " + sentences[1].trim();
+      }
+      return combined;
+    }
+    if (subtitle.length > 200) {
+      return subtitle.slice(0, 197).trim() + "...";
+    }
+    return subtitle;
+  }, [subtitle]);
+
   const displayTitle = title || analysis?.title || "Resolução de Tutoria Clínica";
 
   return (
@@ -977,13 +1124,9 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
       {/* ──────────────────────── Top Dossier Header (Idêntico ao Ateliê) ──────────────────────── */}
       <header className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 shadow-xs dark:border-slate-800 dark:bg-[#12151e]">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-2 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40">
-                <GraduationCap className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                Resolução de Tutoria & PBL
-              </span>
-              {selectedBookTitles && selectedBookTitles.length > 0 && (
+          <div className="space-y-2 max-w-5xl">
+            {selectedBookTitles && selectedBookTitles.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800/40"
                   title={selectedBookTitles.join(", ")}
@@ -993,178 +1136,82 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
                     ? `Referência: ${selectedBookTitles[0]}`
                     : `${selectedBookTitles.length} Livros de Referência`}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               {displayTitle}
             </h1>
 
-            {subtitle && (
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                {subtitle}
+            {conciseSubtitle && (
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                {conciseSubtitle}
               </p>
             )}
           </div>
 
           {/* Action Toolbar */}
           <div className="flex flex-wrap items-center gap-2 self-start">
-            {isEditing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleCancelEditing}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Cancelar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEditing}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-transform active:scale-95 shadow-sm cursor-pointer"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  <span>Salvar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
-                  <span>{copied ? "Copiado!" : "Copiar"}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={isExportingPdf}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                >
-                  <FileDown className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{isExportingPdf ? "Exportando..." : "Exportar PDF"}</span>
-                </button>
-              </>
-            ) : (
-              <>
-                {(fileUrl || analysis?.fileUrl) && onViewPdf && (
-                  <button
-                    type="button"
-                    onClick={onViewPdf}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 transition-colors shadow-2xs cursor-pointer"
-                    title="Visualizar PDF original anexado"
-                  >
-                    <Eye className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>Visualizar PDF</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                  title="Copiar com formatação perfeita para colar em qualquer aplicativo"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
-                  <span>{copied ? "Copiado!" : "Copiar"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={isExportingPdf}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                  title="Exportar PDF com papel branco A4"
-                >
-                  <FileDown className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{isExportingPdf ? "Exportando..." : "Exportar PDF"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleGenerateFlashcardsFromTutoria}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 transition-colors shadow-2xs cursor-pointer"
-                  title="Gerar baralho de Flashcards a partir da Tutoria"
-                >
-                  <Layers className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>Flashcards</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleGenerateQuestionsFromTutoria}
-                  disabled={isQuestionsLoading}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-60"
-                  title="Gerar Questões detalhadas a partir da Tutoria"
-                >
-                  {isQuestionsLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />
-                  ) : (
-                    <HelpCircle className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-                  )}
-                  <span>{isQuestionsLoading ? "Elaborando..." : "Questões"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (viewMode === "mindmap") {
-                      setViewMode("document");
-                    } else if (analysis?.mindMap && analysis.mindMap.nodes.length > 0) {
-                      setViewMode("mindmap");
-                    } else {
-                      handleGenerateMindMapFromTutoria();
-                    }
-                  }}
-                  disabled={isMapLoading}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-60"
-                  title="Gerar ou visualizar mapa mental da Tutoria"
-                >
-                  {isMapLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <GitBranch className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                  )}
-                  <span>{viewMode === "mindmap" ? "Ver Tutoria" : analysis?.mindMap ? "Ver Mapa Mental" : "Mapa Mental"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleStartEditing}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-                  title="Editar texto da tutoria"
-                >
-                  <Pencil className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Editar Texto</span>
-                </button>
-              </>
+            {(fileUrl || analysis?.fileUrl) && onViewPdf && (
+              <button
+                type="button"
+                onClick={onViewPdf}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 transition-colors shadow-2xs cursor-pointer"
+                title="Visualizar PDF original anexado"
+              >
+                <Eye className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Visualizar PDF</span>
+              </button>
             )}
-          </div>
-        </div>
 
-        {/* Metric Badges */}
-        <div className="mt-5 flex flex-wrap items-center gap-2 pt-4 border-t border-slate-100 dark:border-slate-800/80 text-xs text-slate-600 dark:text-slate-400">
-          <span className="font-semibold text-slate-900 dark:text-white mr-1">Conteúdo:</span>
-          {stats.objectives > 0 && (
-            <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-              <strong>{stats.objectives}</strong> objetivos de aprendizagem
-            </span>
-          )}
-          {stats.hypotheses > 0 && (
-            <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-              <strong>{stats.hypotheses}</strong> hipóteses diagnósticas
-            </span>
-          )}
-          {stats.terms > 0 && (
-            <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-              <strong>{stats.terms}</strong> termos elucidados
-            </span>
-          )}
-          {stats.references > 0 && (
-            <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-              <strong>{stats.references}</strong> referências / livros
-            </span>
-          )}
+            <button
+              type="button"
+              onClick={handleGenerateFlashcardsFromTutoria}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 transition-colors shadow-2xs cursor-pointer"
+              title="Gerar baralho de Flashcards a partir da Tutoria"
+            >
+              <Layers className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Flashcards</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGenerateQuestionsFromTutoria}
+              disabled={isQuestionsLoading}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-60"
+              title="Gerar Questões detalhadas a partir da Tutoria"
+            >
+              {isQuestionsLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />
+              ) : (
+                <HelpCircle className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+              )}
+              <span>{isQuestionsLoading ? "Elaborando..." : "Questões"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (viewMode === "mindmap") {
+                  setViewMode("document");
+                } else if (analysis?.mindMap && analysis.mindMap.nodes.length > 0) {
+                  setViewMode("mindmap");
+                } else {
+                  handleGenerateMindMapFromTutoria();
+                }
+              }}
+              disabled={isMapLoading}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-60"
+              title="Gerar ou visualizar mapa mental da Tutoria"
+            >
+              {isMapLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <GitBranch className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <span>{viewMode === "mindmap" ? "Ver Tutoria" : analysis?.mindMap ? "Ver Mapa Mental" : "Mapa Mental"}</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1178,7 +1225,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">
-                  {fileName?.toLowerCase().endsWith(".pdf") ? "PDF Anexado" : "Caso Clínico da Tutoria"}
+                  {fileName?.toLowerCase().endsWith(".pdf") ? "PDF Anexado" : /\.(png|jpe?g|webp)$/i.test(fileName || "") ? "Imagem do Caso" : "Caso Clínico da Tutoria"}
                 </span>
               </div>
               <p className="text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5" title={fileName}>
@@ -1200,7 +1247,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Visualizar PDF</span>
+                <span>{/\.(png|jpe?g|webp|gif|bmp)$/i.test(fileName || "") ? "Visualizar Imagem" : fileName?.toLowerCase().endsWith(".pdf") ? "Visualizar PDF" : "Visualizar Arquivo"}</span>
               </button>
             )}
 
@@ -1265,31 +1312,91 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
             </div>
           )}
         </div>
-      ) : isEditing ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-10 dark:border-slate-800 dark:bg-[#1A1D27] shadow-sm max-w-4xl mx-auto">
-          <div className="mb-4 pb-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Modo de Edição Direta
-            </span>
-            <span className="text-xs text-slate-400">
-              Suporta Markdown e formatação rica
-            </span>
-          </div>
-          <RichTextEditor
-            value={editedText}
-            onChange={setEditedText}
-            onSave={handleSaveEditing}
-            onCancel={handleCancelEditing}
-            theme="esmeralda"
-            placeholder="Edite a tutoria médica com formatação enriquecida..."
-            minHeight="540px"
-          />
-        </div>
       ) : (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-12 dark:border-slate-800 dark:bg-[#1A1D27] shadow-sm max-w-4xl mx-auto transition-all">
-          {/* Render Body */}
-          <div className="space-y-1">
-            {renderDocumentLines()}
+        <div className="space-y-6">
+          {/* Header Action Toolbar - Caso Clínico */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-[#12151e]">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                Caso Clínico
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Texto acadêmico contínuo e aprofundado, formatado para leitura fluida e exportação
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Status de Salvamento Automático */}
+              {/* Indicador de Edição Direta e Autosave */}
+              {saveStatus === "saving" ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800/50 shadow-2xs">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Salvando...</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/50 shadow-2xs">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Edição direta ativa • Salvo automaticamente</span>
+                </span>
+              )}
+
+              {/* Copiar */}
+              <button
+                type="button"
+                onClick={handleCopy}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm",
+                  copied
+                    ? "bg-emerald-600 text-white"
+                    : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60"
+                )}
+                title="Copiar caso clínico"
+              >
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? "Copiado!" : "Copiar"}</span>
+              </button>
+
+              {/* Exportar PDF */}
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={isExportingPdf}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-emerald-500/20"
+                title="Exportar Caso Clínico como PDF"
+              >
+                {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                <span>{isExportingPdf ? "Exportando..." : "Exportar PDF"}</span>
+              </button>
+
+              {/* Aprofundar com IA */}
+              <button
+                type="button"
+                onClick={handleAprofundarComIA}
+                disabled={isDeepeningLoading}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 transition-colors cursor-pointer disabled:opacity-60"
+              >
+                {isDeepeningLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span>Aprofundar com IA</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Document Workspace (Direct in-place editing active with Floating Tools on Left & NotionOutline on Right) */}
+          <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+            {/* Sumário Balão Flutuante do Lado Direito (Hover-to-Open, Sem Alterar Proporção do Texto) */}
+            <NotionOutline
+              content={currentContent}
+              accentColor="emerald"
+            />
+
+            <RichTextEditor
+              value={editedText || localContent}
+              onChange={handleEditorChange}
+              theme="esmeralda"
+              placeholder="Clique em qualquer lugar para editar o caso clínico diretamente..."
+              minHeight="580px"
+            />
           </div>
         </div>
       )}

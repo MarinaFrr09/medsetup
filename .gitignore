@@ -13,12 +13,20 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# Database
+# Database (Protegido contra envio ao GitHub)
 prisma/dev.db
 prisma/dev.db-journal
+prisma/*.db
+prisma/*.db-journal
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
-# Environment variables
+# Environment variables & API Keys (Nunca enviar ao GitHub)
 .env
+.env.*
+!.env.example
 .env*.local
 .env.local
 
@@ -31,7 +39,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# User Uploaded Files (PDFs/Images - Avoids GitHub 100MB limit)
+# User Uploaded Files (PDFs/Images - Protege seus documentos pessoais)
 /public/uploads/*
 !/public/uploads/.gitkeep
 !/public/uploads/histology/

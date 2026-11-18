@@ -1,12 +1,16 @@
 import React from "react";
+import { cleanFlashcardText } from "@/lib/text-sanitize";
+
+export { cleanFlashcardText };
 
 /**
  * Strips leading bracket tags from question text (e.g. "[Anatomia]", "[Histologia]", "[Caso 1]", "[SP]").
  * Also strips area colon prefixes like "Anatomia: " or "Caso 1: ".
+ * Cleans any HTML tags and raw LaTeX artifacts.
  */
 export function cleanQuestionTitle(text?: string): string {
   if (!text) return "";
-  return text
+  let clean = cleanFlashcardText(text)
     // Remove leading markdown bold headers like "**Questão 1:**" or "**Enunciado:**"
     .replace(/^\s*\*\*(?:Quest[ãa]o\s*\d+|Q\d+|\d+|Enunciado)\s*[:.\-–—]?\*\*\s*/i, "")
     // Remove leading numbering like "1.", "1 -", "Questão 1:", "Q1:", etc.
@@ -18,7 +22,10 @@ export function cleanQuestionTitle(text?: string): string {
     // Strip dangling trailing asterisks if present
     .replace(/\s*\*\*\s*$/, "")
     .trim();
+
+  return clean;
 }
+
 
 /**
  * Shortens and cleans subject names for badges and folders.
@@ -85,14 +92,16 @@ export function extractCleanSubject(title?: string, theme?: string): string {
 /**
  * Renders inline text, handling LaTeX formatting commands (\textbf, \textit, math symbols),
  * turning markdown bold (**text**) into <strong> tags, markdown italic (*text*) into <em>,
- * converting newlines into <br /> line breaks, and eliminating raw asterisks and broken tags.
+ * converting newlines into <br /> line breaks, and eliminating raw HTML tags, broken spans,
+ * and LaTeX syntax.
  */
 export function renderFormattedText(text?: string): React.ReactNode {
   if (!text) return null;
 
-  let clean = String(text);
+  // 1. Thoroughly clean all HTML tags, broken spans, and raw LaTeX math
+  let clean = cleanFlashcardText(String(text));
 
-  // 1. LaTeX styling commands -> Markdown
+  // 2. LaTeX styling commands -> Markdown
   clean = clean
     .replace(/\\textbf\{([^}]+)\}/gi, "**$1**")
     .replace(/\\mathbf\{([^}]+)\}/gi, "**$1**")
@@ -102,7 +111,7 @@ export function renderFormattedText(text?: string): React.ReactNode {
     .replace(/\\text(?:rm|sf|tt|normal)?\{([^}]+)\}/gi, "$1")
     .replace(/\\mathrm\{([^}]+)\}/gi, "$1");
 
-  // 2. LaTeX math symbols & entities
+  // 3. LaTeX math symbols & entities
   clean = clean
     .replace(/\\pm\b/gi, "±")
     .replace(/\\times\b/gi, "×")
@@ -126,14 +135,14 @@ export function renderFormattedText(text?: string): React.ReactNode {
     .replace(/\\infty\b/gi, "∞")
     .replace(/\\degree\b|\^\\circ\b/gi, "°");
 
-  // 3. LaTeX math wrappers: $$...$$ and $...$
+  // 4. LaTeX math wrappers: $$...$$ and $...$
   clean = clean
     .replace(/\$\$([\s\S]+?)\$\$/g, "$1")
     .replace(/(^|[^\\$])\$([^\$\n]+?)\$(?!\d)/g, "$1$2")
     .replace(/\\\[([\s\S]+?)\\\]/g, "$1")
     .replace(/\\\(([\s\S]+?)\\\)/g, "$1");
 
-  // 4. Superscripts & Subscripts
+  // 5. Superscripts & Subscripts
   clean = clean
     .replace(/\^2\b/g, "²")
     .replace(/\^3\b/g, "³")
@@ -143,10 +152,10 @@ export function renderFormattedText(text?: string): React.ReactNode {
     .replace(/H_2O\b/g, "H₂O")
     .replace(/O_2\b/g, "O₂");
 
-  // 5. Convert double-underscore bold (__text__) to **text**
+  // 6. Convert double-underscore bold (__text__) to **text**
   clean = clean.replace(/(^|[\s(])__([^_]+?)__([\s).,;:!?]|$)/g, "$1**$2**$3");
 
-  // 6. Clean orphan/trailing asterisks
+  // 7. Clean orphan/trailing asterisks
   clean = clean.replace(/\s*\*\*\s*$/, "");
 
   // If there's an odd number of double asterisks, remove the last orphan **
@@ -161,7 +170,7 @@ export function renderFormattedText(text?: string): React.ReactNode {
     return clean;
   }
 
-  // 7. Tokenize: bold (*** or **), italic (*), newline (\n)
+  // 8. Tokenize: bold (*** or **), italic (*), newline (\n)
   const parts = clean.split(/(\n|\*\*\*[^*]+?\*\*\*|\*\*[^*]+?\*\*|\*[^*]+?\*)/g);
 
   return parts.map((part, idx) => {
@@ -198,10 +207,11 @@ export function renderFormattedText(text?: string): React.ReactNode {
 /**
  * Synthesizes short, active-recall answers for flashcards (avoiding giant paragraphs).
  * Keeps answers punchy, direct (1-2 sentences, max ~140 chars) while retaining medium difficulty medical facts.
+ * Completely strips HTML tags, broken spans, and LaTeX syntax before trimming.
  */
 export function shortenCardAnswer(text: string, maxLen = 140): string {
   if (!text) return "";
-  let clean = text
+  let clean = cleanFlashcardText(text)
     .replace(/\*\*/g, "")
     .replace(/^[-*•]\s*/, "")
     .replace(/^(Resposta|Conclusão|Definição|Descrição|Laudo|Achado)\s*[:\-]\s*/gi, "")
@@ -217,11 +227,11 @@ export function shortenCardAnswer(text: string, maxLen = 140): string {
     if (candidate.length < 65 && sentences.length > 1) {
       const combined = `${candidate} ${sentences[1]}`;
       if (combined.length <= maxLen + 20) {
-        return combined;
+        return cleanFlashcardText(combined);
       }
     }
     if (candidate.length <= maxLen + 25) {
-      return candidate;
+      return cleanFlashcardText(candidate);
     }
   }
 
@@ -229,10 +239,11 @@ export function shortenCardAnswer(text: string, maxLen = 140): string {
   const trimmed = clean.slice(0, maxLen);
   const lastSpace = trimmed.lastIndexOf(" ");
   if (lastSpace > 45) {
-    return trimmed.slice(0, lastSpace).replace(/[,;:\s]+$/, "") + ".";
+    return cleanFlashcardText(trimmed.slice(0, lastSpace)) + ".";
   }
-  return trimmed.replace(/[,;:\s]+$/, "") + ".";
+  return cleanFlashcardText(trimmed) + ".";
 }
+
 
 /**
  * Cleans clinical case presentation text, removing administrative/meeting headers like:

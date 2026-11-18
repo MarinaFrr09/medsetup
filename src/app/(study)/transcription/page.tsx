@@ -17,6 +17,7 @@ import {
   X,
   Eye,
   ExternalLink,
+  ChevronLeft,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAppStore, DocumentTranscription } from "@/stores/useAppStore";
@@ -393,9 +394,164 @@ export default function TranscriptionPage() {
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-5">
-          {/* File Upload Zone */}
+      {currentResult && !isProcessing ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentResult(null);
+                setSelectedFiles([]);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Voltar para Nova Transcrição
+            </button>
+          </div>
+
+          {currentResult.expanded && (
+            <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xs">
+              <Zap className="w-4 h-4 flex-shrink-0" />
+              <span>Conteúdo Expandido — explicações adicionais, definições e contexto prático integrados ao longo da transcrição.</span>
+            </div>
+          )}
+
+          {/* Quick Stats */}
+          {(currentResult.pageCount > 0 || currentResult.wordCount > 0) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {currentResult.pageCount > 0 && (
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                  ~{currentResult.pageCount} páginas transcritas
+                </span>
+              )}
+              {currentResult.wordCount > 0 && (
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                  ~{currentResult.wordCount.toLocaleString("pt-BR")} palavras
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Key Points */}
+          {currentResult.keyPoints && currentResult.keyPoints.length > 0 && (
+            <div className="bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-blue-900 dark:text-blue-300 mb-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-500" />
+                Pontos-Chave do Documento
+              </h3>
+              <ul className="space-y-2">
+                {currentResult.keyPoints.map((point, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-xs text-blue-950 dark:text-blue-200"
+                  >
+                    <span className="w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span className="leading-relaxed">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Card do Arquivo Anexado / Origem */}
+          {(() => {
+            const effectiveFileUrl =
+              currentResult.fileUrl ||
+              (selectedFiles.length > 0 ? getOrCreateBlobUrl(selectedFiles[0]) : null) ||
+              (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
+
+            return (
+              <>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-2xl shadow-xs">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 border border-red-100 dark:border-red-900/40">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">
+                          {currentResult.fileName?.toLowerCase().endsWith(".pdf") ? "PDF Anexado" : "Arquivo de Origem"}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-gray-900 dark:text-white truncate mt-0.5" title={currentResult.fileName}>
+                        {currentResult.fileName || "Documento Original"}
+                      </p>
+                      {currentResult.fileSize && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                          {(currentResult.fileSize / (1024 * 1024)).toFixed(1)} MB
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetUrl = effectiveFileUrl || (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
+                        if (targetUrl) {
+                          setPreviewPdfUrl(targetUrl);
+                          setPreviewPdfName(currentResult.fileName || "Documento Anexado");
+                        } else {
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors cursor-pointer shadow-2xs"
+                      title="Visualizar PDF original anexado"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      <span>Visualizar PDF</span>
+                    </button>
+
+                    {effectiveFileUrl && (
+                      <a
+                        href={effectiveFileUrl}
+                        download={currentResult.fileName || "documento.pdf"}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        title="Baixar arquivo original"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Baixar Original</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Document Transcription View — Full Width Spacious */}
+                <TranscriptionDocumentViewer
+                  content={currentResult.transcription}
+                  summary={currentResult.summary}
+                  title={currentResult.title || "Transcrição do Documento"}
+                  expanded={currentResult.expanded}
+                  editable={true}
+                  theme="roxo"
+                  categoryLabel="Transcricao"
+                  onSaveContent={handleSaveTranscriptionContent}
+                  onGenerateSummary={handleGenerateSummary}
+                  isGeneratingSummary={isGeneratingSummary}
+                  fileUrl={effectiveFileUrl || undefined}
+                  fileName={currentResult.fileName}
+                  onViewPdf={() => {
+                    const targetUrl = effectiveFileUrl || (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
+                    if (targetUrl) {
+                      setPreviewPdfUrl(targetUrl);
+                      setPreviewPdfName(currentResult.fileName || "Documento Anexado");
+                    } else {
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                />
+              </>
+            );
+          })()}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-5">
+            {/* File Upload Zone */}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -608,148 +764,6 @@ export default function TranscriptionPage() {
             </div>
           )}
 
-          {/* Result View */}
-          {currentResult && !isProcessing && (
-            <div className="space-y-4">
-              {currentResult.expanded && (
-                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xs">
-                  <Zap className="w-4 h-4 flex-shrink-0" />
-                  <span>Conteúdo Expandido — explicações adicionais, definições e contexto prático integrados ao longo da transcrição.</span>
-                </div>
-              )}
-
-              {/* Quick Stats */}
-              {(currentResult.pageCount > 0 || currentResult.wordCount > 0) && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  {currentResult.pageCount > 0 && (
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-                      ~{currentResult.pageCount} páginas transcritas
-                    </span>
-                  )}
-                  {currentResult.wordCount > 0 && (
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                      ~{currentResult.wordCount.toLocaleString("pt-BR")} palavras
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Key Points */}
-              {currentResult.keyPoints && currentResult.keyPoints.length > 0 && (
-                <div className="bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-blue-900 dark:text-blue-300 mb-3 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-blue-500" />
-                    Pontos-Chave do Documento
-                  </h3>
-                  <ul className="space-y-2">
-                    {currentResult.keyPoints.map((point, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-2 text-xs text-blue-950 dark:text-blue-200"
-                      >
-                        <span className="w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">
-                          {i + 1}
-                        </span>
-                        <span className="leading-relaxed">{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Card do Arquivo Anexado / Origem */}
-              {(() => {
-                const effectiveFileUrl =
-                  currentResult.fileUrl ||
-                  (selectedFiles.length > 0 ? getOrCreateBlobUrl(selectedFiles[0]) : null) ||
-                  (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
-
-                return (
-                  <>
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-2xl shadow-xs">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 border border-red-100 dark:border-red-900/40">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">
-                              {currentResult.fileName?.toLowerCase().endsWith(".pdf") ? "PDF Anexado" : "Arquivo de Origem"}
-                            </span>
-                          </div>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white truncate mt-0.5" title={currentResult.fileName}>
-                            {currentResult.fileName || "Documento Original"}
-                          </p>
-                          {currentResult.fileSize && (
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                              {(currentResult.fileSize / (1024 * 1024)).toFixed(1)} MB
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetUrl = effectiveFileUrl || (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
-                            if (targetUrl) {
-                              setPreviewPdfUrl(targetUrl);
-                              setPreviewPdfName(currentResult.fileName || "Documento Anexado");
-                            } else {
-                              fileInputRef.current?.click();
-                            }
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors cursor-pointer shadow-2xs"
-                          title="Visualizar PDF original anexado"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                          <span>Visualizar PDF</span>
-                        </button>
-
-                        {effectiveFileUrl && (
-                          <a
-                            href={effectiveFileUrl}
-                            download={currentResult.fileName || "documento.pdf"}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Baixar arquivo original"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Baixar Original</span>
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Document Transcription View — Exact Photo Layout with Notion Copy, PDF View & Inline Editing */}
-                    <TranscriptionDocumentViewer
-                      content={currentResult.transcription}
-                      summary={currentResult.summary}
-                      title={currentResult.title || "Transcrição do Documento"}
-                      expanded={currentResult.expanded}
-                      editable={true}
-                      theme="roxo"
-                      categoryLabel="Transcricao"
-                      onSaveContent={handleSaveTranscriptionContent}
-                      onGenerateSummary={handleGenerateSummary}
-                      isGeneratingSummary={isGeneratingSummary}
-                      fileUrl={effectiveFileUrl || undefined}
-                      fileName={currentResult.fileName}
-                      onViewPdf={() => {
-                        const targetUrl = effectiveFileUrl || (currentResult.fileName ? `/uploads/${encodeURIComponent(currentResult.fileName)}` : null);
-                        if (targetUrl) {
-                          setPreviewPdfUrl(targetUrl);
-                          setPreviewPdfName(currentResult.fileName || "Documento Anexado");
-                        } else {
-                          fileInputRef.current?.click();
-                        }
-                      }}
-                    />
-                  </>
-                );
-              })()}
-            </div>
-          )}
         </div>
 
         {/* Sidebar — Histórico Persistido */}
@@ -839,6 +853,7 @@ export default function TranscriptionPage() {
           </div>
         </div>
       </div>
+    )}
 
       {/* Modal de Pré-visualização do PDF Anexado */}
       {previewPdfUrl && (

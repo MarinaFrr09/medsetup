@@ -4,12 +4,14 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ThemeMode } from "@/types";
 import type { AtelieResult, AtelieMindMapData } from "@/lib/atelie";
+import { cleanFlashcardText } from "@/lib/text-sanitize";
+
 
 export interface Folder {
   id: string;
   name: string;
   color?: string;
-  type: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes";
+  type: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes" | "caderno-erros";
   parentId?: string | null;
   createdAt: string;
 }
@@ -392,12 +394,13 @@ interface AppState {
   addFolder: (folder: Folder) => void;
   updateFolder: (folder: Folder) => void;
   deleteFolder: (folderId: string) => void;
-  getOrCreateFolder: (name: string, type?: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes") => Folder;
+  getOrCreateFolder: (name: string, type?: "flashcards" | "questions" | "both" | "mindmaps" | "anotacoes" | "caderno-erros") => Folder;
 
   // Flashcards Actions
   addDeck: (deck: Deck) => void;
   updateDeck: (deck: Deck) => void;
   deleteDeck: (deckId: string) => void;
+  deleteDecks: (deckIds: string[]) => void;
   addCardToDeck: (deckNameOrId: string, card: Flashcard, folderId?: string) => void;
   addCardsToDeck: (deckId: string, cards: Flashcard[]) => void;
   updateFlashcardInDeck: (deckId: string, cardIndex: number, card: Flashcard) => void;
@@ -410,6 +413,8 @@ interface AppState {
   addQuestions: (questions: Question[]) => void;
   updateQuestion: (question: Question) => void;
   deleteQuestion: (questionId: string) => void;
+  deleteQuestions: (questionIds: string[]) => void;
+  clearQuestionsByFolder: (folderId: string | null) => void;
   moveQuestionToFolder: (questionId: string, folderId: string | undefined) => void;
   recordQuestionAnswer: (questionId: string, isCorrect: boolean, selectedOption?: string) => void;
   toggleQuestionReview: (questionId: string) => void;
@@ -469,6 +474,7 @@ interface AppState {
   updateCadernoError: (id: string, updates: Partial<CadernoErrorItem>) => void;
   deleteCadernoError: (id: string) => void;
   batchAddCadernoErrors: (items: CadernoErrorItem[]) => void;
+  moveCadernoErrorToFolder: (errorId: string, folderId: string | undefined) => void;
 
   // Anotações Actions
   addAnotacaoFolder: (folder: AnotacaoFolder) => void;
@@ -498,20 +504,10 @@ export const useAppStore = create<AppState>()(
 
       folders: [
         { id: "folder-fc-geral", name: "Geral", color: "#06B6D4", type: "flashcards", createdAt: "Hoje" },
-        { id: "folder-fc-farmaco", name: "Farmacologia & Doses", color: "#10B981", type: "flashcards", createdAt: "Hoje" },
-        { id: "folder-fc-clinica", name: "Clínica Médica", color: "#3B82F6", type: "flashcards", createdAt: "Hoje" },
-
         { id: "folder-q-geral", name: "Geral", color: "#6366F1", type: "questions", createdAt: "Hoje" },
-        { id: "folder-q-simulados", name: "Simulados & Provas", color: "#EC4899", type: "questions", createdAt: "Hoje" },
-        { id: "folder-q-especialidades", name: "Grandes Áreas Médicas", color: "#8B5CF6", type: "questions", createdAt: "Hoje" },
-
         { id: "folder-mm-geral", name: "Geral", color: "#8B5CF6", type: "mindmaps", createdAt: "Hoje" },
-        { id: "folder-mm-fisiopat", name: "Fisiopatologia & Eixos", color: "#14B8A6", type: "mindmaps", createdAt: "Hoje" },
-
-        { id: "anot-macetes", name: "Macetes & Regras de Ouro", color: "#F97316", type: "anotacoes", createdAt: "Hoje" },
-        { id: "anot-clinica", name: "Clínica Médica", color: "#3B82F6", type: "anotacoes", createdAt: "Hoje" },
-        { id: "anot-cirurgia", name: "Cirurgia & Emergência", color: "#EF4444", type: "anotacoes", createdAt: "Hoje" },
-        { id: "anot-pediatria", name: "Pediatria & GO", color: "#10B981", type: "anotacoes", createdAt: "Hoje" },
+        { id: "caderno-geral", name: "Geral", color: "#2563EB", type: "caderno-erros", createdAt: "Hoje" },
+        { id: "anot-macetes", name: "Geral", color: "#F97316", type: "anotacoes", createdAt: "Hoje" },
       ],
       flashcardDecks: [],
       flashcardReviews: [],
@@ -527,16 +523,10 @@ export const useAppStore = create<AppState>()(
       materials: [],
       cadernoFolders: [
         { id: "caderno-geral", name: "Geral", color: "#2563EB", createdAt: "Hoje" },
-        { id: "caderno-patologia", name: "Patologia & Morfologia", color: "#8B5CF6", createdAt: "Hoje" },
-        { id: "caderno-clinica", name: "Clínica Médica", color: "#10B981", createdAt: "Hoje" },
-        { id: "caderno-oncologia", name: "Oncologia", color: "#F59E0B", createdAt: "Hoje" },
       ],
       cadernoErrors: [],
       anotacaoFolders: [
-        { id: "anot-geral", name: "Geral", color: "#EAB308", createdAt: "Hoje" },
-        { id: "anot-clinica", name: "Clínica Médica", color: "#3B82F6", createdAt: "Hoje" },
-        { id: "anot-pediatria", name: "Pediatria", color: "#10B981", createdAt: "Hoje" },
-        { id: "anot-macetes", name: "Macetes & Regras de Ouro", color: "#F97316", createdAt: "Hoje" },
+        { id: "anot-macetes", name: "Geral", color: "#F97316", createdAt: "Hoje" },
       ],
       anotacoes: [
         {
@@ -636,6 +626,11 @@ export const useAppStore = create<AppState>()(
                 ? { ...q, folderId: "folder-geral" }
                 : q
             ),
+            cadernoErrors: state.cadernoErrors.map((c) =>
+              c.folderId && allAffectedFolderIds.has(c.folderId)
+                ? { ...c, folderId: undefined }
+                : c
+            ),
           };
         }),
 
@@ -650,6 +645,8 @@ export const useAppStore = create<AppState>()(
               ? "folder-mm-geral"
               : targetType === "anotacoes"
               ? "anot-macetes"
+              : targetType === "caderno-erros"
+              ? "caderno-geral"
               : "folder-fc-geral";
           const existingGeral = get().folders.find((f) => f.id === defaultFolderId && f.type === targetType);
           if (existingGeral) return existingGeral;
@@ -663,6 +660,8 @@ export const useAppStore = create<AppState>()(
                 ? "#8B5CF6"
                 : targetType === "anotacoes"
                 ? "#F59E0B"
+                : targetType === "caderno-erros"
+                ? "#EF4444"
                 : "#06B6D4",
             type: targetType,
             createdAt: "Hoje",
@@ -758,12 +757,20 @@ export const useAppStore = create<AppState>()(
             }
           }
 
+          const sanitizedCards = (newDeck.cards || []).map((c) => ({
+            ...c,
+            front: cleanFlashcardText(c.front),
+            back: cleanFlashcardText(c.back),
+          }));
+
           return {
             folders,
             flashcardDecks: [
               {
                 ...newDeck,
                 folderId: folderId || "folder-fc-geral",
+                cards: sanitizedCards,
+                cardCount: sanitizedCards.length,
               },
               ...state.flashcardDecks.filter((d) => d.id !== newDeck.id),
             ],
@@ -790,8 +797,30 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      deleteDecks: (deckIds) => {
+        const idSet = new Set(deckIds);
+        const toDelete = get().flashcardDecks.filter((d) => idSet.has(d.id));
+        toDelete.forEach((deck) => {
+          get().moveToTrash({
+            originalId: deck.id,
+            name: deck.name,
+            type: "flashcard",
+            data: deck,
+          });
+        });
+        set((state) => ({
+          flashcardDecks: state.flashcardDecks.filter((d) => !idSet.has(d.id)),
+        }));
+      },
+
       addCardToDeck: (deckNameOrId, card, folderId) =>
         set((state) => {
+          const sanitizedCard: Flashcard = {
+            ...card,
+            front: cleanFlashcardText(card.front),
+            back: cleanFlashcardText(card.back),
+          };
+
           const existing = state.flashcardDecks.find(
             (d) => d.id === deckNameOrId || d.name.toLowerCase() === deckNameOrId.toLowerCase()
           );
@@ -803,7 +832,7 @@ export const useAppStore = create<AppState>()(
                   ? {
                       ...d,
                       folderId: d.folderId || folderId || "folder-geral",
-                      cards: [card, ...d.cards],
+                      cards: [sanitizedCard, ...d.cards],
                       cardCount: (d.cardCount || 0) + 1,
                     }
                   : d
@@ -819,7 +848,7 @@ export const useAppStore = create<AppState>()(
             subject: "Geral",
             folderId: folderId || "folder-geral",
             lastStudied: "Hoje",
-            cards: [card],
+            cards: [sanitizedCard],
           };
 
           return {
@@ -828,17 +857,25 @@ export const useAppStore = create<AppState>()(
         }),
 
       addCardsToDeck: (deckId, newCards) =>
-        set((state) => ({
-          flashcardDecks: state.flashcardDecks.map((d) =>
-            d.id === deckId
-              ? {
-                  ...d,
-                  cards: [...(d.cards || []), ...newCards],
-                  cardCount: (d.cards?.length || 0) + newCards.length,
-                }
-              : d
-          ),
-        })),
+        set((state) => {
+          const sanitizedCards = (newCards || []).map((c) => ({
+            ...c,
+            front: cleanFlashcardText(c.front),
+            back: cleanFlashcardText(c.back),
+          }));
+
+          return {
+            flashcardDecks: state.flashcardDecks.map((d) =>
+              d.id === deckId
+                ? {
+                    ...d,
+                    cards: [...(d.cards || []), ...sanitizedCards],
+                    cardCount: (d.cards?.length || 0) + sanitizedCards.length,
+                  }
+                : d
+            ),
+          };
+        }),
 
       updateFlashcardInDeck: (deckId, cardIndex, updatedCard) =>
         set((state) => ({
@@ -846,7 +883,12 @@ export const useAppStore = create<AppState>()(
             if (d.id !== deckId) return d;
             const newCards = [...(d.cards || [])];
             if (cardIndex >= 0 && cardIndex < newCards.length) {
-              newCards[cardIndex] = { ...newCards[cardIndex], ...updatedCard };
+              newCards[cardIndex] = {
+                ...newCards[cardIndex],
+                ...updatedCard,
+                ...(updatedCard.front !== undefined ? { front: cleanFlashcardText(updatedCard.front) } : {}),
+                ...(updatedCard.back !== undefined ? { back: cleanFlashcardText(updatedCard.back) } : {}),
+              };
             }
             return {
               ...d,
@@ -1020,6 +1062,54 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      deleteQuestions: (questionIds) => {
+        const idSet = new Set(questionIds);
+        const toDelete = get().questions.filter((q) => idSet.has(q.id));
+        toDelete.forEach((q) => {
+          get().moveToTrash({
+            originalId: q.id,
+            name: q.text?.slice(0, 40) || "Questão",
+            type: "question",
+            data: q,
+          });
+        });
+        set((state) => ({
+          questions: state.questions.filter((item) => !idSet.has(item.id)),
+        }));
+      },
+
+      clearQuestionsByFolder: (folderId) => {
+        let toDelete: Question[] = [];
+        if (folderId === null) {
+          toDelete = get().questions;
+        } else if (folderId === "unassigned") {
+          const relevantFolders = get().folders.filter((f) => f.type === "questions");
+          const validIds = new Set(relevantFolders.map((f) => f.id));
+          toDelete = get().questions.filter((q) => !q.folderId || !validIds.has(q.folderId));
+        } else {
+          const getDescendants = (id: string): string[] => {
+            const children = get().folders.filter((f) => f.parentId === id).map((f) => f.id);
+            return [id, ...children.flatMap(getDescendants)];
+          };
+          const targetIds = new Set(getDescendants(folderId));
+          toDelete = get().questions.filter((q) => targetIds.has(q.folderId || "folder-q-geral"));
+        }
+
+        toDelete.forEach((q) => {
+          get().moveToTrash({
+            originalId: q.id,
+            name: q.text?.slice(0, 40) || "Questão",
+            type: "question",
+            data: q,
+          });
+        });
+
+        const deleteSet = new Set(toDelete.map((q) => q.id));
+        set((state) => ({
+          questions: state.questions.filter((item) => !deleteSet.has(item.id)),
+        }));
+      },
+
       moveQuestionToFolder: (questionId, folderId) =>
         set((state) => ({
           questions: state.questions.map((q) =>
@@ -1122,6 +1212,11 @@ export const useAppStore = create<AppState>()(
             data: m,
           });
         }
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(`mindmap_${mapId}`);
+          }
+        } catch (e) {}
         set((state) => ({
           mindmaps: state.mindmaps.filter((item) => item.id !== mapId),
         }));
@@ -1253,16 +1348,28 @@ export const useAppStore = create<AppState>()(
 
       // Image Readings
       addImageReading: (item) =>
-        set((state) => ({
-          imageReadings: [item, ...(state.imageReadings || []).filter((r) => r.id !== item.id)],
-        })),
+        set((state) => {
+          const updated = [item, ...(state.imageReadings || []).filter((r) => r.id !== item.id)];
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("medsetup_image_readings", JSON.stringify(updated));
+            }
+          } catch {}
+          return { imageReadings: updated };
+        }),
 
       updateImageReading: (id, updates) =>
-        set((state) => ({
-          imageReadings: (state.imageReadings || []).map((r) =>
+        set((state) => {
+          const updated = (state.imageReadings || []).map((r) =>
             r.id === id ? { ...r, ...updates } : r
-          ),
-        })),
+          );
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("medsetup_image_readings", JSON.stringify(updated));
+            }
+          } catch {}
+          return { imageReadings: updated };
+        }),
 
       deleteImageReading: (id) => {
         const item = (get().imageReadings || []).find((r) => r.id === id);
@@ -1274,9 +1381,15 @@ export const useAppStore = create<AppState>()(
             data: item,
           });
         }
-        set((state) => ({
-          imageReadings: (state.imageReadings || []).filter((r) => r.id !== id),
-        }));
+        set((state) => {
+          const updated = (state.imageReadings || []).filter((r) => r.id !== id);
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("medsetup_image_readings", JSON.stringify(updated));
+            }
+          } catch {}
+          return { imageReadings: updated };
+        });
       },
 
       // Books
@@ -1376,6 +1489,13 @@ export const useAppStore = create<AppState>()(
             cadernoErrors: [...items, ...state.cadernoErrors.filter((e) => !newIds.has(e.id))],
           };
         }),
+
+      moveCadernoErrorToFolder: (errorId, folderId) =>
+        set((state) => ({
+          cadernoErrors: state.cadernoErrors.map((c) =>
+            c.id === errorId ? { ...c, folderId } : c
+          ),
+        })),
 
       // Anotações Actions
       addAnotacaoFolder: (folder) =>
@@ -1538,25 +1658,55 @@ export const useAppStore = create<AppState>()(
           if (typeof window === "undefined") return null;
           try {
             const raw = localStorage.getItem(name) || localStorage.getItem("studyflow_app_storage");
-            return raw ? JSON.parse(raw) : null;
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && parsed.state) {
+              // Recupera do backup dedicado de leituras de imagem caso o array esteja vazio
+              try {
+                const imgBackup = localStorage.getItem("medsetup_image_readings");
+                if (imgBackup) {
+                  const backupList = JSON.parse(imgBackup);
+                  if (Array.isArray(backupList) && backupList.length > 0) {
+                    if (!parsed.state.imageReadings || parsed.state.imageReadings.length === 0) {
+                      parsed.state.imageReadings = backupList;
+                    }
+                  }
+                }
+              } catch {}
+            }
+            return parsed;
           } catch {
             return null;
           }
         },
-        setItem: (() => {
-          let timeoutId: any = null;
-          return (name: string, value: any) => {
-            if (typeof window === "undefined") return;
-            if (timeoutId) clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
+        setItem: (name: string, value: any) => {
+          if (typeof window === "undefined") return;
+          try {
+            // Salva backup dedicado síncrono das leituras de imagens (protegido contra perda)
+            if (value && value.state && Array.isArray(value.state.imageReadings)) {
               try {
-                localStorage.setItem(name, JSON.stringify(value));
-              } catch (e) {
-                console.warn("Storage write error or quota exceeded:", e);
+                localStorage.setItem("medsetup_image_readings", JSON.stringify(value.state.imageReadings));
+              } catch {}
+            }
+            localStorage.setItem(name, JSON.stringify(value));
+          } catch (e) {
+            console.warn("Storage write error or quota exceeded:", e);
+            // Em caso de cota de armazenamento quase cheia, purga a lixeira e caches leves para garantir salvamento
+            try {
+              if (value && value.state) {
+                const trimmed = {
+                  ...value,
+                  state: {
+                    ...value.state,
+                    trashItems: [],
+                  },
+                };
+                localStorage.setItem(name, JSON.stringify(trimmed));
               }
-            }, 100);
-          };
-        })(),
+            } catch (retryErr) {
+              console.error("Critical storage fallback failure:", retryErr);
+            }
+          }
+        },
         removeItem: (name: string) => {
           if (typeof window === "undefined") return;
           try {
@@ -1583,10 +1733,39 @@ export const useAppStore = create<AppState>()(
         cadernoErrors: state.cadernoErrors,
         anotacaoFolders: state.anotacaoFolders,
         anotacoes: state.anotacoes,
+        imageReadings: (state.imageReadings || []).map((ir) => {
+          const cleanResult = ir.result && typeof ir.result === "object" ? { ...ir.result } : ir.result;
+          if (cleanResult && cleanResult.imageUrl && typeof cleanResult.imageUrl === "string" && cleanResult.imageUrl.startsWith("data:") && cleanResult.imageUrl.length > 50000) {
+            cleanResult.imageUrl = undefined;
+          }
+          return {
+            ...ir,
+            // Evita estourar a cota de 5MB do localStorage caso alguma imagem seja data:URL bruta
+            imageUrl: ir.imageUrl && ir.imageUrl.startsWith("data:") && ir.imageUrl.length > 50000 ? undefined : ir.imageUrl,
+            result: cleanResult,
+          };
+        }),
         trashItems: state.trashItems,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+
+        if (!state.imageReadings || state.imageReadings.length === 0) {
+          try {
+            if (typeof window !== "undefined") {
+              const imgBackup = localStorage.getItem("medsetup_image_readings");
+              if (imgBackup) {
+                const parsed = JSON.parse(imgBackup);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  state.imageReadings = parsed;
+                }
+              }
+            }
+          } catch {}
+          if (!state.imageReadings) {
+            state.imageReadings = [];
+          }
+        }
 
         // 1. Particionar pastas legadas com type === 'both' para que cada aba seja independente
         if (state.folders && state.folders.length > 0) {
@@ -1648,28 +1827,116 @@ export const useAppStore = create<AppState>()(
           state.folders = updatedFolders;
         }
 
-        // 2. Garantir pastas padrão essenciais para cada aba
-        const existingIds = new Set(state.folders.map((f) => f.id));
-        const defaultAnotFolders: Folder[] = [
-          { id: "anot-macetes", name: "Macetes & Regras de Ouro", color: "#F97316", type: "anotacoes", createdAt: "Hoje" },
-          { id: "anot-clinica", name: "Clínica Médica", color: "#3B82F6", type: "anotacoes", createdAt: "Hoje" },
-          { id: "anot-pediatria", name: "Pediatria", color: "#10B981", type: "anotacoes", createdAt: "Hoje" },
-        ];
-        for (const f of defaultAnotFolders) {
-          if (!existingIds.has(f.id)) {
-            state.folders.push(f);
-            existingIds.add(f.id);
-          }
+        // 2. Garantir apenas a pasta Geral essencial para cada aba e remover pastas pré-geradas vazias/duplicadas
+        if (!state.folders.some((f) => f.id === "folder-fc-geral" && f.type === "flashcards")) {
+          state.folders.unshift({ id: "folder-fc-geral", name: "Geral", color: "#06B6D4", type: "flashcards", createdAt: "Hoje" });
+        }
+        if (!state.folders.some((f) => f.id === "folder-q-geral" && f.type === "questions")) {
+          state.folders.unshift({ id: "folder-q-geral", name: "Geral", color: "#6366F1", type: "questions", createdAt: "Hoje" });
+        }
+        if (!state.folders.some((f) => f.id === "folder-mm-geral" && f.type === "mindmaps")) {
+          state.folders.unshift({ id: "folder-mm-geral", name: "Geral", color: "#8B5CF6", type: "mindmaps", createdAt: "Hoje" });
+        }
+        if (!state.folders.some((f) => f.id === "caderno-geral" && f.type === "caderno-erros")) {
+          state.folders.unshift({ id: "caderno-geral", name: "Geral", color: "#2563EB", type: "caderno-erros", createdAt: "Hoje" });
+        }
+        if (!state.folders.some((f) => f.id === "anot-macetes" && f.type === "anotacoes")) {
+          state.folders.unshift({ id: "anot-macetes", name: "Macetes & Regras de Ouro", color: "#F97316", type: "anotacoes", createdAt: "Hoje" });
         }
 
-        if (!state.folders.some((f) => f.type === "flashcards")) {
-          state.folders.push({ id: "folder-fc-geral", name: "Geral", color: "#06B6D4", type: "flashcards", createdAt: "Hoje" });
+        // Remover pastas padrão antigas/duplicadas que estão vazias (sem itens e sem subpastas)
+        const legacyAutoFolderIds = new Set([
+          "folder-fc-farmaco",
+          "folder-fc-clinica",
+          "folder-q-simulados",
+          "folder-q-especialidades",
+          "folder-mm-fisiopat",
+          "folder-ce-clinica",
+          "folder-ce-cirurgia",
+          "folder-ce-pediatria",
+          "folder-ce-ginecologia",
+          "folder-ce-preventiva",
+          "caderno-patologia",
+          "caderno-clinica",
+          "caderno-oncologia",
+          "anot-clinica",
+          "anot-cirurgia",
+          "anot-pediatria",
+          "anot-geral",
+        ]);
+
+        const usedFolderIds = new Set<string>();
+        (state.flashcardDecks || []).forEach((d) => { if (d.folderId) usedFolderIds.add(d.folderId); });
+        (state.questions || []).forEach((q) => { if (q.folderId) usedFolderIds.add(q.folderId); });
+        (state.mindmaps || []).forEach((m) => { if (m.folderId) usedFolderIds.add(m.folderId); });
+        (state.cadernoErrors || []).forEach((e) => { if (e.folderId) usedFolderIds.add(e.folderId); });
+        (state.anotacoes || []).forEach((a) => { if (a.folderId) usedFolderIds.add(a.folderId); });
+        (state.folders || []).forEach((f) => { if (f.parentId) usedFolderIds.add(f.parentId); });
+
+        state.folders = state.folders.filter(
+          (f) => !legacyAutoFolderIds.has(f.id) || usedFolderIds.has(f.id)
+        );
+        // Deduplicar pastas com mesmo nome e mesmo tipo/parentId quando duplicadas sem itens
+        const seenFolderKeys = new Set<string>();
+        state.folders = state.folders.filter((f) => {
+          const key = `${f.type}::${f.parentId || ""}::${(f.name || "").trim().toLowerCase()}`;
+          if (!seenFolderKeys.has(key)) {
+            seenFolderKeys.add(key);
+            return true;
+          }
+          return usedFolderIds.has(f.id);
+        });
+        if (state.cadernoFolders) {
+          state.cadernoFolders = state.cadernoFolders.filter(
+            (cf) => !legacyAutoFolderIds.has(cf.id) || usedFolderIds.has(cf.id)
+          );
         }
-        if (!state.folders.some((f) => f.type === "questions")) {
-          state.folders.push({ id: "folder-q-geral", name: "Geral", color: "#6366F1", type: "questions", createdAt: "Hoje" });
+
+        const validCeFolderIds = new Set(state.folders.filter((f) => f.type === "caderno-erros").map((f) => f.id));
+        if (state.cadernoErrors && state.cadernoErrors.length > 0) {
+          state.cadernoErrors.forEach((e) => {
+            if (!e.folderId || e.folderId === "folder-geral" || !validCeFolderIds.has(e.folderId)) {
+              e.folderId = "caderno-geral";
+            }
+          });
         }
-        if (!state.folders.some((f) => f.type === "mindmaps")) {
-          state.folders.push({ id: "folder-mm-geral", name: "Geral", color: "#8B5CF6", type: "mindmaps", createdAt: "Hoje" });
+
+        // Migrar itens com folderId inválido ou antigo para a pasta Geral da aba correspondente
+        const validQFolderIds = new Set(state.folders.filter((f) => f.type === "questions").map((f) => f.id));
+        if (state.questions && state.questions.length > 0) {
+          state.questions.forEach((q) => {
+            if (!q.folderId || q.folderId === "folder-geral" || !validQFolderIds.has(q.folderId)) {
+              q.folderId = "folder-q-geral";
+            }
+          });
+        }
+        const validFcFolderIds = new Set(state.folders.filter((f) => f.type === "flashcards").map((f) => f.id));
+        if (state.flashcardDecks && state.flashcardDecks.length > 0) {
+          state.flashcardDecks.forEach((d) => {
+            if (!d.folderId || d.folderId === "folder-geral" || !validFcFolderIds.has(d.folderId)) {
+              d.folderId = "folder-fc-geral";
+            }
+          });
+        }
+        const validMmFolderIds = new Set(state.folders.filter((f) => f.type === "mindmaps").map((f) => f.id));
+        if (state.mindmaps && state.mindmaps.length > 0) {
+          state.mindmaps.forEach((m) => {
+            if (!m.folderId || m.folderId === "folder-geral" || !validMmFolderIds.has(m.folderId)) {
+              m.folderId = "folder-mm-geral";
+            }
+          });
+        }
+
+        // Sanitize all flashcard decks on load to strip any legacy HTML tags, broken spans, or raw LaTeX
+        if (state.flashcardDecks && state.flashcardDecks.length > 0) {
+          state.flashcardDecks.forEach((d) => {
+            if (d.cards && Array.isArray(d.cards)) {
+              d.cards.forEach((c) => {
+                if (c.front) c.front = cleanFlashcardText(c.front);
+                if (c.back) c.back = cleanFlashcardText(c.back);
+              });
+            }
+          });
         }
 
         if (state.documentTranscriptions && state.documentTranscriptions.length > 0) {

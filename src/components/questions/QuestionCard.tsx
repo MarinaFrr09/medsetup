@@ -4,15 +4,20 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Trash2, Copy, Clock, Check, Bookmark, AlertCircle, CheckCircle2, Edit2, BookX, NotebookPen } from "lucide-react";
 import { useAppStore, Question } from "@/stores/useAppStore";
+import dynamic from "next/dynamic";
 import { cleanQuestionTitle, renderFormattedText } from "@/lib/questionUtils";
-import AddErrorModal from "@/components/caderno/AddErrorModal";
-import AddAnotacaoModal from "@/components/anotacoes/AddAnotacaoModal";
 import toast from "react-hot-toast";
+
+const AddErrorModal = dynamic(() => import("@/components/caderno/AddErrorModal"), { ssr: false });
+const AddAnotacaoModal = dynamic(() => import("@/components/anotacoes/AddAnotacaoModal"), { ssr: false });
 
 interface QuestionCardProps {
   question: Question;
   onClick?: () => void;
   onEdit?: (question: Question) => void;
+  selectable?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 const difficultyColors: Record<string, string> = {
@@ -24,7 +29,14 @@ const difficultyColors: Record<string, string> = {
   hard: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
 };
 
-export default function QuestionCard({ question, onClick, onEdit }: QuestionCardProps) {
+export default function QuestionCard({
+  question,
+  onClick,
+  onEdit,
+  selectable,
+  isSelected,
+  onToggleSelect,
+}: QuestionCardProps) {
   const { deleteQuestion, toggleQuestionReview } = useAppStore();
   const [copied, setCopied] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -56,12 +68,26 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
     );
   };
 
+  const handleCardClick = () => {
+    if (selectable && onToggleSelect) {
+      onToggleSelect(question.id);
+      return;
+    }
+    if (onClick) {
+      onClick();
+    } else {
+      setShowExplanation((prev) => !prev);
+    }
+  };
+
   return (
     <div
-      onClick={onClick ? onClick : () => setShowExplanation((prev) => !prev)}
+      onClick={handleCardClick}
       className={cn(
         "group relative flex flex-col justify-between rounded-xl border bg-white p-4 shadow-2xs transition-all hover:shadow-md dark:bg-[#1A1D27] cursor-pointer hover:border-blue-500/70 dark:hover:border-blue-500/50",
-        question.isFlaggedForReview
+        isSelected
+          ? "border-blue-600 bg-blue-50/30 dark:bg-blue-950/20 ring-2 ring-blue-500/30"
+          : question.isFlaggedForReview
           ? "border-amber-300 dark:border-amber-700/50 bg-amber-50/20 dark:bg-amber-950/10"
           : "border-gray-200 dark:border-[#2a2d3a]"
       )}
@@ -70,6 +96,17 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
         {/* Top Badges & Actions */}
         <div className="flex items-center justify-between gap-2 mb-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
+            {selectable && (
+              <input
+                type="checkbox"
+                checked={!!isSelected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.(question.id);
+                }}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer mr-1"
+              />
+            )}
             {question.type && question.type !== "multiple-choice" && (
               <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                 {question.type}
@@ -103,7 +140,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
                 "p-1.5 rounded-lg transition-colors cursor-pointer",
                 question.isFlaggedForReview
                   ? "text-amber-600 bg-amber-100/80 dark:bg-amber-900/40 hover:bg-amber-200"
-                  : "text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 opacity-0 group-hover:opacity-100"
+                  : "text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
               )}
               title={question.isFlaggedForReview ? "Remover da revisão" : "Marcar para revisão"}
             >
@@ -115,7 +152,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
             <button
               type="button"
               onClick={handleCopy}
-              className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
               title="Copiar texto"
             >
               {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
@@ -127,7 +164,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
                   e.stopPropagation();
                   onEdit(question);
                 }}
-                className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
                 title="Editar questão"
               >
                 <Edit2 size={14} />
@@ -139,7 +176,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
                 e.stopPropagation();
                 setIsAnotacaoModalOpen(true);
               }}
-              className="p-1.5 text-gray-400 hover:text-yellow-600 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-950/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-yellow-600 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-950/40 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
               title="Salvar como Anotação Importante"
             >
               <NotebookPen size={14} />
@@ -150,7 +187,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
                 e.stopPropagation();
                 setIsCadernoModalOpen(true);
               }}
-              className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
               title="Registrar no Caderno de Erros"
             >
               <BookX size={14} />
@@ -158,7 +195,7 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
             <button
               type="button"
               onClick={handleDelete}
-              className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              className="p-1.5 text-red-500/80 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
               title="Excluir questão"
             >
               <Trash2 size={14} />
@@ -229,54 +266,58 @@ export default function QuestionCard({ question, onClick, onEdit }: QuestionCard
       )}
 
       {/* Caderno de Erros Modal */}
-      <AddErrorModal
-        isOpen={isCadernoModalOpen}
-        onClose={() => setIsCadernoModalOpen(false)}
-        questions={[
-          {
-            text: question.text,
-            options: question.options,
-            userAnswer: question.userAnswer,
-            correctAnswer: question.answer || "",
-            explanation: question.explanation,
-            origin: "question",
-            originTitle: "Banco de Questões",
-            questionId: question.id,
-          },
-        ]}
-      />
-
-      {/* Anotações Importantes Modal */}
-      <AddAnotacaoModal
-        isOpen={isAnotacaoModalOpen}
-        onClose={() => setIsAnotacaoModalOpen(false)}
-        initialData={{
-          title: `Questão: ${question.subject ? question.subject : cleanQuestionTitle(question.text).slice(0, 50)}`,
-          content: `### Enunciado:\n${question.text}\n\n${question.explanation ? `### Comentário:\n${question.explanation}` : ""}`,
-          materia: question.subject,
-          source: {
-            type: "question",
-            title: `Questão: ${cleanQuestionTitle(question.text).slice(0, 45)}...`,
-            originId: question.id,
-            originalQuestion: {
+      {isCadernoModalOpen && (
+        <AddErrorModal
+          isOpen={isCadernoModalOpen}
+          onClose={() => setIsCadernoModalOpen(false)}
+          questions={[
+            {
               text: question.text,
               options: question.options,
               userAnswer: question.userAnswer,
               correctAnswer: question.answer || "",
               explanation: question.explanation,
+              origin: "question",
+              originTitle: "Banco de Questões",
+              questionId: question.id,
             },
-          },
-          highlights: question.explanation
-            ? [
-                {
-                  text: question.explanation.slice(0, 160),
-                  color: "yellow",
-                  tag: "Regra de Ouro",
-                },
-              ]
-            : undefined,
-        }}
-      />
+          ]}
+        />
+      )}
+
+      {/* Anotações Importantes Modal */}
+      {isAnotacaoModalOpen && (
+        <AddAnotacaoModal
+          isOpen={isAnotacaoModalOpen}
+          onClose={() => setIsAnotacaoModalOpen(false)}
+          initialData={{
+            title: `Questão: ${question.subject ? question.subject : cleanQuestionTitle(question.text).slice(0, 50)}`,
+            content: `### Enunciado:\n${question.text}\n\n${question.explanation ? `### Comentário:\n${question.explanation}` : ""}`,
+            materia: question.subject,
+            source: {
+              type: "question",
+              title: `Questão: ${cleanQuestionTitle(question.text).slice(0, 45)}...`,
+              originId: question.id,
+              originalQuestion: {
+                text: question.text,
+                options: question.options,
+                userAnswer: question.userAnswer,
+                correctAnswer: question.answer || "",
+                explanation: question.explanation,
+              },
+            },
+            highlights: question.explanation
+              ? [
+                  {
+                    text: question.explanation.slice(0, 160),
+                    color: "yellow",
+                    tag: "Regra de Ouro",
+                  },
+                ]
+              : undefined,
+          }}
+        />
+      )}
     </div>
   );
 }

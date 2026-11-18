@@ -29,11 +29,70 @@ import {
   Plus,
   Save,
   RotateCcw,
+  Link as LinkIcon,
+  Unlink,
+  Minus,
+  Subscript,
+  Superscript,
+  StickyNote,
+  Copy,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { markdownToHtml, htmlToMarkdown } from "@/lib/rich-text-utils";
 import { getThemePalette } from "@/lib/theme-palettes";
 import toast from "react-hot-toast";
+
+const TB_BTN =
+  "w-9 h-9 flex items-center justify-center rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
+
+function TbGroup({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-2 gap-1 pb-1.5 mb-1.5 border-b border-gray-200/70 dark:border-gray-800/90 last:border-b-0 last:pb-0 last:mb-0",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function TbBtn({
+  title,
+  onClick,
+  children,
+  className,
+  disabled,
+  active,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        TB_BTN,
+        active && "bg-emerald-500/15 dark:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40",
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 export interface RichTextEditorProps {
   value: string; // Markdown string
@@ -65,6 +124,8 @@ export function RichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isInternalUpdateRef = useRef(false);
+  const historyRef = useRef<{ stack: string[]; index: number }>({ stack: [], index: -1 });
+  const lastHistoryTimeRef = useRef<number>(0);
 
   const [activeMode, setActiveMode] = useState<"visual" | "markdown">("visual");
   const [markdownSource, setMarkdownSource] = useState(value);
@@ -79,6 +140,38 @@ export function RichTextEditor({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiLoadingAction, setAiLoadingAction] = useState<"expand" | "explain" | null>(null);
 
+  // Push a snapshot onto the undo/redo stack
+  const pushHistorySnapshot = useCallback((html: string, immediate = false) => {
+    const h = historyRef.current;
+    if (h.index >= 0 && h.stack[h.index] === html) return;
+
+    const now = Date.now();
+    if (!immediate && now - lastHistoryTimeRef.current < 500 && h.index > 0) {
+      h.stack[h.index] = html;
+      lastHistoryTimeRef.current = now;
+      return;
+    }
+
+    const nextStack = h.stack.slice(0, h.index + 1);
+    nextStack.push(html);
+    if (nextStack.length > 80) nextStack.shift();
+    historyRef.current = {
+      stack: nextStack,
+      index: nextStack.length - 1,
+    };
+    lastHistoryTimeRef.current = immediate ? 0 : now;
+  }, []);
+
+  // Ensure current DOM state is recorded before a programmatic toolbar mutation
+  const recordPreMutationSnapshot = useCallback(() => {
+    if (!editorRef.current) return;
+    const currentHtml = editorRef.current.innerHTML;
+    const h = historyRef.current;
+    if (h.index < 0 || h.stack[h.index] !== currentHtml) {
+      pushHistorySnapshot(currentHtml, true);
+    }
+  }, [pushHistorySnapshot]);
+
   // Sync external value -> internal visual DOM
   useEffect(() => {
     setMarkdownSource(value);
@@ -91,16 +184,19 @@ export function RichTextEditor({
       if (!isInternalUpdateRef.current) {
         const html = markdownToHtml(value);
         editorRef.current.innerHTML = html;
+        pushHistorySnapshot(html, true);
       }
       isInternalUpdateRef.current = false;
     }
-  }, [value, activeMode]);
+  }, [value, activeMode, pushHistorySnapshot]);
 
   // Handle content changes in visual editor
-  const handleEditorInput = useCallback(() => {
+  const handleEditorInput = useCallback((immediateHistory = true) => {
     if (!editorRef.current) return;
     isInternalUpdateRef.current = true;
     const currentHtml = editorRef.current.innerHTML;
+    pushHistorySnapshot(currentHtml, immediateHistory);
+
     const convertedMd = htmlToMarkdown(currentHtml);
     setMarkdownSource(convertedMd);
 
@@ -110,7 +206,60 @@ export function RichTextEditor({
     setWordCount(words);
 
     onChange(convertedMd);
-  }, [onChange]);
+  }, [onChange, pushHistorySnapshot]);
+
+  // Listen for direct DOM updates from AISelectionAssistant
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const onDomUpdated = () => handleEditorInput(true);
+    el.addEventListener("medsetup:richtext-dom-updated", onDomUpdated);
+    return () => el.removeEventListener("medsetup:richtext-dom-updated", onDomUpdated);
+  }, [handleEditorInput, activeMode]);
+
+  // Custom Undo (Ctrl+Z) — restores any toolbar block/callout/quote/table/color or typing change
+  const handleUndo = useCallback(() => {
+    if (activeMode !== "visual" || !editorRef.current) return;
+    editorRef.current.focus();
+    const h = historyRef.current;
+    // Sync any unsaved DOM diff onto stack before stepping back
+    const liveHtml = editorRef.current.innerHTML;
+    if (h.index >= 0 && h.stack[h.index] !== liveHtml) {
+      pushHistorySnapshot(liveHtml, true);
+    }
+    if (historyRef.current.index > 0) {
+      historyRef.current.index -= 1;
+      const prevHtml = historyRef.current.stack[historyRef.current.index];
+      isInternalUpdateRef.current = true;
+      editorRef.current.innerHTML = prevHtml;
+      const convertedMd = htmlToMarkdown(prevHtml);
+      setMarkdownSource(convertedMd);
+      setCharCount(convertedMd.length);
+      setWordCount(convertedMd.trim().split(/\s+/).filter(Boolean).length);
+      onChange(convertedMd);
+    } else {
+      document.execCommand("undo", false);
+    }
+  }, [activeMode, onChange, pushHistorySnapshot]);
+
+  // Custom Redo (Ctrl+Y / Ctrl+Shift+Z)
+  const handleRedo = useCallback(() => {
+    if (activeMode !== "visual" || !editorRef.current) return;
+    editorRef.current.focus();
+    if (historyRef.current.index < historyRef.current.stack.length - 1) {
+      historyRef.current.index += 1;
+      const nextHtml = historyRef.current.stack[historyRef.current.index];
+      isInternalUpdateRef.current = true;
+      editorRef.current.innerHTML = nextHtml;
+      const convertedMd = htmlToMarkdown(nextHtml);
+      setMarkdownSource(convertedMd);
+      setCharCount(convertedMd.length);
+      setWordCount(convertedMd.trim().split(/\s+/).filter(Boolean).length);
+      onChange(convertedMd);
+    } else {
+      document.execCommand("redo", false);
+    }
+  }, [activeMode, onChange]);
 
   // Handle markdown textarea changes
   const handleMarkdownChange = (newMd: string) => {
@@ -155,45 +304,296 @@ export function RichTextEditor({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onSave]);
 
+  // Find closest ancestor (or intersecting child) element matching any of tagNames inside editorRef
+  const findClosestTag = useCallback((tagNames: string[]): HTMLElement | null => {
+    const root = editorRef.current;
+    const sel = window.getSelection();
+    if (!root || !sel || sel.rangeCount === 0) return null;
+    const upper = tagNames.map((t) => t.toUpperCase());
+
+    const climb = (start: Node | null): HTMLElement | null => {
+      let node: Node | null = start;
+      while (node && node !== root) {
+        if (node instanceof HTMLElement && upper.includes(node.tagName)) {
+          return node;
+        }
+        node = node.parentNode;
+      }
+      return null;
+    };
+
+    const fromAnchor = climb(sel.anchorNode);
+    if (fromAnchor) return fromAnchor;
+    const fromFocus = climb(sel.focusNode);
+    if (fromFocus) return fromFocus;
+
+    if (!sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const container =
+        range.commonAncestorContainer instanceof HTMLElement
+          ? range.commonAncestorContainer
+          : range.commonAncestorContainer.parentElement;
+      if (container && root.contains(container)) {
+        const match = Array.from(container.querySelectorAll<HTMLElement>(upper.join(","))).find((el) =>
+          sel.containsNode(el, true)
+        );
+        if (match) return match;
+      }
+    }
+    return null;
+  }, []);
+
+  // Unwrap an inline element, keeping its child nodes and restoring selection around them
+  const unwrapInlineElement = (el: HTMLElement) => {
+    recordPreMutationSnapshot();
+    const parent = el.parentNode;
+    if (!parent) return;
+    const first = el.firstChild;
+    const last = el.lastChild;
+    while (el.firstChild) {
+      parent.insertBefore(el.firstChild, el);
+    }
+    parent.removeChild(el);
+    if (first && last) {
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.setStartBefore(first);
+        range.setEndAfter(last);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  };
+
+  // Unwrap a blockquote (and optionally remove the "💡 Nota importante:" callout prefix) into normal paragraph(s)
+  const unwrapBlockquote = (bq: HTMLElement, stripCalloutPrefix = false) => {
+    recordPreMutationSnapshot();
+    const parent = bq.parentNode;
+    if (!parent) return;
+
+    if (stripCalloutPrefix || /💡\s*Nota importante:?/i.test(bq.textContent || "")) {
+      bq.querySelectorAll("strong, b").forEach((s) => {
+        if (/^💡?\s*Nota importante:?\s*$/i.test((s.textContent || "").trim())) {
+          const next = s.nextSibling;
+          if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue) {
+            next.nodeValue = next.nodeValue.replace(/^\s+/, "");
+          }
+          s.remove();
+        }
+      });
+      const walker = document.createTreeWalker(bq, NodeFilter.SHOW_TEXT);
+      const firstText = walker.nextNode() as Text | null;
+      if (firstText && firstText.nodeValue) {
+        firstText.nodeValue = firstText.nodeValue.replace(/^\s*💡\s*Nota importante:\s*/i, "");
+      }
+    }
+
+    const blockTags = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "TABLE", "BLOCKQUOTE"]);
+    let firstInserted: Node | null = null;
+    let inlineBucket: HTMLParagraphElement | null = null;
+
+    Array.from(bq.childNodes).forEach((child) => {
+      if (child instanceof HTMLElement && blockTags.has(child.tagName)) {
+        inlineBucket = null;
+        parent.insertBefore(child, bq);
+        if (!firstInserted) firstInserted = child;
+      } else {
+        if (!inlineBucket) {
+          inlineBucket = document.createElement("p");
+          parent.insertBefore(inlineBucket, bq);
+          if (!firstInserted) firstInserted = inlineBucket;
+        }
+        inlineBucket.appendChild(child);
+      }
+    });
+
+    if (!firstInserted) {
+      const p = document.createElement("p");
+      p.innerHTML = "<br>";
+      parent.insertBefore(p, bq);
+      firstInserted = p;
+    }
+
+    parent.removeChild(bq);
+
+    const sel = window.getSelection();
+    if (sel && firstInserted) {
+      const range = document.createRange();
+      range.selectNodeContents(firstInserted);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  };
+
   // Helper to execute standard editor commands
   const executeCommand = (command: string, cmdValue: string | undefined = undefined) => {
     if (activeMode !== "visual") return;
+    if (command === "undo") {
+      handleUndo();
+      return;
+    }
+    if (command === "redo") {
+      handleRedo();
+      return;
+    }
+    recordPreMutationSnapshot();
     if (editorRef.current) {
       editorRef.current.focus();
     }
     document.execCommand(command, false, cmdValue);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
-  // Format Headings with real size change
+  // Toggle inline formatting (also unwraps tag when cursor is collapsed inside an existing formatted word/phrase)
+  const executeInlineToggle = (command: string, tagNames: string[]) => {
+    if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
+    if (editorRef.current) editorRef.current.focus();
+    const sel = window.getSelection();
+    const existing = findClosestTag(tagNames);
+    if (existing && sel && (sel.isCollapsed || sel.toString().trim() === (existing.textContent || "").trim())) {
+      unwrapInlineElement(existing);
+      handleEditorInput(true);
+      return;
+    }
+    document.execCommand(command, false);
+    handleEditorInput(true);
+  };
+
+  // Format Headings with toggle-off back to paragraph when clicked a second time
   const formatHeading = (level: "h1" | "h2" | "h3" | "p") => {
     if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
     if (editorRef.current) editorRef.current.focus();
-    try {
-      document.execCommand("formatBlock", false, `<${level}>`);
-    } catch {
-      document.execCommand("formatBlock", false, level.toUpperCase());
+
+    if (level === "p") {
+      const bq = findClosestTag(["BLOCKQUOTE"]);
+      if (bq) {
+        unwrapBlockquote(bq, true);
+        handleEditorInput(true);
+        return;
+      }
     }
-    handleEditorInput();
+
+    const existingHeading = level !== "p" ? findClosestTag([level.toUpperCase()]) : null;
+    const targetTag = existingHeading ? "p" : level;
+
+    try {
+      document.execCommand("formatBlock", false, `<${targetTag}>`);
+    } catch {
+      document.execCommand("formatBlock", false, targetTag.toUpperCase());
+    }
+    handleEditorInput(true);
   };
 
-  // Apply Text Color
+  // Remove inline style property from spans/fonts and unwrap those left empty
+  const stripStyleProp = (selector: string, prop: "color" | "backgroundColor") => {
+    const root = editorRef.current;
+    if (!root) return;
+    root.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+      if (el.tagName === "FONT") {
+        el.removeAttribute("color");
+      } else {
+        el.style[prop] = "";
+      }
+      const hasStyle = (el.getAttribute("style") || "").trim().length > 0;
+      const isBareFont = el.tagName === "FONT" && el.attributes.length === 0;
+      const isBareSpan = el.tagName === "SPAN" && !hasStyle && !el.className;
+      if ((isBareFont || isBareSpan) && el.parentNode) {
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.remove();
+      }
+    });
+  };
+
+  // Normalize any CSS color string (hex or rgb) to lowercase rgb(...) via temporary element for comparison
+  const normalizeColor = (c: string): string => {
+    if (!c || c === "inherit" || c === "transparent") return c;
+    const probe = document.createElement("span");
+    probe.style.color = c;
+    return probe.style.color.replace(/\s+/g, "").toLowerCase();
+  };
+
+  // Apply Text Color ("inherit" = cor padrão do tema; clicar na mesma cor já ativa também remove a cor)
   const applyTextColor = (color: string) => {
     if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
     if (editorRef.current) editorRef.current.focus();
-    document.execCommand("foreColor", false, color);
+
+    let effectiveColor = color;
+    const coloredEl = findClosestTag(["SPAN", "FONT"]);
+    if (color !== "inherit" && coloredEl) {
+      const currentColor = coloredEl.style?.color || coloredEl.getAttribute("color") || "";
+      if (currentColor && normalizeColor(currentColor) === normalizeColor(color)) {
+        effectiveColor = "inherit";
+      }
+    }
+
+    try {
+      document.execCommand("styleWithCSS", false, "true");
+      if (effectiveColor === "inherit") {
+        const sel = window.getSelection();
+        if (sel && sel.isCollapsed && coloredEl) {
+          coloredEl.style.color = "";
+          coloredEl.removeAttribute("color");
+          if (
+            (coloredEl.tagName === "FONT" && coloredEl.attributes.length === 0) ||
+            (coloredEl.tagName === "SPAN" && !(coloredEl.getAttribute("style") || "").trim() && !coloredEl.className)
+          ) {
+            unwrapInlineElement(coloredEl);
+          }
+        } else {
+          document.execCommand("foreColor", false, "#010203");
+          stripStyleProp('span[style*="rgb(1, 2, 3)"], span[style*="#010203"], font[color="#010203"]', "color");
+        }
+      } else {
+        document.execCommand("foreColor", false, effectiveColor);
+      }
+    } finally {
+      document.execCommand("styleWithCSS", false, "false");
+    }
     handleEditorInput();
     setShowTextColorMenu(false);
   };
 
-  // Apply Background / Highlight Color
+  // Apply Background / Highlight Color (clicar novamente na mesma cor ou em "Sem destaque" remove o marca-texto)
   const applyHighlightColor = (color: string) => {
     if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
     if (editorRef.current) editorRef.current.focus();
+
+    const markEl = findClosestTag(["MARK"]);
+    const spanEl = findClosestTag(["SPAN"]);
+    const hasSpanBg = spanEl && !!spanEl.style?.backgroundColor && spanEl.style.backgroundColor !== "transparent";
+
+    const isSameHighlight =
+      color !== "transparent" &&
+      ((markEl && (!markEl.style?.backgroundColor || normalizeColor(markEl.style.backgroundColor) === normalizeColor(color))) ||
+        (hasSpanBg && normalizeColor(spanEl!.style.backgroundColor) === normalizeColor(color)));
+
+    const effectiveColor = isSameHighlight ? "transparent" : color;
+
+    if (effectiveColor === "transparent") {
+      if (markEl) {
+        unwrapInlineElement(markEl);
+      }
+      if (hasSpanBg && spanEl) {
+        spanEl.style.backgroundColor = "";
+        if (!(spanEl.getAttribute("style") || "").trim() && !spanEl.className) {
+          unwrapInlineElement(spanEl);
+        }
+      }
+    }
+
     try {
-      document.execCommand("hiliteColor", false, color);
+      document.execCommand("hiliteColor", false, effectiveColor);
     } catch {
-      document.execCommand("backColor", false, color);
+      document.execCommand("backColor", false, effectiveColor);
+    }
+    if (effectiveColor === "transparent") {
+      stripStyleProp('span[style*="background-color: transparent"], span[style*="rgba(0, 0, 0, 0)"]', "backgroundColor");
     }
     handleEditorInput();
     setShowBgColorMenu(false);
@@ -202,6 +602,7 @@ export function RichTextEditor({
   // Insert HTML at current cursor/selection
   const insertHtmlAtCursor = (html: string) => {
     if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
     if (editorRef.current) {
       editorRef.current.focus();
     }
@@ -262,6 +663,433 @@ export function RichTextEditor({
     insertHtmlAtCursor(tableHtml);
     toast.success("Tabela inserida!");
   };
+
+  const tbBtn =
+    "w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer";
+
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // Insert / unwrap link (toggle)
+  const handleInsertLink = () => {
+    if (activeMode !== "visual") return;
+    if (editorRef.current) editorRef.current.focus();
+
+    const existingLink = findClosestTag(["A"]);
+    if (existingLink) {
+      unwrapInlineElement(existingLink);
+      handleEditorInput();
+      return;
+    }
+
+    const sel = window.getSelection();
+    const selected = sel ? sel.toString() : "";
+    const url = prompt("Cole o endereço do link (https://...):");
+    if (!url || !url.trim()) return;
+    const clean = url.trim();
+    if (selected) {
+      executeCommand("createLink", clean);
+    } else {
+      insertHtmlAtCursor(`<a href="${escapeHtml(clean)}">${escapeHtml(clean)}</a>&nbsp;`);
+    }
+  };
+
+  // Toggle inline code (wraps selected text or unwraps existing <code>)
+  const handleInlineCode = () => {
+    if (activeMode !== "visual") return;
+    if (editorRef.current) editorRef.current.focus();
+
+    const existingCode = findClosestTag(["CODE"]);
+    if (existingCode) {
+      unwrapInlineElement(existingCode);
+      handleEditorInput();
+      return;
+    }
+
+    const sel = window.getSelection();
+    const selected = sel ? sel.toString() : "";
+    if (!selected) {
+      toast.error("Selecione um trecho para formatar como código.");
+      return;
+    }
+    document.execCommand("insertHTML", false, `<code>${escapeHtml(selected)}</code>`);
+    handleEditorInput();
+  };
+
+  // Toggle blockquote (adds quote or removes existing quote on the current phrase/block)
+  const handleToggleQuote = () => {
+    if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
+    if (editorRef.current) editorRef.current.focus();
+
+    const existingBq = findClosestTag(["BLOCKQUOTE"]);
+    if (existingBq) {
+      unwrapBlockquote(existingBq, true);
+      handleEditorInput(true);
+      return;
+    }
+
+    try {
+      document.execCommand("formatBlock", false, "<blockquote>");
+    } catch {
+      document.execCommand("formatBlock", false, "BLOCKQUOTE");
+    }
+    handleEditorInput(true);
+  };
+
+  // Toggle callout / important note box (removes if already inside a callout/blockquote, or wraps current phrase/selection)
+  const handleInsertCallout = () => {
+    if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
+    if (editorRef.current) editorRef.current.focus();
+
+    const existingBq = findClosestTag(["BLOCKQUOTE"]);
+    if (existingBq) {
+      unwrapBlockquote(existingBq, true);
+      handleEditorInput(true);
+      return;
+    }
+
+    const sel = window.getSelection();
+    const selected = sel ? sel.toString().trim() : "";
+    if (selected) {
+      insertHtmlAtCursor(
+        `<blockquote><p><strong>💡 Nota importante:</strong> ${escapeHtml(selected)}</p></blockquote>`
+      );
+      return;
+    }
+
+    const currentBlock = findClosestTag(["P", "DIV", "H1", "H2", "H3", "H4"]);
+    if (currentBlock && (currentBlock.textContent || "").trim().length > 0) {
+      const bq = document.createElement("blockquote");
+      const p = document.createElement("p");
+      const strong = document.createElement("strong");
+      strong.textContent = "💡 Nota importante:";
+      p.appendChild(strong);
+      p.appendChild(document.createTextNode(" "));
+      while (currentBlock.firstChild) {
+        p.appendChild(currentBlock.firstChild);
+      }
+      bq.appendChild(p);
+      currentBlock.replaceWith(bq);
+
+      if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      handleEditorInput(true);
+      return;
+    }
+
+    insertHtmlAtCursor(
+      `<blockquote><p><strong>💡 Nota importante:</strong> Escreva aqui...</p></blockquote><p><br></p>`
+    );
+  };
+
+  // Copy whole document as Markdown
+  const handleCopyAll = async () => {
+    try {
+      const md = editorRef.current ? htmlToMarkdown(editorRef.current.innerHTML) : markdownSource;
+      await navigator.clipboard.writeText(md);
+      toast.success("Documento copiado!");
+    } catch {
+      toast.error("Não foi possível copiar.");
+    }
+  };
+
+  // Table helpers (add / remove rows and columns at the cursor)
+  const getCurrentCell = (): HTMLTableCellElement | null => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    let node: Node | null = sel.anchorNode;
+    while (node && node !== editorRef.current) {
+      if (node instanceof HTMLElement && (node.tagName === "TD" || node.tagName === "TH")) {
+        return node as HTMLTableCellElement;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  };
+
+  const tableAction = (action: "addRow" | "addCol" | "delRow" | "delCol") => {
+    const cell = getCurrentCell();
+    if (!cell) {
+      toast.error("Clique dentro de uma célula da tabela primeiro.");
+      return;
+    }
+    const row = cell.parentElement as HTMLTableRowElement;
+    const table = row.closest("table") as HTMLTableElement | null;
+    if (!table) return;
+    const colIndex = cell.cellIndex;
+
+    if (action === "addRow") {
+      const newRow = document.createElement("tr");
+      const refCells = Array.from(row.cells);
+      refCells.forEach((rc, i) => {
+        const td = document.createElement("td");
+        td.className = rc.className.replace(/font-bold|text-white/g, "").trim();
+        td.setAttribute("style", "border: 1px solid #E2E8F0; padding: 8px 12px;" + (i === 0 ? " font-weight: 600;" : ""));
+        td.innerHTML = "<br>";
+        newRow.appendChild(td);
+      });
+      if (row.parentElement?.tagName === "THEAD") {
+        const body = table.tBodies[0] || table.appendChild(document.createElement("tbody"));
+        body.insertBefore(newRow, body.firstChild);
+      } else {
+        row.after(newRow);
+      }
+    } else if (action === "addCol") {
+      Array.from(table.rows).forEach((r) => {
+        const ref = r.cells[colIndex];
+        if (!ref) return;
+        const isHead = ref.tagName === "TH";
+        const nc = document.createElement(isHead ? "th" : "td");
+        nc.className = ref.className;
+        const refStyle = ref.getAttribute("style");
+        if (refStyle) nc.setAttribute("style", refStyle);
+        nc.innerHTML = isHead ? "Nova coluna" : "<br>";
+        ref.after(nc);
+      });
+    } else if (action === "delRow") {
+      if (row.parentElement?.tagName === "THEAD" || table.rows.length <= 2) {
+        toast.error("Não é possível excluir o cabeçalho ou a única linha de dados.");
+        return;
+      }
+      row.remove();
+    } else if (action === "delCol") {
+      if (row.cells.length <= 1) {
+        toast.error("A tabela precisa ter ao menos uma coluna.");
+        return;
+      }
+      Array.from(table.rows).forEach((r) => r.cells[colIndex]?.remove());
+    }
+    handleEditorInput();
+  };
+
+  // Find & replace across the document text
+  const handleFindReplace = () => {
+    const root = editorRef.current;
+    if (!root || activeMode !== "visual") return;
+    const find = prompt("Localizar (todas as ocorrências):");
+    if (!find) return;
+    const repl = prompt(`Substituir "${find}" por:`, "");
+    if (repl === null) return;
+    const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+    let count = 0;
+    nodes.forEach((n) => {
+      const v = n.nodeValue || "";
+      const matches = v.match(re);
+      if (matches) {
+        count += matches.length;
+        n.nodeValue = v.replace(re, () => repl);
+      }
+    });
+    if (count > 0) {
+      handleEditorInput();
+      toast.success(`${count} ocorrência(s) substituída(s).`);
+    } else {
+      toast.error("Nenhuma ocorrência encontrada.");
+    }
+  };
+
+  // Clear all formatting on current selection or block (including blockquote/code/mark/link)
+  const handleClearFormatting = () => {
+    if (activeMode !== "visual") return;
+    recordPreMutationSnapshot();
+    if (editorRef.current) editorRef.current.focus();
+
+    const bq = findClosestTag(["BLOCKQUOTE"]);
+    if (bq) unwrapBlockquote(bq, true);
+    const inlineTags = findClosestTag(["CODE", "MARK", "A", "SUB", "SUP", "DEL", "S", "STRIKE", "U", "EM", "I", "STRONG", "B"]);
+    if (inlineTags) unwrapInlineElement(inlineTags);
+
+    document.execCommand("removeFormat", false);
+    handleEditorInput(true);
+  };
+
+  const [inTable, setInTable] = useState(false);
+  const [activeFormats, setActiveFormats] = useState({
+    h1: false,
+    h2: false,
+    h3: false,
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+    sub: false,
+    sup: false,
+    ul: false,
+    ol: false,
+    quote: false,
+    callout: false,
+    link: false,
+    code: false,
+  });
+
+  const refreshActiveFormats = useCallback(() => {
+    const sel = window.getSelection();
+    const root = editorRef.current;
+    if (!sel || !sel.anchorNode || !root || !root.contains(sel.anchorNode)) return;
+    setInTable(getCurrentCell() !== null);
+
+    const bq = findClosestTag(["BLOCKQUOTE"]);
+    const isCallout = !!bq && /💡\s*Nota importante:?/i.test(bq.textContent || "");
+
+    setActiveFormats({
+      h1: !!findClosestTag(["H1"]),
+      h2: !!findClosestTag(["H2"]),
+      h3: !!findClosestTag(["H3"]),
+      bold: !!findClosestTag(["B", "STRONG"]) || document.queryCommandState("bold"),
+      italic: !!findClosestTag(["I", "EM"]) || document.queryCommandState("italic"),
+      underline: !!findClosestTag(["U"]) || document.queryCommandState("underline"),
+      strike: !!findClosestTag(["S", "STRIKE", "DEL"]) || document.queryCommandState("strikeThrough"),
+      sub: !!findClosestTag(["SUB"]) || document.queryCommandState("subscript"),
+      sup: !!findClosestTag(["SUP"]) || document.queryCommandState("superscript"),
+      ul: !!findClosestTag(["UL"]) || document.queryCommandState("insertUnorderedList"),
+      ol: !!findClosestTag(["OL"]) || document.queryCommandState("insertOrderedList"),
+      quote: !!bq && !isCallout,
+      callout: isCallout,
+      link: !!findClosestTag(["A"]),
+      code: !!findClosestTag(["CODE"]),
+    });
+  }, [findClosestTag]);
+
+  useEffect(() => {
+    if (activeMode !== "visual") return;
+    document.addEventListener("selectionchange", refreshActiveFormats);
+    return () => document.removeEventListener("selectionchange", refreshActiveFormats);
+  }, [activeMode, refreshActiveFormats]);
+
+  // Keyboard shortcuts inside the visual editor (and Backspace to exit quote / callout box)
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const mod = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+
+    if (mod && key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleUndo();
+      refreshActiveFormats();
+      return;
+    }
+    if ((mod && key === "y") || (mod && e.shiftKey && key === "z")) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleRedo();
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && !e.shiftKey && !e.altKey && key === "b") {
+      e.preventDefault();
+      executeInlineToggle("bold", ["B", "STRONG"]);
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && !e.shiftKey && !e.altKey && key === "i") {
+      e.preventDefault();
+      executeInlineToggle("italic", ["I", "EM"]);
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && !e.shiftKey && !e.altKey && key === "u") {
+      e.preventDefault();
+      executeInlineToggle("underline", ["U"]);
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && e.shiftKey && key === "x") {
+      e.preventDefault();
+      executeInlineToggle("strikeThrough", ["S", "STRIKE", "DEL"]);
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && !e.shiftKey && key === "k") {
+      e.preventDefault();
+      handleInsertLink();
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && !e.shiftKey && key === "e") {
+      e.preventDefault();
+      handleInlineCode();
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && e.shiftKey && key === "q") {
+      e.preventDefault();
+      handleToggleQuote();
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && e.shiftKey && key === "d") {
+      e.preventDefault();
+      handleInsertCallout();
+      refreshActiveFormats();
+      return;
+    }
+    if (mod && e.altKey && (key === "1" || key === "2" || key === "3" || key === "0")) {
+      e.preventDefault();
+      formatHeading(key === "0" ? "p" : (`h${key}` as "h1" | "h2" | "h3"));
+      refreshActiveFormats();
+      return;
+    }
+
+    // Backspace inside a blockquote / callout ("Nota importante"): unwrap if empty or at start of content
+    if (e.key === "Backspace") {
+      const bq = findClosestTag(["BLOCKQUOTE"]);
+      if (bq) {
+        const rawText = (bq.textContent || "").replace(/\u00a0/g, " ").trim();
+        const withoutPrefix = rawText.replace(/^💡?\s*Nota importante:?\s*/i, "").trim();
+        const sel = window.getSelection();
+        let isAtStart = false;
+        if (sel && sel.isCollapsed && sel.rangeCount > 0) {
+          const r = sel.getRangeAt(0).cloneRange();
+          r.selectNodeContents(bq);
+          r.setEnd(sel.anchorNode!, sel.anchorOffset);
+          const beforeText = r.toString().replace(/\u00a0/g, " ").trim();
+          if (!beforeText || /^💡?\s*Nota importante:?$/i.test(beforeText)) {
+            isAtStart = true;
+          }
+        }
+        if (!rawText || !withoutPrefix || withoutPrefix === "Escreva aqui..." || isAtStart) {
+          e.preventDefault();
+          unwrapBlockquote(bq, true);
+          handleEditorInput(true);
+          refreshActiveFormats();
+        }
+      }
+    }
+  };
+
+  // Global keyboard shortcut listener for Ctrl+Z / Ctrl+Y even right after clicking a toolbar button
+  useEffect(() => {
+    if (activeMode !== "visual") return;
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        refreshActiveFormats();
+      } else if ((mod && key === "y") || (mod && e.shiftKey && key === "z")) {
+        e.preventDefault();
+        handleRedo();
+        refreshActiveFormats();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [activeMode, handleUndo, handleRedo, refreshActiveFormats]);
 
   // Insert Image from URL
   const handleInsertImageUrl = () => {
@@ -423,8 +1251,10 @@ export function RichTextEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          text: selectedText,
           selectedText,
           action,
+          context: markdownSource,
         }),
       });
 
@@ -433,7 +1263,7 @@ export function RichTextEditor({
       }
 
       const data = await res.json();
-      const outputHtml = data.resultHtml || markdownToHtml(data.resultText || "");
+      const outputHtml = data.resultHtml || markdownToHtml(data.result || data.resultText || "");
 
       const blockHtml = `
         <div class="my-4 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20">
@@ -460,12 +1290,14 @@ export function RichTextEditor({
   };
 
   const textColors = [
-    { label: "Padrão", color: "inherit", bg: "bg-gray-800 dark:bg-gray-200" },
+    { label: "Padrão (tema)", color: "inherit", bg: "bg-gray-800 dark:bg-gray-200" },
+    { label: "Branco", color: "#FFFFFF", bg: "bg-white" },
     { label: "Vermelho (Remédio)", color: "#DC2626", bg: "bg-red-600" },
     { label: "Verde (Doença)", color: "#16A34A", bg: "bg-emerald-600" },
     { label: "Azul Clínico", color: "#2563EB", bg: "bg-blue-600" },
     { label: "Âmbar / Alerta", color: "#D97706", bg: "bg-amber-600" },
     { label: "Roxo Diagnóstico", color: "#9333EA", bg: "bg-purple-600" },
+    { label: "Cinza", color: "#6B7280", bg: "bg-gray-500" },
   ];
 
   const highlightColors = [
@@ -578,7 +1410,7 @@ export function RichTextEditor({
     "#047857";
 
   return (
-    <div className={`flex flex-col rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1A1D27] shadow-sm ${className}`}>
+    <div className={`relative w-full ${className}`}>
       {/* Scoped styles guaranteeing Heading sizes and paragraph rhythm */}
       <style jsx global>{`
         .studyflow-editor-content {
@@ -639,6 +1471,30 @@ export function RichTextEditor({
           padding-left: 1.5rem;
           margin: 0.5rem 0;
         }
+        .studyflow-editor-content a {
+          color: #2563eb;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+        .studyflow-editor-content hr {
+          border: none;
+          border-top: 2px solid #e2e8f0;
+          margin: 1.25rem 0;
+        }
+        .dark .studyflow-editor-content hr { border-top-color: #334155; }
+        .studyflow-editor-content code {
+          padding: 0.1rem 0.4rem;
+          border-radius: 0.375rem;
+          background: #f1f5f9;
+          color: #2563eb;
+          font-family: ui-monospace, monospace;
+          font-size: 0.85em;
+        }
+        .dark .studyflow-editor-content code { background: #1e293b; color: #60a5fa; }
+        .studyflow-editor-content mark,
+        .studyflow-editor-content span[style*="background-color"]:not([style*="transparent"]) {
+          color: #0f172a;
+        }
         .studyflow-editor-content mark {
           padding: 0.15rem 0.35rem;
           border-radius: 0.375rem;
@@ -690,14 +1546,266 @@ export function RichTextEditor({
         className="hidden"
       />
 
+        {/* FLOATING ISOLATED TOOLS BALLOON (Outside the text screen, floating on the left) */}
+        {activeMode === "visual" && (
+          <div className="md:absolute md:right-[100%] md:top-0 md:bottom-0 md:pr-3 z-30 pointer-events-none mb-3 md:mb-0">
+            <aside
+              onMouseDown={(e) => e.preventDefault()}
+              className="pointer-events-auto md:sticky md:top-4 flex flex-row md:flex-col flex-wrap md:flex-nowrap items-center md:items-stretch gap-1 p-2 w-full md:w-[92px] max-h-none md:max-h-[calc(100vh-2rem)] overflow-y-auto overflow-x-hidden [scrollbar-width:thin] bg-white/95 dark:bg-[#161824]/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-800/90 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.45)] rounded-2xl"
+            >
+            {/* Salvar / Restaurar / Cancelar */}
+            {(onSave || onCancel || onRestoreOriginal) && (
+              <TbGroup className={cn("shadow-xs", accentBorderClass)}>
+                {onSave && (
+                  <TbBtn
+                    title="Salvar (Ctrl+S)"
+                    onClick={onSave}
+                    className={cn("text-white shadow-xs active:scale-95", accentBgClass, accentHoverClass, "hover:text-white dark:text-white")}
+                  >
+                    <Save className="w-[18px] h-[18px]" />
+                  </TbBtn>
+                )}
+                {onRestoreOriginal && (
+                  <TbBtn title="Voltar ao texto original" onClick={onRestoreOriginal} className="hover:text-amber-600">
+                    <RotateCcw className="w-[18px] h-[18px]" />
+                  </TbBtn>
+                )}
+                {onCancel && (
+                  <TbBtn title="Cancelar edição" onClick={onCancel} className="hover:text-red-600">
+                    <X className="w-[18px] h-[18px]" />
+                  </TbBtn>
+                )}
+              </TbGroup>
+            )}
+
+            {/* Histórico */}
+            <TbGroup>
+              <TbBtn title="Desfazer (Ctrl+Z)" onClick={() => executeCommand("undo")}>
+                <Undo className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Refazer (Ctrl+Y)" onClick={() => executeCommand("redo")}>
+                <Redo className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* Estrutura: Parágrafo e títulos */}
+            <TbGroup>
+              <TbBtn title="Parágrafo normal" onClick={() => { formatHeading("p"); refreshActiveFormats(); }}>
+                <Pilcrow className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Título (H1)" active={activeFormats.h1} onClick={() => { formatHeading("h1"); refreshActiveFormats(); }}>
+                <Heading1 className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn
+                title="Seção (H2)"
+                active={activeFormats.h2}
+                onClick={() => { formatHeading("h2"); refreshActiveFormats(); }}
+                className={
+                  isVermelho
+                    ? "text-red-700 dark:text-red-300"
+                    : isRoxo
+                    ? "text-purple-700 dark:text-purple-300"
+                    : isAzul
+                    ? "text-blue-700 dark:text-blue-300"
+                    : isCinza
+                    ? "text-zinc-800 dark:text-zinc-200"
+                    : "text-emerald-800 dark:text-emerald-300"
+                }
+              >
+                <Heading2 className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Subseção (H3)" active={activeFormats.h3} onClick={() => { formatHeading("h3"); refreshActiveFormats(); }}>
+                <Heading3 className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* Estilo do texto */}
+            <TbGroup>
+              <TbBtn title="Negrito (Ctrl+B)" active={activeFormats.bold} onClick={() => { executeInlineToggle("bold", ["B", "STRONG"]); refreshActiveFormats(); }}>
+                <Bold className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Itálico (Ctrl+I)" active={activeFormats.italic} onClick={() => { executeInlineToggle("italic", ["I", "EM"]); refreshActiveFormats(); }}>
+                <Italic className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Sublinhado (Ctrl+U)" active={activeFormats.underline} onClick={() => { executeInlineToggle("underline", ["U"]); refreshActiveFormats(); }}>
+                <Underline className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Tachado" active={activeFormats.strike} onClick={() => { executeInlineToggle("strikeThrough", ["S", "STRIKE", "DEL"]); refreshActiveFormats(); }}>
+                <Strikethrough className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Subscrito (H₂O)" active={activeFormats.sub} onClick={() => { executeInlineToggle("subscript", ["SUB"]); refreshActiveFormats(); }}>
+                <Subscript className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Sobrescrito (m²)" active={activeFormats.sup} onClick={() => { executeInlineToggle("superscript", ["SUP"]); refreshActiveFormats(); }}>
+                <Superscript className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* Cores */}
+            <div className="flex flex-col gap-1 pb-1.5 mb-1.5 border-b border-gray-200/70 dark:border-gray-800/90">
+              <div className="grid grid-cols-2 gap-1">
+                <TbBtn
+                  title="Cor do texto"
+                  onClick={() => {
+                    setShowTextColorMenu(!showTextColorMenu);
+                    setShowBgColorMenu(false);
+                  }}
+                  className={cn("text-indigo-600 dark:text-indigo-400", showTextColorMenu && "bg-indigo-50 dark:bg-indigo-950/40")}
+                >
+                  <Palette className="w-[18px] h-[18px]" />
+                </TbBtn>
+                <TbBtn
+                  title="Marca-texto"
+                  onClick={() => {
+                    setShowBgColorMenu(!showBgColorMenu);
+                    setShowTextColorMenu(false);
+                  }}
+                  className={cn("text-amber-600 dark:text-amber-400", showBgColorMenu && "bg-amber-50 dark:bg-amber-950/40")}
+                >
+                  <Highlighter className="w-[18px] h-[18px]" />
+                </TbBtn>
+              </div>
+
+              {showTextColorMenu && (
+                <div className="grid grid-cols-4 gap-1.5 justify-items-center p-1.5 border-t border-gray-100 dark:border-gray-800">
+                  {textColors.map((tc) => (
+                    <button
+                      key={tc.color}
+                      type="button"
+                      title={tc.label}
+                      onClick={() => applyTextColor(tc.color)}
+                      className={`w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 hover:scale-125 transition-transform cursor-pointer ${tc.bg}`}
+                      style={{ backgroundColor: tc.color !== "inherit" ? tc.color : undefined }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {showBgColorMenu && (
+                <div className="grid grid-cols-4 gap-1.5 justify-items-center p-1.5 border-t border-gray-100 dark:border-gray-800">
+                  {highlightColors.map((hc) => (
+                    <button
+                      key={hc.color}
+                      type="button"
+                      title={hc.label}
+                      onClick={() => applyHighlightColor(hc.color)}
+                      className={`w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 hover:scale-125 transition-transform cursor-pointer ${hc.bg}`}
+                      style={{ backgroundColor: hc.color !== "transparent" ? hc.color : undefined }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Listas e blocos */}
+            <TbGroup>
+              <TbBtn title="Lista com marcadores" active={activeFormats.ul} onClick={() => { executeCommand("insertUnorderedList"); refreshActiveFormats(); }}>
+                <List className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Lista numerada" active={activeFormats.ol} onClick={() => { executeCommand("insertOrderedList"); refreshActiveFormats(); }}>
+                <ListOrdered className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn
+                title="Citação (clique novamente para remover)"
+                active={activeFormats.quote}
+                onClick={() => {
+                  handleToggleQuote();
+                  refreshActiveFormats();
+                }}
+              >
+                <Quote className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn
+                title="Caixa de destaque (clique novamente para remover)"
+                active={activeFormats.callout}
+                onClick={() => {
+                  handleInsertCallout();
+                  refreshActiveFormats();
+                }}
+                className="text-amber-600 dark:text-amber-400"
+              >
+                <StickyNote className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* Inserir */}
+            <TbGroup>
+              <TbBtn title="Inserir tabela" onClick={handleInsertTable} className="text-emerald-700 dark:text-emerald-300">
+                <TableIcon className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Inserir imagem" onClick={() => fileInputRef.current?.click()} className="text-blue-700 dark:text-blue-300">
+                <ImageIcon className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn
+                title="Inserir ou remover link"
+                active={activeFormats.link}
+                onClick={() => {
+                  handleInsertLink();
+                  refreshActiveFormats();
+                }}
+                className="text-blue-600 dark:text-blue-400"
+              >
+                <LinkIcon className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Linha divisória" onClick={() => executeCommand("insertHorizontalRule")}>
+                <Minus className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* Tabela: aparece só quando o cursor está dentro de uma tabela */}
+            {inTable && (
+              <TbGroup className="border-emerald-300 dark:border-emerald-800">
+                <TbBtn title="Adicionar linha abaixo" onClick={() => tableAction("addRow")} className="text-[11px] font-bold">+Lin</TbBtn>
+                <TbBtn title="Adicionar coluna à direita" onClick={() => tableAction("addCol")} className="text-[11px] font-bold">+Col</TbBtn>
+                <TbBtn title="Excluir linha atual" onClick={() => tableAction("delRow")} className="text-[11px] font-bold hover:text-red-600">−Lin</TbBtn>
+                <TbBtn title="Excluir coluna atual" onClick={() => tableAction("delCol")} className="text-[11px] font-bold hover:text-red-600">−Col</TbBtn>
+              </TbGroup>
+            )}
+
+            {/* Utilitários */}
+            <TbGroup>
+              <TbBtn title="Localizar e substituir" onClick={handleFindReplace}>
+                <Search className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn
+                title="Código em linha (clique novamente para remover)"
+                active={activeFormats.code}
+                onClick={() => {
+                  handleInlineCode();
+                  refreshActiveFormats();
+                }}
+              >
+                <Code2 className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Limpar formatação" onClick={() => { handleClearFormatting(); refreshActiveFormats(); }}>
+                <RemoveFormatting className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Copiar documento" onClick={handleCopyAll}>
+                <Copy className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+
+            {/* IA */}
+            <TbGroup>
+              <TbBtn title="Expandir seleção com IA" onClick={() => handleAITextAction("expand")} className="text-indigo-600 dark:text-indigo-400" disabled={isAiLoading}>
+                <Sparkles className="w-[18px] h-[18px]" />
+              </TbBtn>
+              <TbBtn title="Explicar seleção com IA" onClick={() => handleAITextAction("explain")} className="text-amber-600 dark:text-amber-400" disabled={isAiLoading}>
+                <Lightbulb className="w-[18px] h-[18px]" />
+              </TbBtn>
+            </TbGroup>
+            </aside>
+          </div>
+        )}
+
+      {/* Editor Card (texto) */}
+      <div className="w-full min-w-0 flex flex-col rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1A1D27] shadow-sm">
+
       {/* Top Header Bar: Counts & Mode Switcher */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50/95 dark:bg-[#12141c] border-b border-gray-200 dark:border-gray-800 select-none rounded-t-2xl">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
             Editor de Texto
-          </span>
-          <span className="text-[11px] text-gray-400 hidden sm:inline">
-            (Barra lateral fixa que acompanha sua rolagem)
           </span>
         </div>
 
@@ -741,323 +1849,6 @@ export function RichTextEditor({
 
       {/* Main Workspace: Left Sticky Vertical Toolbar + Right Editor Area */}
       <div className="flex flex-row relative min-h-[520px]">
-        {/* STICKY VERTICAL TOOLBAR (Compact 2-column dock, always visible when scrolling!) */}
-        {activeMode === "visual" && (
-          <aside className="sticky top-4 sm:top-6 self-start z-30 flex flex-col gap-1.5 p-1.5 bg-gray-50/95 dark:bg-[#12141c]/95 border-r border-gray-200 dark:border-gray-800 shadow-md shrink-0 rounded-bl-2xl">
-            {/* 0. Quick Save, Restore Original & Cancel (Directly on floating toolbar) */}
-            {(onSave || onCancel || onRestoreOriginal) && (
-              <div className={cn("grid gap-1 bg-white dark:bg-[#1A1D27] rounded-xl p-1 shadow-xs border", accentBorderClass, onRestoreOriginal ? "grid-cols-3" : "grid-cols-2")}>
-                {onSave && (
-                  <button
-                    type="button"
-                    onClick={onSave}
-                    className={cn("w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-white shadow-xs transition-transform active:scale-95 cursor-pointer", accentBgClass, accentHoverClass)}
-                    title="Salvar alterações no documento (Ctrl+S)"
-                  >
-                    <Save className="w-4 h-4" />
-                  </button>
-                )}
-                {onRestoreOriginal && (
-                  <button
-                    type="button"
-                    onClick={onRestoreOriginal}
-                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
-                    title="Voltar ao texto original"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                )}
-                {onCancel && (
-                  <button
-                    type="button"
-                    onClick={onCancel}
-                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
-                    title="Cancelar edição"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 1. History (Undo / Redo) */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={() => executeCommand("undo")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Desfazer (Ctrl+Z)"
-              >
-                <Undo className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCommand("redo")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Refazer (Ctrl+Y)"
-              >
-                <Redo className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 2. Headings (P, H1 / H2, H3) */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={() => formatHeading("p")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Texto Normal / Parágrafo"
-              >
-                <Pilcrow className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => formatHeading("h1")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-900 dark:text-white font-extrabold hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Título Principal (H1)"
-              >
-                <Heading1 className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => formatHeading("h2")}
-                className={cn(
-                  "w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg font-bold hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer",
-                  isVermelho
-                    ? "text-red-700 dark:text-red-300"
-                    : isRoxo
-                    ? "text-purple-700 dark:text-purple-300"
-                    : isAzul
-                    ? "text-blue-700 dark:text-blue-300"
-                    : isCinza
-                    ? "text-zinc-800 dark:text-zinc-200"
-                    : "text-emerald-800 dark:text-emerald-300"
-                )}
-                title="Seção (H2)"
-              >
-                <Heading2 className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => formatHeading("h3")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-800 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Subseção (H3)"
-              >
-                <Heading3 className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 3. Typography Formatting (Bold, Italic / Underline, Strike) */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={() => executeCommand("bold")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg font-bold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Negrito (Ctrl+B)"
-              >
-                <Bold className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCommand("italic")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg italic text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Itálico (Ctrl+I)"
-              >
-                <Italic className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCommand("underline")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg underline text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Sublinhado (Ctrl+U)"
-              >
-                <Underline className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCommand("strikeThrough")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg line-through text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Tachado"
-              >
-                <Strikethrough className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 4. Cores: Cor do Texto & Cor de Fundo / Marca-Texto */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1 relative">
-              {/* 🎨 Cor do Texto */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowTextColorMenu(!showTextColorMenu);
-                    setShowBgColorMenu(false);
-                  }}
-                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
-                  title="Cor da Fonte / Texto"
-                >
-                  <Palette className="w-4 h-4" />
-                </button>
-
-                {showTextColorMenu && (
-                  <div className="absolute left-full top-0 ml-2 z-50 p-2 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200 dark:border-gray-800 shadow-xl flex flex-col gap-1 w-44 animate-in fade-in">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Cor do Texto</span>
-                    {textColors.map((tc) => (
-                      <button
-                        key={tc.color}
-                        type="button"
-                        onClick={() => {
-                          applyTextColor(tc.color);
-                          setShowTextColorMenu(false);
-                        }}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800 text-left cursor-pointer"
-                      >
-                        <span className={`w-3.5 h-3.5 rounded-full shrink-0 ${tc.bg}`} style={{ backgroundColor: tc.color !== "inherit" ? tc.color : undefined }} />
-                        <span className="text-gray-800 dark:text-gray-200">{tc.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 🖍️ Cor de Fundo / Marca-Texto */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowBgColorMenu(!showBgColorMenu);
-                    setShowTextColorMenu(false);
-                  }}
-                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
-                  title="Marca-Texto / Cor de Fundo"
-                >
-                  <Highlighter className="w-4 h-4" />
-                </button>
-
-                {showBgColorMenu && (
-                  <div className="absolute left-full top-0 ml-2 z-50 p-2 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200 dark:border-gray-800 shadow-xl flex flex-col gap-1 w-44 animate-in fade-in">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Cor de Fundo</span>
-                    {highlightColors.map((hc) => (
-                      <button
-                        key={hc.color}
-                        type="button"
-                        onClick={() => {
-                          applyHighlightColor(hc.color);
-                          setShowBgColorMenu(false);
-                        }}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800 text-left cursor-pointer"
-                      >
-                        <span className={`w-3.5 h-3.5 rounded-full shrink-0 ${hc.bg}`} style={{ backgroundColor: hc.color !== "transparent" ? hc.color : undefined }} />
-                        <span className="text-gray-800 dark:text-gray-200">{hc.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 5. Lists (Bullet & Numbered) */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={() => executeCommand("insertUnorderedList")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Lista com Marcadores"
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCommand("insertOrderedList")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Lista Numerada"
-              >
-                <ListOrdered className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 6. Insert: Table, Quote / Image, Link */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={handleInsertTable}
-                className={cn(
-                  "w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg transition-colors cursor-pointer",
-                  isVermelho
-                    ? "text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50"
-                    : isRoxo
-                    ? "text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/50"
-                    : isAzul
-                    ? "text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                    : isCinza
-                    ? "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
-                    : "text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
-                )}
-                title="Inserir Tabela Formatada"
-              >
-                <TableIcon className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => formatHeading("p")}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Citação"
-              >
-                <Quote className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
-                title="Inserir Imagem do Computador"
-              >
-                <ImageIcon className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleInsertImageUrl}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Inserir Imagem via Link"
-              >
-                <Link2 className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 7. AI Expand & Explain Tools */}
-            <div className="grid grid-cols-2 gap-1 bg-white dark:bg-[#1A1D27] rounded-xl border border-indigo-200 dark:border-indigo-800/60 p-1">
-              <button
-                type="button"
-                onClick={() => handleAITextAction("expand")}
-                disabled={isAiLoading}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-colors cursor-pointer disabled:opacity-50"
-                title="Expandir texto selecionado com IA"
-              >
-                <Sparkles className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAITextAction("explain")}
-                disabled={isAiLoading}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors cursor-pointer disabled:opacity-50"
-                title="Explicar conceito selecionado com IA"
-              >
-                <Lightbulb className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 8. Clear Format */}
-            <div className="flex bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200/80 dark:border-gray-800 p-1">
-              <button
-                type="button"
-                onClick={() => executeCommand("removeFormat")}
-                className="w-full h-8 sm:h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer text-xs font-semibold gap-1"
-                title="Limpar Formatação do Texto"
-              >
-                <RemoveFormatting className="w-4 h-4" />
-              </button>
-            </div>
-          </aside>
-        )}
 
         {/* Editor Body Area */}
         <div className="relative flex-1 bg-white dark:bg-[#1A1D27]">
@@ -1065,9 +1856,10 @@ export function RichTextEditor({
             <div
               ref={editorRef}
               contentEditable
-              onInput={handleEditorInput}
+              onInput={() => handleEditorInput(false)}
+              onKeyDown={handleEditorKeyDown}
               onPaste={handlePaste}
-              className="studyflow-editor-content p-6 sm:p-8 md:p-10 text-gray-900 dark:text-gray-100 leading-relaxed font-sans select-text"
+              className="studyflow-editor-content py-6 sm:py-8 md:py-10 px-6 sm:px-14 md:px-24 lg:px-32 xl:px-40 text-gray-900 dark:text-gray-100 leading-relaxed font-sans select-text"
               style={{
                 minHeight,
               }}
@@ -1078,7 +1870,7 @@ export function RichTextEditor({
               value={markdownSource}
               onChange={(e) => handleMarkdownChange(e.target.value)}
               style={{ minHeight }}
-              className="w-full p-6 sm:p-8 font-mono text-xs sm:text-sm bg-gray-50/50 dark:bg-[#12141c] text-gray-900 dark:text-gray-100 focus:outline-none leading-relaxed resize-y border-none"
+              className="w-full py-6 sm:py-8 md:py-10 px-6 sm:px-14 md:px-24 lg:px-32 xl:px-40 font-mono text-xs sm:text-sm bg-gray-50/50 dark:bg-[#12141c] text-gray-900 dark:text-gray-100 focus:outline-none leading-relaxed resize-y border-none"
               placeholder="Edite o código fonte em Markdown..."
             />
           )}
@@ -1087,14 +1879,11 @@ export function RichTextEditor({
 
       {/* Bottom Hint Footer */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50/70 dark:bg-[#12141c]/70 border-t border-gray-100 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400 rounded-b-2xl">
-        <div className="flex items-center gap-3">
-          <span>💡 <strong>Ferramentas Verticais</strong>: Fixas na lateral esquerda, sempre visíveis enquanto você rola o documento.</span>
-          <span className="hidden md:inline">•</span>
-          <span className="hidden md:inline">🎨 Cor do Texto | 🖍️ Marca-Texto / Fundo | ✨ IA</span>
-        </div>
+        <div className="flex items-center gap-3" />
         <div>
           <span>{activeMode === "visual" ? "Modo Visual Ativo" : "Modo Código Ativo"}</span>
         </div>
+      </div>
       </div>
     </div>
   );

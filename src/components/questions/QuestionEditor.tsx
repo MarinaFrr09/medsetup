@@ -170,8 +170,18 @@ export default function QuestionEditor({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="flex w-full max-w-3xl flex-col max-h-[90vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] overflow-hidden my-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex w-full max-w-3xl flex-col max-h-[90vh] rounded-2xl bg-white shadow-2xl dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] overflow-hidden my-auto cursor-default"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2d3a] px-6 py-4 bg-gradient-to-r from-blue-50/50 via-indigo-50/30 to-transparent dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-transparent">
           <div>

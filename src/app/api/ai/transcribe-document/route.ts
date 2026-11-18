@@ -10,6 +10,7 @@ import {
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
+import { reduceExcessiveBulletsInTranscription } from "@/lib/rich-text-utils";
 
 export const maxDuration = 600;
 export const dynamic = "force-dynamic";
@@ -174,66 +175,24 @@ O usuário enviou um material didático (slides em PDF/PPTX ou documento de estu
 SUA MISSÃO MANDATÓRIA (MODO EXTENSÃO E APROFUNDAMENTO ATIVADO):
 Transformar esses slides ou notas em um Guia Médico de Referência Definitivo, com MÁXIMO NÍVEL DE PROFUNDIDADE CIENTÍFICA, ELEGÂNCIA ACADÊMICA E RIGOR FISIOPATOLÓGICO/FARMACOLÓGICO.
 
-REGRA DE OURO INVIOLÁVEL: A TRANSCRIÇÃO NUNCA PODE SER RASA!
-É TERMINANTEMENTE PROIBIDO apenas copiar marcadores telegráficos de slides. Cada tópico deve ser convertido em uma explicação médica estruturada, profunda e detalhada.
-
-EXEMPLO DE REFERÊNCIA OBRIGATÓRIO (SIGA ESTRITAMENTE ESTE PADRÃO DE ESTRUTURA):
-[Entrada típica de slides em PDF com notas rasas/telegráficas]:
-Slide 1:
-"Deve estar ancorado em um tripé:
-- Exame clínico
-- Exame de imagem
-- Analise histopatológica
-- É fundamental uma boa anamnese, exame físico e o complemento com exames de imagem para avaliar a necessidade de se biopsiar uma lesão.
-- A biópsia de mama é indicada quando há achados suspeitos em exames de imagem, como a mamografia ou a ecografia mamária."
-
-Slide 2:
-"Diagnóstico
-Biópsia percutânea
-- Agulha grossa (core biópsia e biópsia a vácuo - mamotomia).
-- Minimamente invasiva.
-- Boa acurácia.
-- Avaliação histopatológica e imuno-histoquímica.
-- Possibilita a programação do tratamento.
-- Lesões palpáveis quanto impalpáveis.
-- Impalpáveis: um exame de imagem (ultrassonografia, mamografia ou ressonância) deve servir como guia para o procedimento.
-[imagem da biópsia com agulha e nódulo]"
-
-[Como você DEVE obrigatoriamente estruturar a transcrição]:
-### Diagnóstico Definitivo
-
-O diagnóstico definitivo do câncer de mama é fundamentado em um tripé indissociável:
-
-- **Exame Clínico** -> Anamnese detalhada e exame físico das mamas e axilas.
-- **Exames de Imagem** -> Mamografia, ultrassonografia e/ou ressonância magnética.
-- **Análise Histopatológica** -> Biópsia da lesão, que é o padrão-ouro.
-- **Biópsia Percutânea** -> Preferencial devido à sua mínima invasividade e boa acurácia.
-  - **Core Biópsia** -> Utiliza agulha grossa para coletar cilindros de tecido.
-  - **Biópsia a Vácuo (Mamotomia)** -> Coleta maior volume de tecido.
-  - **Ambas** -> Permitem avaliação histopatológica e imuno-histoquímica, essenciais para caracterização molecular e planejamento terapêutico. Podem ser guiadas por ultrassom, mamografia (estereotaxia) ou RM para lesões não palpáveis.
-- **Biópsia Cirúrgica** -> Indicada quando a biópsia percutânea não é tecnicamente viável.
-- **Punção Aspirativa por Agulha Fina (PAAF)** -> Utilizada para avaliação citológica de linfonodos axilares, auxiliando no estadiamento inicial. Biópsias por agulha guiadas por ultrassom também podem ser realizadas em linfonodos.
-
-### Patologia
-
-DIRETRIZES DE CONTEÚDO E FORMA (MODO EXTENSÃO AVANÇADA):
-1. DESDUPLICAÇÃO E UNIFICAÇÃO:
+REGRA DE OURO INVIOLÁVEL DE FORMATAÇÃO:
+1. PREFIRA TEXTO FLUIDO EM PARÁGRAFOS E SUBTÍTULOS (### e ####):
+   - Escreva as explicações fisiopatológicas, clínicas, diagnósticas e farmacológicas em parágrafos corridos, coesos e bem estruturados (podendo destacar o termo inicial em negrito no próprio parágrafo, ex: "**Controle Pressórico Pré-Gestacional:** Mulheres com hipertensão arterial crônica devem...").
+   - Use subtítulos (` + "`###`" + ` para seções principais e ` + "`####`" + ` para subdivisões como "#### Aspectos Pré-Natais Essenciais", "#### Medicações de Primeira Linha").
+2. USO RESTRITO DE MARCADORES (BOLINHAS / BULLETS):
+   - Use marcadores (` + "`* `" + `) APENAS QUANDO ESTRITAMENTE NECESSÁRIO para listas curtas e pontuais de itens enumerados (ex: parâmetros pontuais de monitoramento, periodicidade de consultas, critérios pontuais).
+   - É TERMINANTEMENTE PROIBIDO transformar o documento inteiro em uma lista interminável de bolinhas (` + "`•`" + `) ou usar setas (` + "`->`" + `) em cada frase.
+   - NUNCA coloque um subtítulo como marcador vazio com seta (ex: NUNCA escreva "- **Medicações de Primeira Linha** ->"; escreva "#### Medicações de Primeira Linha").
+3. DESDUPLICAÇÃO E UNIFICAÇÃO:
    - NUNCA repita o mesmo título de slide ou página. Una slides sequenciais sob o mesmo tema em uma única seção completa.
    - NUNCA escreva "Slide 1", "Página 1", "Slide 2", etc.
-2. PARÁGRAFO INTRODUTÓRIO CONTEXTUALIZADOR:
-   - Imediatamente após o título de cada seção (### [Título]), escreva uma frase narrativa ou parágrafo fluido contextualizando e fundamentando o raciocínio clínico.
-3. HIERARQUIA DE MARCADORES COM SETAS (->):
-   - Nível 1: - **[Conceito / Exame / Procedimento / Fator]** -> Explicação aprofundada com rigor científico, indicações, padrão-ouro e relevância.
-   - Nível 2 (Indentado com 2 espaços "  - "): - **[Subtópico / Variação / Técnica]** -> Detalhes específicos, indicações e métodos práticos.
-   - Nível 2 Comparativo / Síntese: - **Ambas / Critérios Comuns** -> Características compartilhadas, objetivos e método de guia.
-   - Nível 1 Alternativas / Complementos: - **[Conduta Alternativa / Exame Adicional]** -> Cenários de indicação clínica e relevância.
 4. EXTENSÃO FISIOPATOLÓGICA E FARMACOLÓGICA:
-   - Aprofunde com mecanismos celulares/moleculares, vias de sinalização, receptores e enzimas.
-   - Inclua correlações clínicas e opções terapêuticas detalhadas (classes medicamentosas, mecanismos e indicações).
+   - Aprofunde com mecanismos celulares/moleculares, vias de sinalização, receptores e enzimas em parágrafos claros.
+   - Inclua correlações clínicas e opções terapêuticas detalhadas.
 5. INTEGRAÇÃO VISUAL DE DIAGRAMAS E IMAGENS:
-   - Se os slides contiverem figuras, esquemas anatômicos, desenhos ou fluxogramas, incorpore suas informações e descrições diretamente na explicação dos tópicos.
+   - Se os slides contiverem figuras, esquemas anatômicos, desenhos ou fluxogramas, incorpore suas informações e descrições diretamente no texto.
 6. PROIBIDO LATEX:
-   - NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-', '->'.
+   - NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-'.
 
 Responda OBRIGATORIAMENTE em JSON válido:
 {
@@ -250,69 +209,26 @@ Responda OBRIGATORIAMENTE em JSON válido:
       : `Você é um especialista em medicina e transcrição médica acadêmica de alto rendimento.
 O usuário enviou um material didático (slides em PDF/PPTX ou documento de estudo) que frequentemente apresenta tópicos telegráficos, fragmentados e rasos.
 
-REGRA DE OURO INVIOLÁVEL: A TRANSCRIÇÃO NUNCA PODE SER RASA!
-É TERMINANTEMENTE PROIBIDO apenas copiar os marcadores fragmentados dos slides (ex: copiar apenas "Agulha grossa", "Minimamente invasiva", "Boa acurácia").
-Você DEVE OBRIGATORIAMENTE sintetizar e contextualizar cada tópico do slide em notas clínicas aprofundadas, fluidas e estruturadas, transformando fragmentos soltos em explicações médicas completas e de alto rendimento.
-
-EXEMPLO DE REFERÊNCIA OBRIGATÓRIO (SIGA ESTRITAMENTE ESTE PADRÃO DE ESTRUTURA):
-[Entrada típica de slides em PDF com notas rasas/telegráficas]:
-Slide 1:
-"Deve estar ancorado em um tripé:
-- Exame clínico
-- Exame de imagem
-- Analise histopatológica
-- É fundamental uma boa anamnese, exame físico e o complemento com exames de imagem para avaliar a necessidade de se biopsiar uma lesão.
-- A biópsia de mama é indicada quando há achados suspeitos em exames de imagem, como a mamografia ou a ecografia mamária."
-
-Slide 2:
-"Diagnóstico
-Biópsia percutânea
-- Agulha grossa (core biópsia e biópsia a vácuo - mamotomia).
-- Minimamente invasiva.
-- Boa acurácia.
-- Avaliação histopatológica e imuno-histoquímica.
-- Possibilita a programação do tratamento.
-- Lesões palpáveis quanto impalpáveis.
-- Impalpáveis: um exame de imagem (ultrassonografia, mamografia ou ressonância) deve servir como guia para o procedimento.
-[imagem da biópsia com agulha e nódulo]"
-
-[Como você DEVE obrigatoriamente estruturar a transcrição]:
-### Diagnóstico Definitivo
-
-O diagnóstico definitivo do câncer de mama é fundamentado em um tripé indissociável:
-
-- **Exame Clínico** -> Anamnese detalhada e exame físico das mamas e axilas.
-- **Exames de Imagem** -> Mamografia, ultrassonografia e/ou ressonância magnética.
-- **Análise Histopatológica** -> Biópsia da lesão, que é o padrão-ouro.
-- **Biópsia Percutânea** -> Preferencial devido à sua mínima invasividade e boa acurácia.
-  - **Core Biópsia** -> Utiliza agulha grossa para coletar cilindros de tecido.
-  - **Biópsia a Vácuo (Mamotomia)** -> Coleta maior volume de tecido.
-  - **Ambas** -> Permitem avaliação histopatológica e imuno-histoquímica, essenciais para caracterização molecular e planejamento terapêutico. Podem ser guiadas por ultrassom, mamografia (estereotaxia) ou RM para lesões não palpáveis.
-- **Biópsia Cirúrgica** -> Indicada quando a biópsia percutânea não é tecnicamente viável.
-- **Punção Aspirativa por Agulha Fina (PAAF)** -> Utilizada para avaliação citológica de linfonodos axilares, auxiliando no estadiamento inicial. Biópsias por agulha guiadas por ultrassom também podem ser realizadas em linfonodos.
-
-### Patologia
-
-DIRETRIZES DE FORMATAÇÃO E CONTEÚDO:
-1. DESDUPLICAÇÃO E UNIFICAÇÃO:
+REGRA DE OURO INVIOLÁVEL DE FORMATAÇÃO E CONTEÚDO:
+1. PREFIRA PARÁGRAFOS FLUIDOS E SUBTÍTULOS (### e ####):
+   - Sintetize e contextualize os tópicos dos slides em parágrafos clínicos fluidos, completos e bem redigidos (ex: "**Controle Pressórico Pré-Gestacional:** Mulheres com HAC devem..." como parágrafo normal, sem bolinha).
+   - Para divisões temáticas, use subtítulos (` + "`###`" + ` e ` + "`####`" + `, ex: "#### Aspectos Pré-Natais Essenciais", "#### Tratamento Farmacológico").
+2. USO RESTRITO DE MARCADORES (BOLINHAS / BULLETS):
+   - Use marcadores (` + "`* `" + `) APENAS QUANDO ESTRITAMENTE NECESSÁRIO para pequenas enumerações pontuais (ex: itens curtos de exame físico, periodicidade de consultas, critérios pontuais).
+   - NÃO transforme todo o texto em marcadores com bolinhas e NÃO use setas (` + "`->`" + `) repetitivas em todas as linhas.
+   - NUNCA crie marcadores vazios com seta para títulos (ex: jamais faça "- **Medicações de Primeira Linha** ->"; use "#### Medicações de Primeira Linha").
+3. DESDUPLICAÇÃO E UNIFICAÇÃO:
    - NUNCA repita o mesmo título de slide ou página (se vários slides têm o mesmo cabeçalho, una-os em uma única seção completa).
    - NUNCA escreva "Slide 1", "Página 1", etc.
-2. PARÁGRAFO INTRODUTÓRIO CONTEXTUALIZADOR:
-   - Imediatamente após o título de cada seção (### [Título]), escreva uma frase narrativa ou parágrafo fluido contextualizando e fundamentando o raciocínio clínico.
-3. HIERARQUIA DE MARCADORES COM SETAS (->):
-   - Nível 1: - **[Conceito / Exame / Procedimento / Fator]** -> Explicação aprofundada, indicação clínica, relevância e raciocínio médico.
-   - Nível 2 (Subitens indentados com 2 espaços "  - "): - **[Subtópico / Variação / Técnica]** -> Detalhes específicos, indicações e métodos práticos.
-   - Nível 2 Comparativo / Síntese: - **Ambas / Critérios Comuns** -> Características compartilhadas, objetivos e método de guia.
-   - Nível 1 Alternativas / Complementos: - **[Conduta Alternativa / Exame Adicional]** -> Cenários de indicação clínica e relevância.
 4. INTEGRAÇÃO VISUAL DE DIAGRAMAS E IMAGENS:
-   - Se os slides contiverem figuras, esquemas anatômicos, desenhos ou fluxogramas, incorpore suas informações e descrições diretamente na explicação dos tópicos.
+   - Se os slides contiverem figuras, esquemas anatômicos, desenhos ou fluxogramas, incorpore suas informações diretamente na explicação.
 5. PROIBIDO LATEX:
-   - NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-', '->'.
+   - NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-'.
 
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título do Documento (máximo 6 palavras)",
-  "transcription": "Transcrição COMPLETA, EXTENSA E ESTRUTURADA no padrão ouro em Markdown puro com tópicos ###, introduções narrativas, marcadores 'Termo -> Explicação detalhada' e subitens hierárquicos...",
+  "transcription": "Transcrição COMPLETA e ESTRUTURADA em Markdown puro com subtítulos ###/####, parágrafos fluidos e uso mínimo de marcadores (apenas quando necessário)...",
   "summary": "Breve síntese executiva introdutória...",
   "keyPoints": [
     "Ponto-chave 1",
@@ -347,12 +263,12 @@ Responda OBRIGATORIAMENTE em JSON válido:
     if (digitalDocs.length > 0) {
       const allExtractedText = digitalDocs.map((d) => d.fullText).join("\n\n");
       userPrompt = expand
-        ? `Transcreva e aprofunde todo o documento/slides abaixo no padrão ouro com 'Termo -> Explicação detalhada', parágrafos introdutórios e árvore hierárquica, eliminando repetições de títulos de slides e adicionando máxima extensão fisiopatológica/farmacológica:\n\n${allExtractedText}`
-        : `Transcreva todo o documento/slides abaixo no padrão ouro estruturado com 'Termo -> Explicação detalhada', parágrafos introdutórios e subitens hierárquicos, garantindo profundidade médica e eliminando qualquer fragmento raso de slide:\n\n${allExtractedText}`;
+        ? `Transcreva e aprofunde todo o documento/slides abaixo com parágrafos acadêmicos fluidos e subtítulos organizados (### e ####), usando marcadores com bolinhas APENAS quando estritamente necessário para listas curtas e eliminando repetições de títulos de slides:\n\n${allExtractedText}`
+        : `Transcreva todo o documento/slides abaixo de forma organizada com parágrafos fluidos e subtítulos (### e ####), usando marcadores com bolinhas APENAS quando estritamente necessário para listas curtas e eliminando fragmentos rasos de slide:\n\n${allExtractedText}`;
     } else {
       userPrompt = expand
-        ? `Transcreva e aprofunde todo o documento anexado no padrão ouro com 'Termo -> Explicação detalhada', parágrafos introdutórios e árvore hierárquica, eliminando repetições de páginas/slides e adicionando máxima extensão fisiopatológica/farmacológica.`
-        : `Transcreva todo o documento anexado no padrão ouro estruturado com 'Termo -> Explicação detalhada', parágrafos introdutórios e subitens hierárquicos, garantindo profundidade médica e eliminando qualquer fragmento raso de slide.`;
+        ? `Transcreva e aprofunde todo o documento anexado com parágrafos acadêmicos fluidos e subtítulos organizados (### e ####), usando marcadores com bolinhas APENAS quando estritamente necessário para listas curtas.`
+        : `Transcreva todo o documento anexado de forma organizada com parágrafos fluidos e subtítulos (### e ####), usando marcadores com bolinhas APENAS quando estritamente necessário para listas curtas.`;
     }
 
     let result: any = null;
@@ -426,12 +342,11 @@ Responda OBRIGATORIAMENTE em JSON válido:
         .replace(/\$\$/g, "")
         .replace(/\$/g, "");
       t = cleanLatexAndBadges(t);
-      return t
+      const filtered = t
         .split("\n")
         .filter((line: string) => !/^(?:#{1,6}\s+|\*\*)?P[áa]gina\s+\d+(?:\*\*)?\s*$/i.test(line.trim()))
-        .join("\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+        .join("\n");
+      return reduceExcessiveBulletsInTranscription(filtered);
     };
 
     finalTranscription = sanitizeText(finalTranscription);

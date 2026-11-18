@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJSONFromAI } from "@/lib/ai";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
+import { reduceExcessiveBulletsInTranscription } from "@/lib/rich-text-utils";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -18,50 +19,34 @@ export async function POST(request: NextRequest) {
 O usuário enviou um texto/documento com tópicos didáticos (frequentemente com cabeçalhos repetidos de slides).
 
 SUA MISSÃO MANDATÓRIA (MODO EXPANDIR ATIVADO):
-Reorganizar todo o conteúdo e REESCREVER um Resumo Master no padrão ouro abaixo, com MÁXIMO NÍVEL DE REBUSCAMENTO ACADÊMICO e ESTRUTURAÇÃO HIERÁRQUICA:
+Reorganizar todo o conteúdo e REESCREVER um Resumo Master com MÁXIMO NÍVEL DE PROFUNDIDADE ACADÊMICA e ESTRUTURAÇÃO LIMPA:
 
-ESTRUTURA PADRÃO OURO OBRIGATÓRIA (MODO EXPANDIDO):
+DIRETRIZES DE FORMATAÇÃO E CONTEÚDO:
 1. DESDUPLICAÇÃO E UNIFICAÇÃO ABSOLUTA:
-   - NUNCA repita o mesmo título de slide ou página (ex: crie APENAS UM título de seção '# Fatores de Risco e Prevenção' para todo o tema).
+   - NUNCA repita o mesmo título de slide ou página.
    - NUNCA escreva 'Slide 1', 'Página 1', etc.
-2. PARÁGRAFO INTRODUTÓRIO CONTEXTUALIZADOR:
-   - Imediatamente após o título, escreva um parágrafo narrativo fluido contextualizando o tema clínico/biológico (ex: 'O câncer de mama é uma doença multifatorial, resultado de uma complexa interação entre genética, fatores hormonais e estilo de vida.').
-3. HIERARQUIA DE MARCADORES COM SETAS (->) E NEGRITO:
-   - Tópico Principal (nível 1):
-     * **Nome do Tópico ->** Explicação aprofundada com rigor científico.
-     Exemplo:
-     * **Idade Avançada ->** É o principal fator de risco, refletindo o acúmulo de exposições e alterações biológicas relacionadas ao envelhecimento.
-     * **Fatores Endócrinos/História Reprodutiva ->** Estão primariamente ligados à exposição prolongada e intensa ao estímulo estrogênico, seja endógeno ou exógeno.
-   - Subtópicos Indentados (nível 2, com 2 espaços de recuo):
-     * **Subtópico ->** Detalhamento conceitual e bioquímico.
-     Exemplo:
-     * **Menarca precoce** (primeira menstruação antes dos 12 anos).
-     * **Primeira gravidez após os 30 anos ou Nuliparidade** (mulher que nunca gestou). A gestação, em contraste, confere um efeito protetor significativo, em parte devido à alta produção de progesterona, que modula os receptores de estrógeno e diminui a atividade mitótica estrogênio-induzida. A progesterona aumenta a 17-hidroxidesidrogenase, convertendo estradiol em estrona, uma forma biologicamente menos potente...
-   - Tópicos Conceituais & Mecanismos Moleculares Aprofundados:
-     * **O Papel do Estrógeno na Oncogênese Mamária ->** ...
-       * **Receptores de Estrógeno (ER) ->** Localizam-se principalmente no núcleo, mas também no citoplasma e membrana celular...
-         * **ERα e ERβ ->** Compartilham similaridades estruturais e funcionais...
-       * **Mecanismos de Ação do Estrógeno ->**
-         * **Via Genômica ->** O estrógeno se liga a receptores intracelulares, formando um dímero... (Referência: DOI: 10.3390/ijerph18189834).
-         * **Via Não-Genômica ->** Envolve a interação dos ER com outras vias de sinalização (PI3K/AKT, MAPK, TGF-α, IGF-1, TGF-β)...
-4. REBUSCAMENTO ACADÊMICO MÁXIMO:
+2. PREFIRA PARÁGRAFOS FLUIDOS E SUBTÍTULOS (### e ####):
+   - Desenvolva as explicações fisiopatológicas, farmacológicas e clínicas em parágrafos fluidos e bem encadeados (ex: "**Controle Pressórico Pré-Gestacional:** Mulheres com HAC devem..." em parágrafo corrido, sem bolinha).
+   - Use subtítulos (` + "`###`" + ` e ` + "`####`" + `) para organizar seções e subdivisões.
+3. USO RESTRITO DE MARCADORES (BOLINHAS / BULLETS):
+   - Use marcadores (` + "`* `" + `) APENAS quando estritamente necessário para listar enumerações curtas e pontuais.
+   - NÃO transforme parágrafos explicativos nem subtítulos em marcadores com bolinhas ou setas (` + "`->`" + `).
+4. PROFUNDIDADE ACADÊMICA MÁXIMA:
    - Use terminologia médica rigorosa: vias metabólicas, enzimas específicas, receptores, biomarcadores e cascatas moleculares.
-   - Inclua correlações clínicas e referências científicas ou DOIs pertinentes.
-5. REGRAS TÉCNICAS:
-   - PROIBIDO LATEX: NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-', '->'.
-   - PROIBIDO LISTAS NUMERADAS (sem 1., 2., 3.). Use APENAS a árvore hierárquica de bullets com asterisco (*).
+5. PROIBIDO LATEX:
+   - NUNCA use cifras de dólar ($). Use texto puro: '<=', '>=', '+/-'.
 
 Responda OBRIGATORIAMENTE em JSON válido:
 {
-  "summary": "Texto integral do Resumo Expandido em Markdown puro padrão ouro...",
+  "summary": "Texto integral do Resumo Expandido em Markdown puro...",
   "keyPoints": ["Ponto-chave essencial 1", "Ponto-chave essencial 2", "Ponto-chave essencial 3", "Ponto-chave essencial 4"]
 }`
-      : `Atue como um transcritor e organizador acadêmico. Transcreva o conteúdo fielmente em forma de texto limpo e organizado.
+      : `Atue como um transcritor e organizador acadêmico. Transcreva o conteúdo fielmente em forma de texto limpo e organizado em parágrafos e subtítulos.
 REGRAS:
 1. NUNCA repita o mesmo título de slide ou página (elimine cabeçalhos repetidos e agrupe o conteúdo sob um único título).
 2. NUNCA escreva 'Slide 1', 'Página 1', etc.
-3. Não invente expansões externas; transcreva o conteúdo fielmente.
-4. Sem LaTeX ($). Use texto puro: '<=', '>=', '->'.
+3. Prefira parágrafos fluidos e subtítulos (### e ####); use marcadores com bolinhas (* ) APENAS quando estritamente necessário para listas curtas.
+4. Sem LaTeX ($). Use texto puro: '<=', '>='.
 
 Responda OBRIGATORIAMENTE em JSON válido:
 {
@@ -83,7 +68,7 @@ Responda OBRIGATORIAMENTE em JSON válido:
       .replace(/→/g, "->")
       .replace(/\$\$/g, "")
       .replace(/\$/g, "");
-    rawSummary = cleanLatexAndBadges(rawSummary);
+    rawSummary = reduceExcessiveBulletsInTranscription(cleanLatexAndBadges(rawSummary));
 
     return NextResponse.json({
       summary: rawSummary,

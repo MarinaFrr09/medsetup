@@ -33,24 +33,24 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
 
   const questionTextClass =
     fontSize === "sm"
-      ? "text-[15px] sm:text-base font-medium leading-relaxed"
+      ? "text-base sm:text-lg font-medium leading-relaxed"
       : fontSize === "md"
-      ? "text-lg sm:text-xl font-medium leading-relaxed"
-      : "text-base sm:text-lg font-medium leading-relaxed";
+      ? "text-xl sm:text-2xl font-medium leading-relaxed"
+      : "text-lg sm:text-xl font-medium leading-relaxed";
 
   const optionTextClass =
     fontSize === "sm"
-      ? "text-xs sm:text-[13px] leading-relaxed"
+      ? "text-xs sm:text-sm leading-relaxed"
       : fontSize === "md"
-      ? "text-sm sm:text-[15px] leading-relaxed"
-      : "text-[13px] sm:text-sm leading-relaxed";
+      ? "text-base sm:text-lg leading-relaxed"
+      : "text-sm sm:text-base leading-relaxed";
 
   const optionBadgeClass =
     fontSize === "sm"
-      ? "h-6 w-6 text-[10px]"
+      ? "h-7 w-7 text-xs"
       : fontSize === "md"
-      ? "h-7.5 w-7.5 text-xs"
-      : "h-7 w-7 text-[11px]";
+      ? "h-9 w-9 text-sm"
+      : "h-8 w-8 text-xs";
 
   const question = questions?.[currentIndex];
   const liveQuestion = allQuestions.find((q) => q.id === question?.id) || question;
@@ -205,7 +205,7 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
     <div
       className={cn(
         inline
-          ? "w-full flex flex-col bg-white dark:bg-[#1A1D27] rounded-3xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs overflow-hidden"
+          ? "w-full max-w-4xl xl:max-w-[980px] flex flex-col bg-white dark:bg-[#1A1D27] rounded-3xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs overflow-hidden"
           : "fixed inset-0 z-50 flex flex-col bg-gray-50 dark:bg-[#0F1117]"
       )}
     >
@@ -264,8 +264,8 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
       </div>
 
       {/* Main Content */}
-      <div className={cn(inline ? "p-5 sm:p-7 w-full flex justify-center" : "flex-1 overflow-y-auto px-6 py-8 sm:py-10")}>
-        <div className={cn("w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto", inline ? "" : "px-6 py-8 sm:py-10")}>
+      <div className={cn(inline ? "p-6 sm:p-8 md:p-10 w-full" : "flex-1 overflow-y-auto px-6 py-8 sm:py-10")}>
+        <div className={cn("w-full mx-auto", inline ? "" : "px-6 py-8 sm:py-10 max-w-6xl")}>
           <AnimatePresence mode="wait">
             {!showResults ? (
               <motion.div
@@ -273,7 +273,7 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="space-y-5"
+                className="space-y-6"
               >
                 {/* Difficulty Badge, Clean Subject & Actions */}
                 <div className="flex items-center justify-between gap-2">
@@ -352,11 +352,11 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
                           onClick={() => handleAnswer(opt.id)}
                           disabled={isAnswered}
                           className={cn(
-                            "w-full flex items-center justify-between rounded-xl border p-3 sm:p-3.5 text-left transition-all duration-200 cursor-pointer shadow-2xs select-none",
+                            "w-full flex items-center justify-between rounded-2xl border p-3.5 sm:p-4 text-left transition-all duration-200 cursor-pointer shadow-2xs select-none",
                             btnClass
                           )}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3.5">
                             <span
                               className={cn(
                                 "flex items-center justify-center rounded-lg font-bold flex-shrink-0 transition-colors border",
@@ -559,7 +559,7 @@ export default function QuizMode({ questions, onClose, inline = true, initialInd
       {/* Footer Controls */}
       {!showResults && (
         <div className="border-t border-gray-200 bg-white px-6 py-4 dark:border-[#2a2d3a] dark:bg-[#1A1D27]">
-          <div className="mx-auto flex w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl items-center justify-between">
+          <div className="flex w-full items-center justify-between">
             <button
               onClick={handlePrev}
               disabled={currentIndex === 0}

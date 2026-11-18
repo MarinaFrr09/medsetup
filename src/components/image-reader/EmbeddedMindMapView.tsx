@@ -142,16 +142,50 @@ function InnerEmbeddedMindMap({ data }: EmbeddedMindMapViewProps) {
     };
   }, [data, title]);
 
-  const [nodes, setNodes] = useState<Node[]>(initialElements.nodes);
+  const withInlineEditing = useCallback((nds: Node[]): Node[] => {
+    return nds.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        onUpdateLabel: (newLabel: string) => {
+          setNodes((current) =>
+            current.map((item) =>
+              item.id === n.id ? { ...item, data: { ...item.data, label: newLabel } } : item
+            )
+          );
+        },
+      },
+    }));
+  }, []);
+
+  const [nodes, setNodes] = useState<Node[]>(() => withInlineEditing(initialElements.nodes));
   const [edges, setEdges] = useState<Edge[]>(initialElements.edges);
 
   useEffect(() => {
-    setNodes(initialElements.nodes);
+    setNodes(withInlineEditing(initialElements.nodes));
     setEdges(initialElements.edges);
     setTimeout(() => {
       reactFlowInstance?.fitView({ padding: 0.25, duration: 400 });
     }, 150);
-  }, [initialElements, reactFlowInstance]);
+  }, [initialElements, reactFlowInstance, withInlineEditing]);
+
+  useEffect(() => {
+    const handleNodeAiUpdate = (e: Event) => {
+      const custom = e as CustomEvent<{ nodeId?: string; newLabel?: string }>;
+      const targetId = custom.detail?.nodeId;
+      const newLabel = custom.detail?.newLabel;
+      if (!targetId || typeof newLabel !== "string") return;
+
+      setNodes((current) =>
+        current.map((item) =>
+          item.id === targetId ? { ...item, data: { ...item.data, label: newLabel } } : item
+        )
+      );
+    };
+
+    window.addEventListener("medsetup:update-mindmap-node", handleNodeAiUpdate);
+    return () => window.removeEventListener("medsetup:update-mindmap-node", handleNodeAiUpdate);
+  }, []);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),

@@ -50,7 +50,7 @@ Sua missão fundamental:
 1. Analisar a gravação COMPLETA da aula do PRIMEIRO AO ÚLTIMO SEGUNDO, cobrindo integralmente toda a duração sem truncar e sem limitar apenas aos minutos iniciais.
 2. Filtrar ruídos de microfone, pausas longas e conversas paralelas para manter o foco estrito no conteúdo didático da aula.
 3. Transcrever com fidelidade máxima, sem perdas e sem abreviações no campo 'cleanTranscript'. Se houver uma transcrição capturada ao vivo ou áudio integral, utilize todas as falas do início ao fim para fornecer a transcrição cronológica completa.
-4. Desenvolver uma Síntese/Resumo Completo e minucioso no campo 'summary' usando Markdown rico (Visão Geral, Conceitos Fundamentais, Fórmulas/Regras e Aplicações Práticas), cobrindo todo o conteúdo ensinado ao longo de toda a gravação.
+4. Desenvolver uma Síntese/Resumo Extenso, Completo e minucioso no campo 'summary' usando Markdown rico (Visão Geral, Conceitos Fundamentais, Fisiopatologia, Fórmulas/Regras e Aplicações Práticas), cobrindo exaustivamente todo o conteúdo ensinado ao longo de toda a gravação. O resumo DEVE SER LONGO, RICO E APROFUNDADO, sem cortes, sem telegráfico e sem resumos superficiais.
 ${
   isExpanded
     ? `

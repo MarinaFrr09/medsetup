@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJSONFromAI } from "@/lib/ai";
 import { extractTextFromDocx, extractTextFromPptx, extractTextFromPdf } from "@/lib/document-parser";
+import { balanceQuestionBatch } from "@/lib/question-balancer";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 
@@ -345,9 +346,15 @@ O estilo e a redação das questões devem espelhar com perfeição as provas re
    - Correlações reais de imunofenotipagem para diagnóstico diferencial (ex: Positividade para Ber-EP4 e negatividade para CK5/6 diferenciando linhagem basaloide de escamosa; marcadores S-100, HMB-45, Melan-A para linhagem melanocítica; p63, p53, Ki-67).
 4. BIOLOGIA MOLECULAR E ONCOGENÉTICA:
    - Mecanismos de carcinogênese e vias de proliferação celular: mutações de ganho de função em proto-oncogenes (ex: BRAF V600E em melanoma levando à hiperatividade proliferativa, KRAS, EGFR) versus genes supressores de tumor (TP53, RB1).
-5. PADRÃO DAS ALTERNATIVAS (RANDOMIZADAS E NÃO ÓBVIAS):
+5. PADRÃO DAS ALTERNATIVAS (PROIBIÇÃO DO "VÍCIO DA MAIOR ALTERNATIVA" / ANTI-LENGTH BIAS):
    - 4 alternativas (A, B, C, D) mutualmente exclusivas, com apenas UMA alternativa correta.
-   - VARIAÇÃO NATURAL E SEM PADRÃO FIXO: Evite o vício de fazer a resposta correta ser sempre a mais longa. Varie naturalmente a extensão entre as alternativas (ora mais concisas, ora mais elaboradas, sem denunciar a correta).
+   - PARIDADE DE EXTENSÃO OBRIGATÓRIA: Todas as alternativas de uma mesma questão DEVEM ter extensões semelhantes (mesmo número aproximado de palavras). Se a correta cita dosagens/condutas completas, os distratores DEVEM OBRIGATORIAMENTE conter dosagens e condutas completas com a mesma sofisticação técnica (proibido deixar distratores curtos e genéricos enquanto a correta é longa!).
+   - PROIBIDO EXPLICAR DENTRO DA ALTERNATIVA: NUNCA inclua justificativas ou explicações na alternativa correta (proibido escrever ", visto que...", ", pois...", ", garantindo assim...", etc.). A alternativa é apenas a afirmação ou conduta direta; explicações pertencem exclusivamente ao campo "explanation".
+   - RANDOMIZAÇÃO ATIVA DE TAMANHO AO LONGO DA PROVA:
+     * Em pelo menos 40% das questões, faça um DISTRATOR (alternativa incorreta) ser a opção MAIS LONGA da questão!
+     * Em pelo menos 30% das questões, faça a alternativa CORRETA ser a opção MAIS CURTA de todas!
+     * Nas demais, mantenha todas as alternativas com rigorosamente o mesmo tamanho.
+     * É TERMINANTEMENTE PROIBIDO que a correta seja sempre a mais longa!
    - DISTRATORES SOFISTICADOS E NÃO ÓBVIOS: Os distratores devem ser diagnósticos diferenciais reais, condutas plausíveis ou mecanismos verossímeis, compartilhando terminologia médica autêntica. NUNCA utilize distratores simplistas ou fáceis de eliminar.
    - NUNCA inclua textos ou notas de 'resposta esperada' de professor nas alternativas ou enunciados.
 `;
@@ -596,18 +603,20 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura:
       const essays1 = Math.min(numEssays, half1);
       const essays2 = Math.max(0, numEssays - essays1);
 
-      const [res1, res2] = await Promise.all([
-        generateJSONFromAI({
-          systemPrompt: getSystemPrompt(half1, essays1, `Parte 1 de 2: ${half1} questões`),
-          userPrompt: `${userPromptText} (Parte 1 de 2: ${half1} questões). Cubra proporcionalmente os materiais anexados.`,
-          fileAttachments: rawFiles,
-        }),
-        generateJSONFromAI({
-          systemPrompt: getSystemPrompt(half2, essays2, `Parte 2 de 2: ${half2} questões`),
-          userPrompt: `${userPromptText} (Parte 2 de 2: ${half2} questões complementares sem repetir a Parte 1). Cubra proporcionalmente os materiais anexados.`,
-          fileAttachments: rawFiles,
-        }),
-      ]);
+      const res1 = await generateJSONFromAI({
+        systemPrompt: getSystemPrompt(half1, essays1, `Parte 1 de 2: ${half1} questões`),
+        userPrompt: `${userPromptText} (Parte 1 de 2: ${half1} questões). Cubra proporcionalmente os materiais anexados.`,
+        fileAttachments: rawFiles,
+      });
+
+      // Breve pausa para respeitar cotas de requisições concorrentes da API
+      await new Promise((r) => setTimeout(r, 1200));
+
+      const res2 = await generateJSONFromAI({
+        systemPrompt: getSystemPrompt(half2, essays2, `Parte 2 de 2: ${half2} questões`),
+        userPrompt: `${userPromptText} (Parte 2 de 2: ${half2} questões complementares sem repetir a Parte 1). Cubra proporcionalmente os materiais anexados.`,
+        fileAttachments: rawFiles,
+      });
 
       const q1 = extractQuestionsFromAI(res1);
       const q2 = extractQuestionsFromAI(res2);
@@ -636,8 +645,11 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura:
       });
     }
 
+    // Balance options length and randomize alternatives across multiple-choice questions
+    const balancedQuestions = await balanceQuestionBatch(allQuestions);
+
     // Shuffle questions thoroughly for randomized order as requested by user
-    const shuffledQuestions = shuffleArray(allQuestions);
+    const shuffledQuestions = shuffleArray(balancedQuestions);
 
     // Renumber sequentially 1..N
     const formattedQuestions = shuffledQuestions.map((q, idx) => ({

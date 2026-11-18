@@ -2,9 +2,14 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
+import { installClientApiInterceptor } from '@/lib/client-api-fallback';
 
 export function ThemeInitializer() {
   const theme = useAppStore((state) => state.theme);
+
+  useEffect(() => {
+    installClientApiInterceptor();
+  }, []);
 
   useEffect(() => {
     const applyTheme = (currentTheme: string) => {

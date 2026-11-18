@@ -11,6 +11,7 @@ import {
   FolderInput,
   Calendar,
   ArrowRight,
+  ArrowLeft,
   Network,
   Layers,
   Grid,
@@ -28,6 +29,8 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import VerticalFolderSidebar from "@/components/common/VerticalFolderSidebar";
+import FolderCardGrid, { SubfoldersGrid } from "@/components/common/FolderCardGrid";
+import FolderManagerModal from "@/components/common/FolderManagerModal";
 import { useAppStore, MindMapItem } from "@/stores/useAppStore";
 import toast from "react-hot-toast";
 
@@ -45,47 +48,6 @@ interface MindMapSummary {
   edges?: any[];
 }
 
-const LAYOUT_META: Record<
-  string,
-  { label: string; icon: typeof GitBranch; bg: string; text: string }
-> = {
-  free: {
-    label: "Livre 4D",
-    icon: Grid,
-    bg: "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60",
-    text: "text-indigo-700 dark:text-indigo-300",
-  },
-  right: {
-    label: "Árvore Horizontal",
-    icon: Network,
-    bg: "bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60",
-    text: "text-purple-700 dark:text-purple-300",
-  },
-  "top-down": {
-    label: "Organograma",
-    icon: Layers,
-    bg: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60",
-    text: "text-emerald-700 dark:text-emerald-300",
-  },
-  topDown: {
-    label: "Organograma",
-    icon: Layers,
-    bg: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60",
-    text: "text-emerald-700 dark:text-emerald-300",
-  },
-  radial: {
-    label: "Radial 360°",
-    icon: CircleDot,
-    bg: "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60",
-    text: "text-blue-700 dark:text-blue-300",
-  },
-  fishbone: {
-    label: "Espinha de Peixe",
-    icon: Activity,
-    bg: "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60",
-    text: "text-rose-700 dark:text-rose-300",
-  },
-};
 
 const THEME_DOTS: Record<string, string[]> = {
   blue: ["#2563EB", "#0284C7", "#0D9488"],
@@ -99,56 +61,106 @@ const THEME_DOTS: Record<string, string[]> = {
 
 export default function MindMapsPage() {
   const router = useRouter();
-  const { folders, mindmaps, addMindMap, deleteMindMap, moveMindMapToFolder } =
-    useAppStore();
+  const navigateToMindMap = (mapId: string) => {
+    if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+      router.push(`/mindmaps/default?id=${encodeURIComponent(mapId)}`);
+    } else {
+      router.push(`/mindmaps/${mapId}`);
+    }
+  };
+  const {
+    folders,
+    mindmaps,
+    trashItems,
+    addMindMap,
+    deleteMindMap,
+    moveMindMapToFolder,
+  } = useAppStore();
 
   const [maps, setMaps] = useState<MindMapSummary[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [selectedLayout, setSelectedLayout] = useState<string>("");
+  const [viewAllMaps, setViewAllMaps] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<any>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [movingMap, setMovingMap] = useState<MindMapSummary | null>(null);
 
-  // Load maps from localStorage and useAppStore with bidirectional sync
+  // Load maps from useAppStore and localStorage with full bidirectional sync
   useEffect(() => {
     try {
+      const trashedIds = new Set(
+        (trashItems || [])
+          .filter((t) => t.type === "mindmap")
+          .map((t) => String(t.originalId))
+      );
+
+      const storedById = new Map<string, any>();
       const storedKeys = Object.keys(localStorage).filter((k) =>
         k.startsWith("mindmap_")
       );
-      const loaded: MindMapSummary[] = [];
-      const seenIds = new Set<string>();
-
       storedKeys.forEach((key) => {
         try {
           const val = JSON.parse(localStorage.getItem(key) || "{}");
           if (val && val.id) {
-            loaded.push({
-              id: val.id,
-              name: val.name,
-              description: val.description || "",
-              layout: val.layout || "right",
-              colorTheme: val.colorTheme || "blue",
-              folderId: val.folderId || "folder-geral",
-              date: val.date || "",
-            });
-            seenIds.add(String(val.id));
+            if (trashedIds.has(String(val.id))) {
+              localStorage.removeItem(key);
+            } else {
+              storedById.set(String(val.id), val);
+            }
           }
         } catch (e) {}
       });
 
-      // Merge store maps
+      const loaded: MindMapSummary[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. Primary source: useAppStore.mindmaps (keeps exact folderId so Sidebar and Page always match)
       (mindmaps || []).forEach((sm) => {
-        if (sm && sm.id && !seenIds.has(String(sm.id))) {
+        if (sm && sm.id && !seenIds.has(String(sm.id)) && !trashedIds.has(String(sm.id))) {
+          const localVal = storedById.get(String(sm.id));
           loaded.push({
             id: sm.id,
-            name: sm.name,
-            description: sm.description || "",
-            layout: sm.layout || "right",
-            colorTheme: sm.colorTheme || "blue",
-            folderId: sm.folderId || "folder-geral",
-            date: sm.date || "",
+            name: sm.name || localVal?.name || "Mapa Mental",
+            description: sm.description || localVal?.description || "",
+            layout: sm.layout || localVal?.layout || "right",
+            colorTheme: sm.colorTheme || localVal?.colorTheme || "blue",
+            folderId: sm.folderId,
+            date: sm.date || localVal?.date || "",
+            nodes: sm.nodes && sm.nodes.length > 0 ? sm.nodes : localVal?.nodes,
+            edges: sm.edges && sm.edges.length > 0 ? sm.edges : localVal?.edges,
           });
           seenIds.add(String(sm.id));
+        }
+      });
+
+      // 2. Migrate any orphan maps found in localStorage into useAppStore so Sidebar & Page stay in sync
+      storedById.forEach((val, idStr) => {
+        if (!seenIds.has(idStr) && !trashedIds.has(idStr)) {
+          const summary: MindMapSummary = {
+            id: val.id,
+            name: val.name || "Mapa Mental",
+            description: val.description || "",
+            layout: val.layout || "right",
+            colorTheme: val.colorTheme || "blue",
+            folderId: val.folderId,
+            date: val.date || "",
+            nodes: val.nodes || [],
+            edges: val.edges || [],
+          };
+          loaded.push(summary);
+          seenIds.add(idStr);
+          addMindMap({
+            id: summary.id,
+            name: summary.name,
+            description: summary.description,
+            layout: summary.layout,
+            colorTheme: summary.colorTheme,
+            folderId: summary.folderId,
+            date: summary.date,
+            nodes: summary.nodes || [],
+            edges: summary.edges || [],
+          });
         }
       });
 
@@ -158,7 +170,7 @@ export default function MindMapsPage() {
     } catch (err) {
       console.warn("Could not load mindmaps:", err);
     }
-  }, [mindmaps]);
+  }, [mindmaps, trashItems, addMindMap]);
 
   const handleMindMapCreated = (newMap: MindMapSummary) => {
     try {
@@ -171,7 +183,7 @@ export default function MindMapsPage() {
       description: newMap.description,
       layout: newMap.layout,
       colorTheme: newMap.colorTheme,
-      folderId: newMap.folderId || selectedFolderId || "folder-geral",
+      folderId: newMap.folderId || selectedFolderId || "folder-mm-geral",
       date: newMap.date,
       nodes: newMap.nodes || [],
       edges: newMap.edges || [],
@@ -179,7 +191,7 @@ export default function MindMapsPage() {
     addMindMap(storeMapItem);
 
     setMaps((prev) => [newMap, ...prev.filter((m) => m.id !== newMap.id)]);
-    router.push(`/mindmaps/${newMap.id}`);
+    navigateToMindMap(newMap.id);
   };
 
   const handleDeleteMap = (e: React.MouseEvent, id: string) => {
@@ -195,7 +207,7 @@ export default function MindMapsPage() {
 
   const handleConfirmMove = (targetFolderId: string | undefined) => {
     if (!movingMap) return;
-    const finalFolder = targetFolderId || "folder-geral";
+    const finalFolder = targetFolderId || "folder-mm-geral";
 
     moveMindMapToFolder(movingMap.id, finalFolder);
 
@@ -222,12 +234,39 @@ export default function MindMapsPage() {
     setMovingMap(null);
   };
 
-  // Filtered mind maps
+  const mindmapFolders = useMemo(() => {
+    return folders.filter((f) => f.type === "mindmaps");
+  }, [folders]);
+
+  const mindmapFolderIds = useMemo(() => {
+    return new Set(mindmapFolders.map((f) => f.id));
+  }, [mindmapFolders]);
+
+  const activeFolderIds = useMemo(() => {
+    if (!selectedFolderId || selectedFolderId === "unassigned") return null;
+    const getDescendants = (id: string): string[] => {
+      const children = mindmapFolders.filter((f) => f.parentId === id).map((f) => f.id);
+      return [id, ...children.flatMap(getDescendants)];
+    };
+    return new Set(getDescendants(selectedFolderId));
+  }, [selectedFolderId, mindmapFolders]);
+
+  // Filtered mind maps (100% synchronized with VerticalFolderSidebar)
   const filteredMaps = useMemo(() => {
     return maps.filter((m) => {
-      const mFolder = m.folderId || "folder-geral";
+      const effectiveFolder =
+        !m.folderId || m.folderId === "folder-geral" || !mindmapFolderIds.has(m.folderId)
+          ? "folder-mm-geral"
+          : m.folderId;
+
       const matchesFolder =
-        selectedFolderId === null || mFolder === selectedFolderId;
+        selectedFolderId === null
+          ? true
+          : selectedFolderId === "unassigned"
+          ? !m.folderId || !mindmapFolderIds.has(m.folderId)
+          : activeFolderIds !== null
+          ? activeFolderIds.has(effectiveFolder)
+          : effectiveFolder === selectedFolderId;
 
       const matchesSearch =
         !searchQuery.trim() ||
@@ -235,24 +274,29 @@ export default function MindMapsPage() {
         (m.description &&
           m.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchesLayout =
-        !selectedLayout ||
-        m.layout === selectedLayout ||
-        (selectedLayout === "topDown" && (m.layout === "topDown" || m.layout === "top-down"));
-
-      return matchesFolder && matchesSearch && matchesLayout;
+      return matchesFolder && matchesSearch;
     });
-  }, [maps, selectedFolderId, searchQuery, selectedLayout]);
-
-  const mindmapFolders = useMemo(() => {
-    return folders.filter((f) => f.type === "mindmaps");
-  }, [folders]);
+  }, [maps, selectedFolderId, activeFolderIds, searchQuery, mindmapFolderIds]);
 
   // Active folder name and color
   const activeFolder = useMemo(() => {
     if (!selectedFolderId) return null;
+    if (selectedFolderId === "unassigned") {
+      return {
+        id: "unassigned",
+        name: "Geral / Sem Pasta",
+        color: "#F59E0B",
+        type: "mindmaps" as const,
+        createdAt: "Hoje",
+      };
+    }
     return mindmapFolders.find((f) => f.id === selectedFolderId) || null;
   }, [mindmapFolders, selectedFolderId]);
+
+  const isViewingFolders =
+    selectedFolderId === null &&
+    !searchQuery.trim() &&
+    !viewAllMaps;
 
   // Mini Dashboard Metrics (clean, proportional & sem poluição)
   const dashboardStats = useMemo(() => {
@@ -369,7 +413,7 @@ export default function MindMapsPage() {
         <div
           onClick={() => {
             if (dashboardStats.latestMap) {
-              router.push(`/mindmaps/${dashboardStats.latestMap.id}`);
+              navigateToMindMap(dashboardStats.latestMap.id);
             }
           }}
           className={cn(
@@ -409,63 +453,104 @@ export default function MindMapsPage() {
           type="mindmaps"
           selectedFolderId={selectedFolderId}
           onSelectFolder={setSelectedFolderId}
+          onSelectItem={(mapId) => navigateToMindMap(mapId)}
           className="w-full lg:w-72 xl:w-80 shrink-0"
-          extraFilterSlot={
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 flex items-center gap-2">
-                  <Filter size={14} className="text-purple-500" />
-                  <span>Filtros Rápidos</span>
-                </span>
-                {selectedLayout && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLayout("")}
-                    className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-
-              {/* Layout Filter */}
-              <div>
-                <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block mb-1.5">
-                  Layout Estrutural:
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { key: "right", label: "Árvore" },
-                    { key: "topDown", label: "Organograma" },
-                    { key: "radial", label: "Radial" },
-                    { key: "free", label: "Livre" },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() =>
-                        setSelectedLayout(
-                          selectedLayout === item.key ? "" : item.key
-                        )
-                      }
-                      className={`py-1.5 px-2 text-xs font-bold rounded-lg border transition-all cursor-pointer text-center ${
-                        selectedLayout === item.key
-                          ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300"
-                          : "bg-gray-50 dark:bg-[#0F1117] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:bg-gray-100"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          }
         />
 
-        {/* Right Column: Search, Filters and Mind Map Gallery Cards */}
+        {/* Right Column: Folders View OR Mind Map Gallery */}
         <div className="flex-1 min-w-0 space-y-5 w-full">
-          {/* Active Folder Header + Search Toolbar */}
+          {isViewingFolders ? (
+            <FolderCardGrid
+              title="Pastas de Mapas Mentais"
+              subtitle="Selecione uma pasta para visualizar seus mapas mentais ou crie uma nova pasta temática."
+              folders={mindmapFolders}
+              getItemCount={(folderId) => {
+                const getDescendants = (id: string): string[] => {
+                  const children = mindmapFolders.filter((f) => f.parentId === id).map((f) => f.id);
+                  return [id, ...children.flatMap(getDescendants)];
+                };
+                const targetIds = new Set(getDescendants(folderId));
+                return maps.filter((m) => {
+                  const eff =
+                    !m.folderId || m.folderId === "folder-geral" || !mindmapFolderIds.has(m.folderId)
+                      ? "folder-mm-geral"
+                      : m.folderId;
+                  return targetIds.has(eff);
+                }).length;
+              }}
+              getItemPreviews={(folderId) =>
+                maps
+                  .filter((m) => {
+                    const eff =
+                      !m.folderId || m.folderId === "folder-geral" || !mindmapFolderIds.has(m.folderId)
+                        ? "folder-mm-geral"
+                        : m.folderId;
+                    return eff === folderId;
+                  })
+                  .map((m) => ({ id: m.id, title: m.name }))
+              }
+              itemLabel={{ singular: "mapa", plural: "mapas" }}
+              onSelectFolder={(folderId) => {
+                setSelectedFolderId(folderId);
+                setViewAllMaps(false);
+              }}
+              onCreateFolder={() => {
+                setFolderToEdit(null);
+                setIsFolderModalOpen(true);
+              }}
+              onViewAll={() => setViewAllMaps(true)}
+              viewAllLabel="Ver Todos em Lista"
+            />
+          ) : (
+            <>
+              {/* Back to Folders Button */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parentId = activeFolder?.parentId || null;
+                    setSelectedFolderId(parentId);
+                    setViewAllMaps(false);
+                    setSearchQuery("");
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  {activeFolder?.parentId
+                    ? `Voltar para "${mindmapFolders.find((f) => f.id === activeFolder.parentId)?.name || "Pasta Anterior"}"`
+                    : "Voltar para Pastas"}
+                </button>
+              </div>
+
+              {/* Subpastas no início da pasta aberta */}
+              {selectedFolderId && (
+                <SubfoldersGrid
+                  parentFolderId={selectedFolderId}
+                  parentFolderName={activeFolder?.name}
+                  folders={mindmapFolders}
+                  getItemCount={(folderId) => {
+                    const getDescendants = (id: string): string[] => {
+                      const children = mindmapFolders.filter((f) => f.parentId === id).map((f) => f.id);
+                      return [id, ...children.flatMap(getDescendants)];
+                    };
+                    const targetIds = new Set(getDescendants(folderId));
+                    return maps.filter((m) => {
+                      const eff =
+                        !m.folderId || m.folderId === "folder-geral" || !mindmapFolderIds.has(m.folderId)
+                          ? "folder-mm-geral"
+                          : m.folderId;
+                      return targetIds.has(eff);
+                    }).length;
+                  }}
+                  itemLabel={{ singular: "mapa", plural: "mapas" }}
+                  onSelectFolder={(subId) => {
+                    setSelectedFolderId(subId);
+                    setViewAllMaps(false);
+                  }}
+                />
+              )}
+
+              {/* Active Folder Header + Search Toolbar */}
           <div className="bg-white dark:bg-[#1A1D27] p-4 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               {/* Folder Breadcrumb */}
@@ -527,9 +612,6 @@ export default function MindMapsPage() {
           {filteredMaps.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4.5">
               {filteredMaps.map((map) => {
-                const layoutMeta =
-                  LAYOUT_META[map.layout] || LAYOUT_META.free;
-                const LayoutIcon = layoutMeta.icon;
                 const mapFolder = folders.find((f) => f.id === map.folderId);
                 const dots = THEME_DOTS[map.colorTheme] || THEME_DOTS.blue;
                 const nodeCount = map.nodes?.length || 0;
@@ -538,30 +620,42 @@ export default function MindMapsPage() {
                 return (
                   <div
                     key={map.id}
-                    onClick={() => router.push(`/mindmaps/${map.id}`)}
-                    className="group bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] hover:border-purple-500/80 dark:hover:border-purple-500/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden relative cursor-pointer hover:-translate-y-0.5 select-none"
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", String(map.id));
+                      e.dataTransfer.setData("application/studyflow-item-id", String(map.id));
+                      e.dataTransfer.setData("application/studyflow-item-type", "mindmaps");
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onClick={() => navigateToMindMap(map.id)}
+                    className="group bg-white dark:bg-[#1A1D27] rounded-2xl border border-gray-200 dark:border-[#2a2d3a] hover:border-purple-500/80 dark:hover:border-purple-500/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden relative cursor-grab active:cursor-grabbing hover:-translate-y-0.5 select-none"
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        router.push(`/mindmaps/${map.id}`);
+                        navigateToMindMap(map.id);
                       }
                     }}
                   >
                     <div>
                       {/* Card Visual Header Bar */}
-                      <div className="p-3.5 border-b border-gray-100 dark:border-gray-800/80 bg-gray-50/70 dark:bg-[#141620] flex items-center justify-between gap-2">
-                        {/* Layout Indicator Badge */}
-                        <div
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${layoutMeta.bg} ${layoutMeta.text}`}
-                        >
-                          <LayoutIcon className="w-3.5 h-3.5" />
-                          <span>{layoutMeta.label}</span>
+                      <div className="p-3 border-b border-gray-100 dark:border-gray-800/80 bg-gray-50/70 dark:bg-[#141620] flex items-center justify-between gap-2">
+                        {/* Folder Identification */}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{
+                              backgroundColor: mapFolder?.color || "#94A3B8",
+                            }}
+                          />
+                          <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 truncate">
+                            {mapFolder?.name || "Geral (Sem Pasta)"}
+                          </span>
                         </div>
 
                         {/* Top Action Buttons */}
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 shrink-0">
                           {/* Move to Folder Button */}
                           <button
                             type="button"
@@ -590,18 +684,6 @@ export default function MindMapsPage() {
 
                       {/* Card Content */}
                       <div className="p-4 space-y-2.5">
-                        {/* Folder Pill (if assigned) */}
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{
-                              backgroundColor: mapFolder?.color || "#94A3B8",
-                            }}
-                          />
-                          <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 truncate">
-                            {mapFolder?.name || "Geral (Sem Pasta)"}
-                          </span>
-                        </div>
 
                         {/* Map Title */}
                         <h3 className="text-sm font-bold text-gray-900 dark:text-white line-clamp-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
@@ -695,6 +777,8 @@ export default function MindMapsPage() {
                 </button>
               </div>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>
@@ -800,6 +884,17 @@ export default function MindMapsPage() {
         onClose={() => setIsCreateOpen(false)}
         onCreated={handleMindMapCreated}
         defaultFolderId={selectedFolderId}
+      />
+
+      {/* Modal de Gerenciamento de Pastas */}
+      <FolderManagerModal
+        isOpen={isFolderModalOpen}
+        onClose={() => {
+          setIsFolderModalOpen(false);
+          setFolderToEdit(null);
+        }}
+        defaultType="mindmaps"
+        folderToEdit={folderToEdit}
       />
     </div>
   );
