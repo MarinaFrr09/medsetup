@@ -224,10 +224,13 @@ export const Sidebar = React.memo(function Sidebar() {
             <Link
               href="/"
               onClick={handleLinkClick}
-              className="flex items-center space-x-2.5 font-bold text-xl text-blue-600 dark:text-blue-400 overflow-hidden whitespace-nowrap"
+              className="flex items-center space-x-2.5 overflow-hidden whitespace-nowrap"
             >
-              <GraduationCap className="h-7 w-7 flex-shrink-0" />
-              <span className="tracking-tight">MedSetup</span>
+              <GraduationCap className="h-7 w-7 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+              <div className="flex flex-col leading-tight">
+                <span className="font-bold text-xl tracking-tight text-blue-600 dark:text-blue-400">MedSetup</span>
+                <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">criado por: Marina O. Freire</span>
+              </div>
             </Link>
           ) : (
             <Link
