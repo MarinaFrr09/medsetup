@@ -1289,13 +1289,7 @@ export async function exportDocumentToProfessionalPdf({
       doc.setTextColor(...palette.secondaryRgb);
       const hLines = doc.splitTextToSize(text, contentW - 6);
       doc.text(hLines, marginX + 4.5, curY);
-      curY += hLines.length * 5.4 + 1.5;
-
-      // Subtle divider line in theme divider color
-      doc.setDrawColor(...palette.dividerRgb);
-      doc.setLineWidth(0.3);
-      doc.line(marginX, curY, marginX + contentW, curY);
-      curY += 4;
+      curY += hLines.length * 5.4 + 2.5;
       continue;
     }
 

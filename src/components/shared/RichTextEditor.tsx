@@ -1320,93 +1320,93 @@ export function RichTextEditor({
 
   const accentBgClass =
     isVermelho ? "bg-red-600" :
-    isRoxo ? "bg-purple-600" :
+    isRoxo ? "bg-gray-900" :
     isAzul ? "bg-blue-600" :
-    isCinza ? "bg-zinc-800" :
+    isCinza ? "bg-zinc-900" :
     "bg-emerald-600";
 
   const accentHoverClass =
     isVermelho ? "hover:bg-red-700" :
-    isRoxo ? "hover:bg-purple-700" :
+    isRoxo ? "hover:bg-black" :
     isAzul ? "hover:bg-blue-700" :
-    isCinza ? "hover:bg-zinc-900" :
+    isCinza ? "hover:bg-black" :
     "hover:bg-emerald-700";
 
   const accentBorderClass =
     isVermelho ? "border-red-500/40 dark:border-red-500/30" :
-    isRoxo ? "border-purple-500/40 dark:border-purple-500/30" :
+    isRoxo ? "border-gray-500/40 dark:border-gray-500/30" :
     isAzul ? "border-blue-500/40 dark:border-blue-500/30" :
     isCinza ? "border-zinc-500/40 dark:border-zinc-500/30" :
     "border-emerald-500/40 dark:border-emerald-500/30";
 
   const h2Color =
     isVermelho ? "#b91c1c" :
-    isRoxo ? "#6d28d9" :
+    isRoxo ? "#0f172a" :
     isAzul ? "#1d4ed8" :
-    isCinza ? "#27272a" :
+    isCinza ? "#0f172a" :
     "#065f46";
 
   const h2DarkColor =
     isVermelho ? "#f87171" :
-    isRoxo ? "#c084fc" :
+    isRoxo ? "#f8fafc" :
     isAzul ? "#93c5fd" :
-    isCinza ? "#e4e4e7" :
+    isCinza ? "#f8fafc" :
     "#6ee7b7";
 
   const h3Color =
     isVermelho ? "#dc2626" :
-    isRoxo ? "#7c3aed" :
+    isRoxo ? "#0f172a" :
     isAzul ? "#2563eb" :
-    isCinza ? "#3f3f46" :
+    isCinza ? "#0f172a" :
     "#059669";
 
   const h3DarkColor =
     isVermelho ? "#fca5a5" :
-    isRoxo ? "#d8b4fe" :
+    isRoxo ? "#f1f5f9" :
     isAzul ? "#bfdbfe" :
-    isCinza ? "#d4d4d8" :
+    isCinza ? "#f1f5f9" :
     "#a7f3d0";
 
   const blockquoteColor =
     isVermelho ? "#dc2626" :
-    isRoxo ? "#7c3aed" :
+    isRoxo ? "#0f172a" :
     isAzul ? "#2563eb" :
-    isCinza ? "#52525b" :
+    isCinza ? "#0f172a" :
     "#059669";
 
   const blockquoteDarkColor =
     isVermelho ? "#ef4444" :
-    isRoxo ? "#9333ea" :
+    isRoxo ? "#94a3b8" :
     isAzul ? "#3b82f6" :
-    isCinza ? "#a1a1aa" :
+    isCinza ? "#94a3b8" :
     "#10b981";
 
   const dividerBorderColor =
     isVermelho ? "#fecaca" :
-    isRoxo ? "#ddd6fe" :
+    isRoxo ? "#e2e8f0" :
     isAzul ? "#bfdbfe" :
     isCinza ? "#e4e4e7" :
     "#a7f3d0";
 
   const dividerBorderDarkColor =
     isVermelho ? "#7f1d1d" :
-    isRoxo ? "#581c87" :
+    isRoxo ? "#334155" :
     isAzul ? "#1e3a8a" :
     isCinza ? "#3f3f46" :
     "#064e3b";
 
   const tableHeaderBg =
     isVermelho ? "#991b1b" :
-    isRoxo ? "#581c87" :
+    isRoxo ? "#0f172a" :
     isAzul ? "#1e3a8a" :
-    isCinza ? "#27272a" :
+    isCinza ? "#18181b" :
     "#065f46";
 
   const tableHeaderBorder =
     isVermelho ? "#7f1d1d" :
-    isRoxo ? "#4c1d95" :
+    isRoxo ? "#1e293b" :
     isAzul ? "#1e40af" :
-    isCinza ? "#3f3f46" :
+    isCinza ? "#27272a" :
     "#047857";
 
   return (
@@ -1425,17 +1425,17 @@ export function RichTextEditor({
           color: #0f172a !important;
         }
         .studyflow-editor-content h2 {
-          font-size: 1.4rem !important;
+          font-size: 1.35rem !important;
           font-weight: 700 !important;
           line-height: 1.3 !important;
-          margin-top: 1.25rem !important;
-          margin-bottom: 0.5rem !important;
+          margin-top: 1.35rem !important;
+          margin-bottom: 0.45rem !important;
           color: ${h2Color} !important;
-          border-bottom: 1px solid ${dividerBorderColor};
-          padding-bottom: 0.25rem;
+          border-bottom: none !important;
+          padding-bottom: 0 !important;
         }
         .studyflow-editor-content h3 {
-          font-size: 1.18rem !important;
+          font-size: 1.15rem !important;
           font-weight: 700 !important;
           line-height: 1.35 !important;
           margin-top: 1rem !important;
@@ -1443,16 +1443,20 @@ export function RichTextEditor({
           color: ${h3Color} !important;
         }
         .studyflow-editor-content h4 {
-          font-size: 1.05rem !important;
+          font-size: 1.02rem !important;
           font-weight: 700 !important;
           margin-top: 0.75rem !important;
           margin-bottom: 0.25rem !important;
-          color: #334155 !important;
+          color: #0f172a !important;
         }
         .studyflow-editor-content p {
           margin-top: 0.5rem;
           margin-bottom: 0.5rem;
-          line-height: 1.6;
+          line-height: 1.65;
+          color: #0f172a;
+        }
+        .dark .studyflow-editor-content p {
+          color: #f1f5f9;
         }
         .studyflow-editor-content blockquote {
           border-left: 4px solid ${blockquoteColor};

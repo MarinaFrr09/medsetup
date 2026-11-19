@@ -243,7 +243,7 @@ function TranscriptionDocumentViewer({
   fileUrl,
   fileName,
   onViewPdf,
-  theme = "roxo",
+  theme = "cinza",
   categoryLabel,
   onRestoreOriginal,
   onGenerateSummary,
@@ -548,13 +548,13 @@ function TranscriptionDocumentViewer({
         continue;
       }
 
-      // H2 Section (## Section) — with underline divider
+      // H2 Section (## Section) — black heading without bottom divider line
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
         const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
-          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-8 mb-3.5 scroll-mt-24">
-            <h2 className={`text-xl sm:text-2xl font-bold ${palette.tailwind.primaryText} pb-2 border-b ${palette.tailwind.dividerBorder} tracking-tight leading-snug`}>
+          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-7 mb-2.5 scroll-mt-24">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-950 dark:text-white tracking-tight leading-snug">
               {renderInlineMarkdown(text)}
             </h2>
           </div>
@@ -570,7 +570,7 @@ function TranscriptionDocumentViewer({
           <h3
             key={`h3-${idx}`}
             id={headingId}
-            className={`text-[17px] sm:text-[18.5px] font-bold ${palette.tailwind.secondaryText} mt-6 mb-2.5 tracking-tight scroll-mt-24`}
+            className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white mt-5 mb-2 tracking-tight scroll-mt-24"
           >
             {renderInlineMarkdown(text)}
           </h3>
@@ -586,9 +586,9 @@ function TranscriptionDocumentViewer({
           <h4
             key={`h4-${idx}`}
             id={headingId}
-            className={`text-[15.5px] sm:text-[16.5px] font-bold ${palette.tailwind.subText} mt-4.5 mb-2 tracking-tight flex items-center gap-2 scroll-mt-24`}
+            className="text-[15.5px] sm:text-[16.5px] font-bold text-gray-950 dark:text-white mt-4 mb-1.5 tracking-tight flex items-center gap-2 scroll-mt-24"
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${palette.tailwind.accentBg} shrink-0`} />
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white shrink-0" />
             <span>{renderInlineMarkdown(text)}</span>
           </h4>
         );
@@ -986,7 +986,7 @@ function TranscriptionDocumentViewer({
             style={{
               fontSize: "20px",
               fontWeight: 800,
-              color: "#1E3A8A",
+              color: "#0F172A",
               marginBottom: "14px",
               lineHeight: 1.3,
               letterSpacing: "-0.02em",
@@ -1002,14 +1002,12 @@ function TranscriptionDocumentViewer({
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
         elements.push(
-          <div key={`print-h2-wrap-${idx}`} style={{ marginTop: "18px", marginBottom: "10px" }}>
+          <div key={`print-h2-wrap-${idx}`} style={{ marginTop: "16px", marginBottom: "8px" }}>
             <h2
               style={{
                 fontSize: "15px",
                 fontWeight: 700,
-                color: "#1E3A8A",
-                borderBottom: "1.5px solid #BFDBFE",
-                paddingBottom: "4px",
+                color: "#0F172A",
                 lineHeight: 1.35,
                 letterSpacing: "-0.01em",
               }}
@@ -1030,9 +1028,9 @@ function TranscriptionDocumentViewer({
             style={{
               fontSize: "13.5px",
               fontWeight: 700,
-              color: "#1E40AF",
-              marginTop: "14px",
-              marginBottom: "6px",
+              color: "#0F172A",
+              marginTop: "13px",
+              marginBottom: "5px",
             }}
           >
             {renderPrintInlineMarkdown(text)}
@@ -1050,9 +1048,9 @@ function TranscriptionDocumentViewer({
             style={{
               fontSize: "12.5px",
               fontWeight: 700,
-              color: "#1E3A8A",
-              marginTop: "11px",
-              marginBottom: "5px",
+              color: "#0F172A",
+              marginTop: "10px",
+              marginBottom: "4px",
             }}
           >
             {renderPrintInlineMarkdown(text)}

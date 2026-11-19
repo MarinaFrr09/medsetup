@@ -415,16 +415,30 @@ export function formatVerbatimDocumentMarkdown({
 
   // Track lines and headings already emitted to handle progressive/overlapping slides without duplicate paragraphs or repeating slide titles
   const emittedParagraphs = new Set<string>();
-  const normalizeForDedup = (str: string) => str.toLowerCase().replace(/\s+/g, " ").trim();
-  let lastEmittedH2 = "";
-  let lastEmittedH3 = "";
+  const emittedHeadings = new Set<string>();
+  const normalizeForDedup = (str: string) =>
+    str
+      .toLowerCase()
+      .replace(/^[#*\-\s]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  if (cleanDocTitle) {
+    emittedHeadings.add(normalizeForDedup(cleanDocTitle));
+  }
+
+  const nonHeadingVerbRegex =
+    /\b(inibe|inibem|reduz|reduzem|danifica|danificam|aumenta|aumentam|ativa|ativam|gera|geram|bloqueia|bloqueiam|impede|impedem|causa|causam|provoca|provocam|diminui|diminuem|produz|produzem|estimula|estimulam|promove|promovem|leva|levam|resulta|resultam|ocorre|ocorrem|altera|alteram|compromete|comprometem|induz|induzem|favorece|favorecem|acumula|acumulam|libera|liberam|acelera|aceleram|afeta|afetam|lesa|lesam|interfere|interferem|contém|contêm|possui|possuem|apresenta|apresentam|é|são|está|estão|foi|foram|pode|podem|deve|devem)\b/i;
 
   for (let pIdx = 0; pIdx < validPages.length; pIdx++) {
     const page = validPages[pIdx];
-    const rawLines = page.text.split(/\r?\n/);
+    // Split inline slide arrow bullets (➤, ➢, ►) onto their own lines
+    const preSplitText = page.text
+      .replace(/\s*[➤➢►▸]\s*/g, "\n* ")
+      .replace(/\b(?:https?:\/\/)?doi\.org\/\S+/gi, "");
+    const rawLines = preSplitText.split(/\r?\n/);
 
     // 1. Clean lines and filter out header/footer page numbers
-    const lines: string[] = [];
+    const rawCleaned: string[] = [];
     for (let i = 0; i < rawLines.length; i++) {
       let line = rawLines[i].trim();
       if (!line) continue;
@@ -434,7 +448,7 @@ export function formatVerbatimDocumentMarkdown({
         continue;
       }
       // Filter out footer copyright or URL noise if isolated
-      if (/^(?:https?:\/\/\S+|www\.\S+|todos os direitos reservados|copyright ©?.*)$/i.test(line)) {
+      if (/^(?:https?:\/\/\S+|www\.\S+|doi\.org\/\S+|todos os direitos reservados|copyright ©?.*)$/i.test(line)) {
         continue;
       }
 
@@ -444,9 +458,33 @@ export function formatVerbatimDocumentMarkdown({
         .replace(/\\Rightarrow/g, "->")
         .replace(/→/g, "->")
         .replace(/\$\$/g, "")
-        .replace(/\$/g, "");
+        .replace(/\$/g, "")
+        .trim();
 
-      lines.push(line);
+      if (line) rawCleaned.push(line);
+    }
+
+    // 1b. Reconstruct wrapped lines before structural classification
+    const lines: string[] = [];
+    for (let i = 0; i < rawCleaned.length; i++) {
+      let cur = rawCleaned[i];
+      while (i + 1 < rawCleaned.length) {
+        const next = rawCleaned[i + 1];
+        const nextIsBullet = /^([•●▪■\*\-–—]|(?:\d+|[a-zA-Z])[\.\)])\s+/.test(next);
+        const nextStartsLowerOrCont =
+          !nextIsBullet &&
+          (/^[a-zà-öø-ÿ(]/.test(next) ||
+            /^(?:de|da|do|das|dos|e|ou|em|no|na|nos|nas|para|por|com|que|como|->)\b/i.test(next) ||
+            cur.endsWith("->") ||
+            cur.endsWith(","));
+        if (nextStartsLowerOrCont) {
+          cur = `${cur} ${next}`.replace(/\s{2,}/g, " ").trim();
+          i++;
+        } else {
+          break;
+        }
+      }
+      lines.push(cur);
     }
 
     if (lines.length === 0) continue;
@@ -495,7 +533,6 @@ export function formatVerbatimDocumentMarkdown({
         flushBullet();
 
         let bulletText = bulletMatch[2].trim();
-        // Check if starts with a term followed by colon: "Termo: Definição" -> "**Termo:** Definição"
         const termColonMatch = bulletText.match(/^([A-Za-zÀ-ÖØ-öø-ÿ0-9\s()/\-_]{2,50}:)\s*(.*)$/);
         if (termColonMatch && !termColonMatch[1].startsWith("**")) {
           bulletText = `**${termColonMatch[1]}** ${termColonMatch[2]}`.trim();
@@ -505,18 +542,39 @@ export function formatVerbatimDocumentMarkdown({
         continue;
       }
 
-      // Check if line is a heading/topic
-      const isShortLine = line.length <= 90;
-      const endsWithPunctuation = /[.,;!?]$/.test(line);
+      // Check if line is a true heading/topic (strictly excluding sentences, arrows, definitions with ':', verb phrases, and table rows)
+      const wordCount = line.split(/\s+/).filter(Boolean).length;
+      const isShortLine = line.length <= 58 && wordCount <= 8;
+      const endsWithPunctuation = /[.,;!?:]$/.test(line);
+      const hasColonOrArrow = line.includes(":") || line.includes("->") || line.includes("→");
+      const hasChemicalOrMath = /[²³⁺⁻]|[A-Za-z]\d+\+|<=>|<=|>=/.test(line);
+      const hasActionVerb = nonHeadingVerbRegex.test(line);
+      const isTableHeaderNoise = /^(?:mecanismo\s+efeito|causa\s+consequ[êe]ncia|f[áa]rmaco\s+mecanismo|par[âa]metro\s+valor)$/i.test(line.trim());
+      const isSingleLabelLead = /^(?:consequ[êe]ncias?|causas?|efeitos?|mecanismos?|observa[çc][ãa]o|exemplo|nota)$/i.test(line.trim());
       const startsWithCapital = /^[A-ZÀ-ÖØ-Þ0-9]/.test(line);
-      const isIntroWord = /^(?:e|ou|mas|porém|contudo|portanto|de|do|da|dos|das|em|no|na|nos|nas|com|para|por)\s/i.test(line);
+      const isIntroWord = /^(?:e|ou|mas|porém|contudo|portanto|de|do|da|dos|das|em|no|na|nos|nas|com|para|por|menor|maior)\s/i.test(line);
+
+      if (isTableHeaderNoise) {
+        continue;
+      }
+
+      if (isSingleLabelLead && i + 1 < lines.length) {
+        flushParagraph();
+        flushBullet();
+        lines[i + 1] = `**${line.trim()}:** ${lines[i + 1]}`;
+        continue;
+      }
 
       const looksLikeHeading =
         isShortLine &&
         !endsWithPunctuation &&
+        !hasColonOrArrow &&
+        !hasChemicalOrMath &&
+        !hasActionVerb &&
+        !isSingleLabelLead &&
         startsWithCapital &&
         !isIntroWord &&
-        (currentParagraph.length === 0 || line.length <= 60);
+        currentParagraph.length === 0;
 
       if (looksLikeHeading) {
         flushParagraph();
@@ -524,33 +582,41 @@ export function formatVerbatimDocumentMarkdown({
 
         const normHeading = normalizeForDedup(line);
 
-        // Deduplicate repeating slide titles across pages
-        if (
-          (cleanDocTitle && normHeading === normalizeForDedup(cleanDocTitle)) ||
-          (lastEmittedH2 && normHeading === normalizeForDedup(lastEmittedH2)) ||
-          (lastEmittedH3 && normHeading === normalizeForDedup(lastEmittedH3))
-        ) {
-          // Slide repeated the same heading - skip without repeating
+        // Deduplicate repeating slide titles across the entire document
+        if (emittedHeadings.has(normHeading)) {
           continue;
         }
+        emittedHeadings.add(normHeading);
 
-        // Check if line is the main title
-        if (cleanDocTitle && normHeading === normalizeForDedup(cleanDocTitle)) {
-          blocks.push({ type: "h1", content: line });
-        } else if (blocks.filter((b) => b.type === "h2").length === 0 && (i === 0 || pIdx > 0)) {
-          // Major Topic of the section/page
+        if (blocks.filter((b) => b.type === "h2").length === 0 && (i === 0 || pIdx > 0)) {
           blocks.push({ type: "h2", content: line });
-          lastEmittedH2 = line;
-          lastEmittedH3 = "";
         } else {
-          // Subtopic
           blocks.push({ type: "h3", content: line });
-          lastEmittedH3 = line;
         }
         continue;
       }
 
-      // If currently inside a bullet item and this line is an indented or lowercased continuation:
+      // Format "Termo: definição" or lead-in ending with ":" as clean bold lead paragraph
+      if (line.endsWith(":")) {
+        flushParagraph();
+        flushBullet();
+        const cleanLead = line.replace(/^\*\*|\*\*$/g, "");
+        blocks.push({ type: "paragraph", content: `**${cleanLead}**` });
+        continue;
+      }
+
+      const defColonMatch = line.match(/^([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s()/\-_]{1,42}):\s+(.+)$/);
+      if (defColonMatch && !line.startsWith("**")) {
+        flushParagraph();
+        flushBullet();
+        blocks.push({
+          type: "paragraph",
+          content: `**${defColonMatch[1].trim()}:** ${defColonMatch[2].trim()}`,
+        });
+        continue;
+      }
+
+      // If currently inside a bullet item and this line is a continuation:
       if (currentBullet && (!startsWithCapital || line.length < 50 || /^[a-zà-öø-ÿ(]/.test(line))) {
         currentBullet += " " + line;
         continue;

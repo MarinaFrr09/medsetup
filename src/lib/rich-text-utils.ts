@@ -387,6 +387,230 @@ export function formatDenseProseParagraphsIntoBullets(markdown: string): string 
 }
 
 /**
+ * Repairs broken headings from slide/PDF transcriptions (where wrapped sentences,
+ * causal chains with arrows, definitions with ':', or 2-column slide table rows
+ * were mistakenly emitted as ## or ### headings), deduplicates repeated slide titles,
+ * removes excessive horizontal dividers, and places Clinical Cases followed by Questions
+ * at the very end of the document.
+ */
+export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
+  if (!markdown) return "";
+
+  const nonHeadingVerbRegex =
+    /\b(inibe|inibem|reduz|reduzem|danifica|danificam|aumenta|aumentam|ativa|ativam|gera|geram|bloqueia|bloqueiam|impede|impedem|causa|causam|provoca|provocam|diminui|diminuem|produz|produzem|estimula|estimulam|promove|promovem|leva|levam|resulta|resultam|ocorre|ocorrem|altera|alteram|compromete|comprometem|induz|induzem|favorece|favorecem|acumula|acumulam|libera|liberam|acelera|aceleram|afeta|afetam|lesa|lesam|interfere|interferem|contém|contêm|possui|possuem|apresenta|apresentam|é|são|está|estão|foi|foram|pode|podem|deve|devem)\b/i;
+
+  // 1. Pre-split inline slide arrow bullets (➤, ➢, ►) and strip raw DOIs
+  const preCleaned = markdown
+    .replace(/\b(?:https?:\/\/)?doi\.org\/\S+/gi, "")
+    .replace(/:\s*[➤➢►▸]\s*/g, ":\n* ")
+    .replace(/\s+[➤➢►▸]\s*/g, "\n* ");
+
+  const rawLines = preCleaned.split("\n");
+  const compactNonEmpty: string[] = [];
+  for (const l of rawLines) {
+    const t = l.trim();
+    // Strip standalone horizontal dividers (---) that were placed after every topic
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(t)) {
+      continue;
+    }
+    compactNonEmpty.push(l);
+  }
+
+  // 2. Repair false headings & merge wrapped sentence continuations
+  const repairedLines: string[] = [];
+  const seenHeadings = new Set<string>();
+  const normHeadingKey = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/^[#*\-\s]+/, "")
+      .replace(/[.:;!?]+$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // Helper to find the next non-empty line index
+  const findNextNonEmpty = (fromIdx: number): number => {
+    for (let k = fromIdx + 1; k < compactNonEmpty.length; k++) {
+      if (compactNonEmpty[k].trim().length > 0) return k;
+    }
+    return -1;
+  };
+
+  for (let i = 0; i < compactNonEmpty.length; i++) {
+    const rawLine = compactNonEmpty[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      repairedLines.push("");
+      continue;
+    }
+
+    // Check if single-word label like "Consequência" or "**Consequência**" before a line
+    const singleLabelMatch = trimmed.match(
+      /^(?:#{1,6}\s+)?(?:\*\*)?(consequ[êe]ncias?|causas?|efeitos?|mecanismos?|observa[çc][ãa]o|conclus[ãa]o)(?:\*\*)?:?\s*$/i
+    );
+    if (singleLabelMatch) {
+      const nextIdx = findNextNonEmpty(i);
+      if (nextIdx !== -1) {
+        const nextLineClean = compactNonEmpty[nextIdx]
+          .trim()
+          .replace(/^#{1,6}\s+/, "");
+        compactNonEmpty[nextIdx] = `**${capitalizeFirstAlpha(singleLabelMatch[1].trim())}:** ${nextLineClean}`;
+        continue;
+      }
+    }
+
+    // Check if line is a Markdown heading (# to ####)
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const hashes = headingMatch[1];
+      let hText = headingMatch[2].trim();
+
+      // Remove table header noise like "### Mecanismo Efeito"
+      if (/^(?:mecanismo\s+efeito|causa\s+consequ[êe]ncia|f[áa]rmaco\s+mecanismo|par[âa]metro\s+valor)$/i.test(hText)) {
+        continue;
+      }
+
+      // Check if next non-empty line is a wrapped sentence continuation (e.g. "de hemoglobina..." or "(Fe2+) em seu centro.")
+      const nextIdx = findNextNonEmpty(i);
+      if (nextIdx !== -1) {
+        const nextTrim = compactNonEmpty[nextIdx].trim();
+        const nextIsHeadingOrBullet = /^(?:#{1,6}\s|[\*\-•]\s|\d+[\.\)]\s|\||>)/.test(nextTrim);
+        const nextIsWrappedContinuation =
+          !nextIsHeadingOrBullet &&
+          (/^[a-zà-öø-ÿ(]/.test(nextTrim) ||
+            /^(?:de|da|do|das|dos|e|ou|em|no|na|nos|nas|para|por|com|que|como|->|→)\b/i.test(nextTrim) ||
+            hText.endsWith("->") ||
+            hText.endsWith("→") ||
+            hText.endsWith(","));
+
+        if (nextIsWrappedContinuation) {
+          let merged = `${hText} ${nextTrim}`.replace(/\s{2,}/g, " ").trim();
+          const defColon = merged.match(/^([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s()/\-_]{1,42}):\s+(.+)$/);
+          if (defColon && !merged.startsWith("**")) {
+            merged = `**${defColon[1].trim()}:** ${defColon[2].trim()}`;
+          }
+          repairedLines.push(merged);
+          i = nextIdx;
+          continue;
+        }
+      }
+
+      // Check if heading ends with ":" (e.g. "## O chumbo aumenta ROS porque:") -> convert to bold lead-in paragraph
+      if (hText.endsWith(":")) {
+        const cleanLead = hText.replace(/^\*\*|\*\*$/g, "");
+        repairedLines.push(`**${cleanLead}**`);
+        continue;
+      }
+
+      // Check if heading is actually a sentence, arrow chain, definition, or 2-column slide table row
+      const hasArrow = hText.includes("->") || hText.includes("→");
+      const hasColonDefinition = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9\s()/\-_]{2,45}:\s+\S/.test(hText);
+      const hasChemIon = /[²³⁺⁻]|[A-Za-z]\d+\+/.test(hText);
+      const hasActionVerb = nonHeadingVerbRegex.test(hText);
+      const wordCount = hText.split(/\s+/).filter(Boolean).length;
+
+      if (hasArrow || hasColonDefinition || hasChemIon || hasActionVerb || wordCount > 10) {
+        if (hasColonDefinition && !hText.startsWith("**")) {
+          const idxColon = hText.indexOf(":");
+          const term = hText.slice(0, idxColon).trim();
+          const rest = hText.slice(idxColon + 1).trim();
+          repairedLines.push(`**${term}:** ${rest}`);
+          continue;
+        }
+
+        // Check if it's a 2-column slide table row like "Inibe antioxidantes Radicais livres se acumulam"
+        // where a verb phrase is followed mid-line by a capitalized 2nd column clause
+        const twoColMatch = hText.match(
+          /^([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ0-9²³⁺⁻+\-]+(?:\s+(?:[a-zà-öø-ÿ0-9²³⁺⁻+\-]+|Ca²\+|Ca2\+|Fe²\+|Fe2\+|NADPH|ROS|ATP|GSH|DNA)){1,4})\s+([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ].+)$/
+        );
+        if (twoColMatch) {
+          repairedLines.push(`* **${twoColMatch[1].trim()}:** ${twoColMatch[2].trim()}`);
+          continue;
+        }
+
+        repairedLines.push(hText);
+        continue;
+      }
+
+      // Deduplicate repeated slide titles (like "## Chumbo - Toxicodinâmica" repeated on every slide)
+      const hKey = normHeadingKey(hText);
+      if (hashes.length >= 2 && seenHeadings.has(hKey)) {
+        continue;
+      }
+      if (hKey.length > 2) {
+        seenHeadings.add(hKey);
+      }
+
+      repairedLines.push(`${hashes} ${hText}`);
+      continue;
+    }
+
+    // For non-heading lines, check if a bullet or line has "Termo: descrição" without bold
+    const bulletTermColon = trimmed.match(/^\*\s+([A-Za-zÀ-ÖØ-öø-ÿ0-9\s()/\-_δΔαβγ]{2,55}):\s+(.+)$/);
+    if (bulletTermColon && !bulletTermColon[1].includes("**")) {
+      repairedLines.push(`* **${bulletTermColon[1].trim()}:** ${bulletTermColon[2].trim()}`);
+      continue;
+    }
+
+    repairedLines.push(rawLine);
+  }
+
+  // 3. Reorder sections so Clinical Cases come after theory, and Questions ALWAYS come at the very end after the Clinical Case
+  const fullJoined = repairedLines.join("\n");
+  const sectionLines = fullJoined.split("\n");
+
+  interface DocSection {
+    kind: "theory" | "case" | "questions";
+    lines: string[];
+  }
+
+  const sections: DocSection[] = [];
+  let currentSec: DocSection = { kind: "theory", lines: [] };
+
+  const isCaseHeading = (t: string) =>
+    /^#{1,4}\s*(?:\*\*)?(?:caso\s+cl[íi]nico|situa[çc][ãa]o[\s\-]problema|relato\s+de\s+caso|apresenta[çc][ãa]o\s+do\s+caso)\b/i.test(t);
+
+  const isQuestionsHeading = (t: string) =>
+    /^#{1,4}\s*(?:\*\*)?(?:quest[õo]es|perguntas|exerc[íi]cios|atividades?\s+(?:de\s+fixa[çc][ãa]o|do\s+roteiro|pr[áa]ticas?)|quest[ãa]o\s+\d+|pergunta\s+\d+|teste\s+seu\s+conhecimento|avalia[çc][ãa]o)\b/i.test(t);
+
+  for (const line of sectionLines) {
+    const t = line.trim();
+    if (/^#{2,4}\s+/.test(t)) {
+      if (isQuestionsHeading(t)) {
+        if (currentSec.lines.length > 0) sections.push(currentSec);
+        currentSec = { kind: "questions", lines: [line] };
+        continue;
+      }
+      if (isCaseHeading(t)) {
+        if (currentSec.lines.length > 0) sections.push(currentSec);
+        currentSec = { kind: "case", lines: [line] };
+        continue;
+      }
+      // If we were inside a case or questions section and hit a new major H2 theoretical heading
+      if (currentSec.kind !== "theory" && /^##\s+/.test(t)) {
+        sections.push(currentSec);
+        currentSec = { kind: "theory", lines: [line] };
+        continue;
+      }
+    }
+    currentSec.lines.push(line);
+  }
+  if (currentSec.lines.length > 0) {
+    sections.push(currentSec);
+  }
+
+  const theorySections = sections.filter((s) => s.kind === "theory");
+  const caseSections = sections.filter((s) => s.kind === "case");
+  const questionSections = sections.filter((s) => s.kind === "questions");
+
+  const orderedSections = [...theorySections, ...caseSections, ...questionSections];
+  return orderedSections
+    .map((s) => s.lines.join("\n").trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
  * Reduces excessive bullet points (`• ... ->`) in PDF transcriptions and summaries:
  * 1. Converts empty bullets with trailing arrows (`- **Aspectos Essenciais** ->`) into `####` subheadings.
  * 2. Converts lead-in bullets ending in `:` (`- **Monitoramento** -> Atenção a:`) into clean paragraphs.
@@ -396,7 +620,8 @@ export function formatDenseProseParagraphsIntoBullets(markdown: string): string 
 export function reduceExcessiveBulletsInTranscription(markdown: string): string {
   if (!markdown) return "";
 
-  const lines = markdown.split("\n");
+  const repairedMarkdown = repairTranscriptionHeadingsAndOrder(markdown);
+  const lines = repairedMarkdown.split("\n");
   const out: string[] = [];
   let inShortColonList = false;
 
@@ -538,7 +763,8 @@ export function reduceExcessiveBulletsInTranscription(markdown: string): string 
 export function markdownToHtml(markdown: string): string {
   if (!markdown) return "<p><br></p>";
 
-  const structuredMd = formatDenseProseParagraphsIntoBullets(markdown);
+  const cleanedMd = reduceExcessiveBulletsInTranscription(markdown);
+  const structuredMd = formatDenseProseParagraphsIntoBullets(cleanedMd);
   const lines = structuredMd.split("\n");
   const htmlParts: string[] = [];
 

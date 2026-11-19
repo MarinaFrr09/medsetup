@@ -574,11 +574,17 @@ Responda OBRIGATORIAMENTE em JSON válido:
       const expand = body.expand === "true" || body.expand === true;
       const customPrompt = String(body.customPrompt || "");
       const sys = `Você é um professor titular de Medicina especialista em transcrição e estruturação acadêmica de PDFs e slides médicos.
-REGRAS:
+REGRAS OBRIGATÓRIAS:
 1. Transcreva TODO o conteúdo do documento do início ao fim em Markdown estruturado (##, ###, ####).
 2. Prefira parágrafos fluidos e explicativos; use marcadores com bolinhas (* ) APENAS quando estritamente necessário para enumerações curtas.
-3. Elimine cabeçalhos repetidos de slides e numerações de páginas.
-4. ${expand ? "MODO EXPANDIDO: Aprofunde cada tópico com mecanismos fisiopatológicos, farmacológicos e correlações clínicas." : "Mantenha fidelidade integral a todos os dados e conceitos do documento."}
+3. NUNCA repita o mesmo título de slide ou página (agrupe slides do mesmo tema sob um único título).
+4. NUNCA transforme frases explicativas, consequências com setas ("Menor produção -> ..."), definições ("Heme: pequena molécula..."), frases terminadas em ":" ou linhas de tabelas em títulos grandes (## ou ###)! Use títulos APENAS para nomes reais de seções.
+5. NUNCA use linhas divisórias (---) após os tópicos.
+6. ORDEM OBRIGATÓRIA DO DOCUMENTO:
+   - 1º) Todo o conteúdo teórico unificado;
+   - 2º) O Caso Clínico (se houver no documento, posicionado após todo o conteúdo teórico);
+   - 3º) As Questões / Perguntas / Exercícios do documento DEVEM FICAR SEMPRE AO FINAL ABSOLUTO DO DOCUMENTO, DEPOIS DO CASO CLÍNICO!
+7. ${expand ? "MODO EXPANDIDO: Aprofunde cada tópico com mecanismos fisiopatológicos, farmacológicos e correlações clínicas." : "Mantenha fidelidade integral a todos os dados e conceitos do documento."}
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título do Documento (máximo 6 palavras)",

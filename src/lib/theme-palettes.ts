@@ -103,37 +103,37 @@ export const THEME_PALETTES: Record<string, ThemePalette> = {
     },
   },
 
-  // 3. ROXO: Transcrição
+  // 3. ROXO (Agora Preto Acadêmico para Transcrição conforme solicitado)
   roxo: {
     id: "roxo",
-    name: "Roxo",
-    primaryRgb: [88, 28, 135],        // #581C87 (Purple 900)
-    secondaryRgb: [109, 40, 217],     // #6D28D9 (Purple 700)
-    subRgb: [124, 58, 237],           // #7C3AED (Purple 600)
-    minorRgb: [139, 92, 246],         // #8B5CF6 (Purple 500)
-    accentRgb: [124, 58, 237],        // #7C3AED
-    dividerRgb: [221, 214, 254],      // #DDD6FE (Purple 200)
-    softBgRgb: [250, 245, 255],       // #FAF5FF (Purple 50)
-    borderRgb: [221, 214, 254],       // #DDD6FE
-    calloutBorderRgb: [124, 58, 237], // #7C3AED
-    calloutBgRgb: [250, 245, 255],    // #FAF5FF
-    tableHeaderFillRgb: [88, 28, 135],// #581C87
-    tableRowAltRgb: [250, 245, 255],  // #FAF5FF
-    badgeBgRgb: [237, 233, 254],      // #EDE9FE
-    badgeTextRgb: [88, 28, 135],      // #581C87
+    name: "Preto Acadêmico",
+    primaryRgb: [15, 23, 42],         // #0F172A (Preto / Slate 900)
+    secondaryRgb: [15, 23, 42],       // #0F172A
+    subRgb: [30, 41, 59],             // #1E293B
+    minorRgb: [51, 65, 85],           // #334155
+    accentRgb: [15, 23, 42],          // #0F172A
+    dividerRgb: [226, 232, 240],      // #E2E8F0
+    softBgRgb: [248, 250, 252],       // #F8FAFC
+    borderRgb: [203, 213, 225],       // #CBD5E1
+    calloutBorderRgb: [15, 23, 42],   // #0F172A
+    calloutBgRgb: [248, 250, 252],    // #F8FAFC
+    tableHeaderFillRgb: [15, 23, 42], // #0F172A
+    tableRowAltRgb: [248, 250, 252],  // #F8FAFC
+    badgeBgRgb: [241, 245, 249],      // #F1F5F9
+    badgeTextRgb: [15, 23, 42],       // #0F172A
     tailwind: {
-      primaryText: "text-purple-900 dark:text-purple-300",
-      secondaryText: "text-purple-800 dark:text-purple-400",
-      subText: "text-purple-700 dark:text-purple-400",
-      minorText: "text-purple-600 dark:text-purple-500",
-      accentBg: "bg-purple-600",
-      dividerBorder: "border-purple-200 dark:border-purple-800",
-      calloutBorder: "border-purple-500",
-      calloutBg: "bg-purple-50/70 dark:bg-purple-950/20",
-      tableHeaderBg: "bg-purple-800 text-white",
-      tableRowAltBg: "bg-purple-50/40 dark:bg-purple-950/10",
-      badgeBg: "bg-purple-100 dark:bg-purple-950/50",
-      badgeText: "text-purple-800 dark:text-purple-300",
+      primaryText: "text-gray-950 dark:text-white",
+      secondaryText: "text-gray-950 dark:text-white",
+      subText: "text-gray-900 dark:text-gray-100",
+      minorText: "text-gray-800 dark:text-gray-200",
+      accentBg: "bg-gray-900 dark:bg-gray-100",
+      dividerBorder: "border-gray-200 dark:border-gray-800",
+      calloutBorder: "border-gray-800 dark:border-gray-300",
+      calloutBg: "bg-gray-50/80 dark:bg-gray-900/40",
+      tableHeaderBg: "bg-gray-900 text-white",
+      tableRowAltBg: "bg-gray-50/50 dark:bg-gray-900/20",
+      badgeBg: "bg-gray-100 dark:bg-gray-800",
+      badgeText: "text-gray-900 dark:text-gray-100",
     },
   },
 

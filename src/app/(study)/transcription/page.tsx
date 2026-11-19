@@ -544,7 +544,7 @@ export default function TranscriptionPage() {
                   title={currentResult.title || "Transcrição do Documento"}
                   expanded={currentResult.expanded}
                   editable={true}
-                  theme="roxo"
+                  theme="cinza"
                   categoryLabel="Transcricao"
                   onSaveContent={handleSaveTranscriptionContent}
                   onGenerateSummary={handleGenerateSummary}

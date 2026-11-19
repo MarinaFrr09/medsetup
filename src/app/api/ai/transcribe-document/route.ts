@@ -183,8 +183,14 @@ REGRA DE OURO INVIOLÁVEL DE FORMATAÇÃO:
    - Use marcadores (` + "`* `" + `) APENAS QUANDO ESTRITAMENTE NECESSÁRIO para listas curtas e pontuais de itens enumerados (ex: parâmetros pontuais de monitoramento, periodicidade de consultas, critérios pontuais).
    - É TERMINANTEMENTE PROIBIDO transformar o documento inteiro em uma lista interminável de bolinhas (` + "`•`" + `) ou usar setas (` + "`->`" + `) em cada frase.
    - NUNCA coloque um subtítulo como marcador vazio com seta (ex: NUNCA escreva "- **Medicações de Primeira Linha** ->"; escreva "#### Medicações de Primeira Linha").
-3. DESDUPLICAÇÃO E UNIFICAÇÃO:
-   - NUNCA repita o mesmo título de slide ou página. Una slides sequenciais sob o mesmo tema em uma única seção completa.
+3. DESDUPLICAÇÃO, HIERARQUIA LIMPA E ORDEM FINAL (CASO CLÍNICO -> QUESTÕES):
+   - NUNCA repita o mesmo título de slide ou página (ex: se vários slides se chamam "Chumbo - Toxicodinâmica", use esse título APENAS UMA VEZ e agrupe todo o conteúdo sob ele).
+   - NUNCA transforme frases explicativas, consequências com setas ("Menor produção de heme -> menor síntese..."), definições ("Heme: pequena molécula..."), frases terminadas em dois-pontos ("O chumbo aumenta ROS porque:") ou linhas de tabela ("Inibe antioxidantes / Radicais livres se acumulam") em títulos grandes (## ou ###)! Use títulos (## e ###) ESTRITAMENTE para nomes curtos de seções temáticas reais.
+   - NUNCA coloque linhas divisórias horizontais (---) após os tópicos.
+   - ORDEM OBRIGATÓRIA DO DOCUMENTO:
+     1º) Todo o conteúdo teórico unificado do documento;
+     2º) O Caso Clínico (se houver caso clínico no documento, coloque-o após todo o conteúdo teórico);
+     3º) As Questões / Perguntas / Exercícios do documento DEVEM OBRIGATORIAMENTE FICAR AO FINAL ABSOLUTO DO DOCUMENTO, DEPOIS DO CASO CLÍNICO!
    - NUNCA escreva "Slide 1", "Página 1", "Slide 2", etc.
 4. EXTENSÃO FISIOPATOLÓGICA E FARMACOLÓGICA:
    - Aprofunde com mecanismos celulares/moleculares, vias de sinalização, receptores e enzimas em parágrafos claros.
@@ -217,8 +223,14 @@ REGRA DE OURO INVIOLÁVEL DE FORMATAÇÃO E CONTEÚDO:
    - Use marcadores (` + "`* `" + `) APENAS QUANDO ESTRITAMENTE NECESSÁRIO para pequenas enumerações pontuais (ex: itens curtos de exame físico, periodicidade de consultas, critérios pontuais).
    - NÃO transforme todo o texto em marcadores com bolinhas e NÃO use setas (` + "`->`" + `) repetitivas em todas as linhas.
    - NUNCA crie marcadores vazios com seta para títulos (ex: jamais faça "- **Medicações de Primeira Linha** ->"; use "#### Medicações de Primeira Linha").
-3. DESDUPLICAÇÃO E UNIFICAÇÃO:
-   - NUNCA repita o mesmo título de slide ou página (se vários slides têm o mesmo cabeçalho, una-os em uma única seção completa).
+3. DESDUPLICAÇÃO, HIERARQUIA LIMPA E ORDEM FINAL (CASO CLÍNICO -> QUESTÕES):
+   - NUNCA repita o mesmo título de slide ou página (se vários slides têm o mesmo cabeçalho como "Chumbo - Toxicodinâmica", una-os sob um único título sem repetir).
+   - NUNCA transforme frases explicativas, consequências com setas ("Menor produção de heme -> ..."), definições ("Heme: pequena molécula..."), frases terminadas em dois-pontos ("O chumbo aumenta ROS porque:") ou linhas de tabela ("Inibe antioxidantes...") em títulos grandes (## ou ###)! Use títulos (## e ###) ESTRITAMENTE para nomes curtos de seções temáticas reais.
+   - NUNCA coloque linhas divisórias horizontais (---) após os tópicos.
+   - ORDEM OBRIGATÓRIA DO DOCUMENTO:
+     1º) Todo o conteúdo teórico unificado do documento;
+     2º) O Caso Clínico (se houver caso clínico no documento, coloque-o após todo o conteúdo teórico);
+     3º) As Questões / Perguntas / Exercícios do documento DEVEM OBRIGATORIAMENTE FICAR AO FINAL ABSOLUTO DO DOCUMENTO, DEPOIS DO CASO CLÍNICO!
    - NUNCA escreva "Slide 1", "Página 1", etc.
 4. INTEGRAÇÃO VISUAL DE DIAGRAMAS E IMAGENS:
    - Se os slides contiverem figuras, esquemas anatômicos, desenhos ou fluxogramas, incorpore suas informações diretamente na explicação.
