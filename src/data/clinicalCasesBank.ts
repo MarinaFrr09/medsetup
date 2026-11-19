@@ -1244,17 +1244,35 @@ export function getTodayFormattedDate(): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+export function getTodayKey(): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yyyy = now.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function getDailyClinicalCase(dateOverride?: string): ProgressiveClinicalCase {
+  const now = new Date();
   const dateStr = dateOverride || getTodayFormattedDate();
-  // Deterministic daily index based on YYYY-MM-DD seed, defaulting first day or demo to Caso #202 or rotating daily
+  const dateKey = dateOverride ? dateOverride.replace(/\//g, "-") : getTodayKey();
+
+  // Compute day-of-year number so each calendar day automatically gets a fresh case
+  const startOfYear = new Date(now.getFullYear(), 0, 0);
+  const diffMs = now.getTime() - startOfYear.getTime();
+  const dayOfYear = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
   let hash = 0;
-  for (let i = 0; i < dateStr.length; i++) {
-    hash = (hash * 31 + dateStr.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < dateKey.length; i++) {
+    hash = (hash * 31 + dateKey.charCodeAt(i)) >>> 0;
   }
   const index = hash % BUILTIN_PROGRESSIVE_CASES.length;
   const selected = BUILTIN_PROGRESSIVE_CASES[index] || BUILTIN_PROGRESSIVE_CASES[0];
+
   return {
     ...selected,
+    id: `daily-${dateKey}`,
+    caseNumber: dayOfYear,
     date: dateStr,
   };
 }

@@ -27,12 +27,15 @@ import {
   Eye,
   Loader2,
   Trash2,
+  Bookmark,
+  BookmarkCheck,
 } from "lucide-react";
 import {
   BUILTIN_PROGRESSIVE_CASES,
   MEDICAL_DIAGNOSES_CATALOG,
   ProgressiveClinicalCase,
   getDailyClinicalCase,
+  getTodayKey,
   isDiagnosisMatch,
   normalizeDiagnosisString,
 } from "@/data/clinicalCasesBank";
@@ -46,6 +49,7 @@ export interface CaseAttempt {
 
 export interface SavedCaseProgress {
   caseId: string;
+  dateKey: string;
   attempts: CaseAttempt[];
   revealedCluesCount: number;
   status: "playing" | "won" | "lost";
@@ -53,7 +57,7 @@ export interface SavedCaseProgress {
 }
 
 const DAILY_PROGRESS_STORAGE_KEY = "medsetup_daily_clinical_case_progress_v2";
-const CUSTOM_CASES_STORAGE_KEY = "medsetup_custom_5clue_cases_v2";
+const SAVED_CASES_STORAGE_KEY = "medsetup_user_saved_clinical_cases_v1";
 
 const MEDICAL_AREAS = [
   "Aleatória (Todas as Áreas da Medicina)",
@@ -94,11 +98,13 @@ function InteratividadeContent() {
     atelieAnalyses,
   } = useAppStore();
 
-  // Active case state
+  // Active case state (defaults to today's daily case)
   const [activeCase, setActiveCase] = useState<ProgressiveClinicalCase>(() =>
-    BUILTIN_PROGRESSIVE_CASES[0]
+    getDailyClinicalCase()
   );
-  const [customCases, setCustomCases] = useState<ProgressiveClinicalCase[]>([]);
+  // Only cases explicitly saved by the user via the "Salvar caso" button
+  const [savedCases, setSavedCases] = useState<ProgressiveClinicalCase[]>([]);
+  const [savedPanelOpen, setSavedPanelOpen] = useState<boolean>(false);
   const [attempts, setAttempts] = useState<CaseAttempt[]>([]);
   const [revealedCluesCount, setRevealedCluesCount] = useState<number>(1);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
@@ -135,38 +141,45 @@ function InteratividadeContent() {
     null
   );
 
-  // Load saved custom cases and daily progress on mount
+  // Load ONLY user-saved cases and today's daily case (automatically discarding previous days' progress)
   useEffect(() => {
-    let loadedCustom: ProgressiveClinicalCase[] = [];
+    let loadedSaved: ProgressiveClinicalCase[] = [];
     try {
-      const raw = localStorage.getItem(CUSTOM_CASES_STORAGE_KEY);
+      const raw = localStorage.getItem(SAVED_CASES_STORAGE_KEY);
       if (raw) {
-        loadedCustom = JSON.parse(raw);
-        setCustomCases(loadedCustom);
+        loadedSaved = JSON.parse(raw);
+        setSavedCases(loadedSaved);
       }
     } catch {}
 
-    const modeParam = searchParams.get("mode");
-    const caseIdParam = searchParams.get("caseId");
+    // Purge any daily progress from previous days so old cases are never accumulated
+    try {
+      const todayKey = getTodayKey();
+      const rawProg = localStorage.getItem(DAILY_PROGRESS_STORAGE_KEY);
+      if (rawProg) {
+        const parsed: Record<string, SavedCaseProgress> = JSON.parse(rawProg);
+        const todayOnly: Record<string, SavedCaseProgress> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v?.dateKey === todayKey) {
+            todayOnly[k] = v;
+          }
+        }
+        localStorage.setItem(DAILY_PROGRESS_STORAGE_KEY, JSON.stringify(todayOnly));
+      }
+    } catch {}
 
+    const caseIdParam = searchParams.get("caseId");
     if (caseIdParam) {
-      const found =
-        BUILTIN_PROGRESSIVE_CASES.find((c) => c.id === caseIdParam) ||
-        loadedCustom.find((c) => c.id === caseIdParam);
+      const found = loadedSaved.find((c) => c.id === caseIdParam);
       if (found) {
-        loadCase(found);
+        loadCase(found, false);
         return;
       }
     }
 
-    if (modeParam === "daily") {
-      const daily = getDailyClinicalCase();
-      loadCase(daily, true);
-    } else {
-      // Default to Caso clínico #202 (Acidente crotálico) on first open, or saved progress
-      const firstCase = BUILTIN_PROGRESSIVE_CASES[0];
-      loadCase(firstCase, true);
-    }
+    // Always load today's updated daily clinical case
+    const daily = getDailyClinicalCase();
+    loadCase(daily, true);
   }, [searchParams]);
 
   // Close autocomplete dropdown on outside click
@@ -183,22 +196,58 @@ function InteratividadeContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const isCurrentCaseSaved = useMemo(
+    () => savedCases.some((c) => c.id === activeCase.id),
+    [savedCases, activeCase.id]
+  );
+
+  const handleToggleSaveCase = () => {
+    if (isCurrentCaseSaved) {
+      const updated = savedCases.filter((c) => c.id !== activeCase.id);
+      setSavedCases(updated);
+      try {
+        localStorage.setItem(SAVED_CASES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      toast.success("Caso removido dos salvos.");
+    } else {
+      const updated = [activeCase, ...savedCases];
+      setSavedCases(updated);
+      try {
+        localStorage.setItem(SAVED_CASES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      toast.success("Caso clínico salvo nos seus favoritos!");
+    }
+  };
+
+  const handleDeleteSavedCase = (id: string) => {
+    const updated = savedCases.filter((c) => c.id !== id);
+    setSavedCases(updated);
+    try {
+      localStorage.setItem(SAVED_CASES_STORAGE_KEY, JSON.stringify(updated));
+    } catch {}
+    toast.success("Caso removido dos salvos.");
+  };
+
   const saveCaseProgress = (
     targetCase: ProgressiveClinicalCase,
     nextAttempts: CaseAttempt[],
     nextCluesCount: number,
     nextStatus: "playing" | "won" | "lost"
   ) => {
+    // Only keep ephemeral progress for today's daily case (never store old cases)
+    if (!targetCase.id.startsWith("daily-")) return;
     try {
-      const raw = localStorage.getItem(DAILY_PROGRESS_STORAGE_KEY);
-      const map: Record<string, SavedCaseProgress> = raw ? JSON.parse(raw) : {};
-      map[targetCase.id] = {
-        caseId: targetCase.id,
-        attempts: nextAttempts,
-        revealedCluesCount: nextCluesCount,
-        status: nextStatus,
-        completedAt:
-          nextStatus !== "playing" ? new Date().toISOString() : undefined,
+      const todayKey = getTodayKey();
+      const map: Record<string, SavedCaseProgress> = {
+        [targetCase.id]: {
+          caseId: targetCase.id,
+          dateKey: todayKey,
+          attempts: nextAttempts,
+          revealedCluesCount: nextCluesCount,
+          status: nextStatus,
+          completedAt:
+            nextStatus !== "playing" ? new Date().toISOString() : undefined,
+        },
       };
       localStorage.setItem(DAILY_PROGRESS_STORAGE_KEY, JSON.stringify(map));
     } catch {}
@@ -339,10 +388,10 @@ function InteratividadeContent() {
     }
   };
 
-  // Pick a random built-in case from all areas & difficulties (avoiding the current one)
+  // Pick a random case from all areas & difficulties (without storing it unless the user clicks "Salvar caso")
   const handlePickBuiltinRandomCase = () => {
-    const pool = [...BUILTIN_PROGRESSIVE_CASES, ...customCases].filter(
-      (c) => c.id !== activeCase.id
+    const pool = BUILTIN_PROGRESSIVE_CASES.filter(
+      (c) => c.diagnosis !== activeCase.diagnosis
     );
     const filteredPool = pool.filter((c) => {
       const areaMatch =
@@ -358,10 +407,13 @@ function InteratividadeContent() {
     const picked =
       targetPool[Math.floor(Math.random() * targetPool.length)] ||
       BUILTIN_PROGRESSIVE_CASES[0];
-    loadCase(picked, false);
-    toast.success(
-      `Novo caso clínico carregado (#${picked.caseNumber} • ${picked.difficulty})`
-    );
+    const freshRandomCase: ProgressiveClinicalCase = {
+      ...picked,
+      id: `rand_${Date.now()}`,
+      date: new Date().toLocaleDateString("pt-BR"),
+    };
+    loadCase(freshRandomCase, false);
+    toast.success(`Novo caso clínico aleatório carregado!`);
   };
 
   // Generate a new 5-clue clinical case with AI (either randomly across all areas or from attached PDFs)
@@ -409,7 +461,7 @@ function InteratividadeContent() {
 
       const recentDiagnoses = [
         activeCase.diagnosis,
-        ...customCases.slice(0, 8).map((c) => c.diagnosis),
+        ...savedCases.slice(0, 8).map((c) => c.diagnosis),
       ];
 
       let res: Response;
@@ -450,9 +502,7 @@ function InteratividadeContent() {
 
       const newCase: ProgressiveClinicalCase = {
         id: data.id || `pcase_${Date.now()}`,
-        caseNumber:
-          data.caseNumber ||
-          220 + customCases.length + BUILTIN_PROGRESSIVE_CASES.length,
+        caseNumber: Math.floor(1 + Math.random() * 999),
         date: data.date || new Date().toLocaleDateString("pt-BR"),
         diagnosis: data.diagnosis,
         acceptedSynonyms: data.acceptedSynonyms || [],
@@ -463,18 +513,9 @@ function InteratividadeContent() {
         debriefing: data.debriefing,
       };
 
-      const nextCustom = [newCase, ...customCases].slice(0, 30);
-      setCustomCases(nextCustom);
-      try {
-        localStorage.setItem(
-          CUSTOM_CASES_STORAGE_KEY,
-          JSON.stringify(nextCustom)
-        );
-      } catch {}
-
       loadCase(newCase, false);
       setGeneratorPanelOpen(false);
-      toast.success(`Caso clínico #${newCase.caseNumber} gerado com sucesso!`);
+      toast.success("Novo caso clínico gerado com IA!");
     } catch (err: any) {
       toast.error(err?.message || "Erro ao gerar caso clínico com IA.");
     } finally {
@@ -714,6 +755,17 @@ ${activeCase.debriefing.pearls.join("\n")}`;
             Próximo Caso Aleatório
           </button>
 
+          {savedCases.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSavedPanelOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+            >
+              <BookmarkCheck className="h-3.5 w-3.5" />
+              Salvos ({savedCases.length})
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setGeneratorPanelOpen((prev) => !prev)}
@@ -729,6 +781,57 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           </button>
         </div>
       </div>
+
+      {/* Saved Cases Drawer (Only shows cases the user explicitly saved) */}
+      {savedPanelOpen && savedCases.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/30 bg-card p-4 shadow-sm space-y-3 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+              <BookmarkCheck className="h-4 w-4" />
+              Casos Clínicos Salvos por Você ({savedCases.length})
+            </h3>
+            <button
+              type="button"
+              onClick={() => setSavedPanelOpen(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Fechar
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {savedCases.map((sc) => (
+              <div
+                key={sc.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background/80 p-3"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    loadCase(sc, false);
+                    setSavedPanelOpen(false);
+                  }}
+                  className="text-left flex-1 min-w-0"
+                >
+                  <div className="text-xs font-bold text-foreground truncate">
+                    Caso clínico — {sc.date}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                    {sc.clues[0]}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSavedCase(sc.id)}
+                  title="Remover dos salvos"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Expandable Panel: Generate Random Case with AI or From Attached PDFs */}
       {generatorPanelOpen && (
@@ -945,7 +1048,9 @@ ${activeCase.debriefing.pearls.join("\n")}`;
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-[26px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Caso clínico #{activeCase.caseNumber}
+              {activeCase.id.startsWith("daily-")
+                ? "Caso clínico do dia"
+                : "Caso clínico"}
             </h1>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="text-sm text-slate-400 dark:text-slate-400">
@@ -979,34 +1084,28 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Case Selector Dropdown for quick jumping between cases */}
-            <select
-              value={activeCase.id}
-              onChange={(e) => {
-                const all = [...BUILTIN_PROGRESSIVE_CASES, ...customCases];
-                const found = all.find((c) => c.id === e.target.value);
-                if (found) loadCase(found, true);
-              }}
-              aria-label="Selecionar caso clínico"
-              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none"
+            {/* Button to explicitly save this clinical case if the user wants to keep it */}
+            <button
+              type="button"
+              onClick={handleToggleSaveCase}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                isCurrentCaseSaved
+                  ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25"
+                  : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              }`}
             >
-              <optgroup label="Casos Multiespecialidade">
-                {BUILTIN_PROGRESSIVE_CASES.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Caso clínico #{c.caseNumber} ({c.difficulty})
-                  </option>
-                ))}
-              </optgroup>
-              {customCases.length > 0 && (
-                <optgroup label="Casos Gerados com IA / PDF">
-                  {customCases.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Caso clínico #{c.caseNumber} ({c.difficulty})
-                    </option>
-                  ))}
-                </optgroup>
+              {isCurrentCaseSaved ? (
+                <>
+                  <BookmarkCheck className="h-3.5 w-3.5" />
+                  Caso salvo
+                </>
+              ) : (
+                <>
+                  <Bookmark className="h-3.5 w-3.5" />
+                  Salvar caso
+                </>
               )}
-            </select>
+            </button>
 
             {attempts.length > 0 && (
               <button

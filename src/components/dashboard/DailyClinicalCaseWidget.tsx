@@ -52,11 +52,7 @@ export function DailyClinicalCaseWidget() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
               <Stethoscope className="h-3.5 w-3.5" />
-              Desafio Clínico do Dia
-            </span>
-
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground">
-              Caso clínico #{dailyCase.caseNumber}
+              Caso Clínico do Dia
             </span>
 
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
