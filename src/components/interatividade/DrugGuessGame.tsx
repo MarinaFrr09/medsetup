@@ -101,6 +101,7 @@ export function DrugGuessGame() {
   const [revealedCluesCount, setRevealedCluesCount] = useState<number>(1);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
+  const [hintLevel, setHintLevel] = useState<number>(0);
 
   // Combobox state
   const [query, setQuery] = useState<string>("");
@@ -256,6 +257,7 @@ export function DrugGuessGame() {
     setRevealedCluesCount(1);
     setStatus("playing");
     setShowExplanation(false);
+    setHintLevel(0);
   };
 
   const resetCurrentDrug = () => {
@@ -269,6 +271,7 @@ export function DrugGuessGame() {
     setRevealedCluesCount(1);
     setStatus("playing");
     setShowExplanation(false);
+    setHintLevel(0);
     setQuery("");
   };
 
@@ -1196,6 +1199,17 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
 
               <button
                 type="button"
+                onClick={() => setHintLevel((prev) => Math.min(3, prev + 1))}
+                disabled={hintLevel >= 3}
+                title="Revelar uma dica sem gastar tentativa"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/90 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/60 disabled:opacity-50 px-4 py-3.5 text-[15px] font-semibold text-amber-700 dark:text-amber-300 transition-colors shrink-0"
+              >
+                <Lightbulb className="h-4 w-4" />
+                <span>{hintLevel > 0 ? `Dica (${hintLevel}/3)` : "Dica"}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setRevealedCluesCount(5);
                   setStatus("lost");
@@ -1208,6 +1222,51 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
                 Desistir
               </button>
             </div>
+
+            {hintLevel > 0 && (
+              <div className="rounded-xl border border-amber-300/70 dark:border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/25 p-4 space-y-1.5 text-sm text-amber-900 dark:text-amber-200 animate-in fade-in duration-200">
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  Dicas ({hintLevel}/3)
+                </div>
+                {hintLevel >= 1 && (
+                  <p>
+                    <strong>Classe farmacológica:</strong> {activeDrug.drugClass} •{" "}
+                    <strong>Nível:</strong> {activeDrug.difficulty}
+                  </p>
+                )}
+                {hintLevel >= 2 && (
+                  <p>
+                    <strong>Estrutura do nome:</strong> começa com a letra{" "}
+                    <strong>&ldquo;{activeDrug.drugName.trim().charAt(0).toUpperCase()}&rdquo;</strong>{" "}
+                    ({activeDrug.drugName.trim().split(/\s+/).length}{" "}
+                    {activeDrug.drugName.trim().split(/\s+/).length === 1
+                      ? "palavra"
+                      : "palavras"}
+                    )
+                  </p>
+                )}
+                {hintLevel >= 3 && (
+                  <p>
+                    <strong>Dica farmacológica extra:</strong>{" "}
+                    {(
+                      activeDrug.debriefing?.pearls?.[0] ||
+                      "Releia atentamente o mecanismo de ação e os efeitos adversos clássicos."
+                    ).replace(
+                      new RegExp(
+                        activeDrug.drugName
+                          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                          .split(/\s+/)
+                          .filter((w) => w.length >= 4)
+                          .join("|") || "____",
+                        "gi"
+                      ),
+                      "_____"
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

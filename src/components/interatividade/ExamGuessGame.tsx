@@ -99,6 +99,7 @@ export function ExamGuessGame() {
   const [revealedCluesCount, setRevealedCluesCount] = useState<number>(1);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
+  const [hintLevel, setHintLevel] = useState<number>(0);
 
   // Combobox state
   const [query, setQuery] = useState<string>("");
@@ -254,6 +255,7 @@ export function ExamGuessGame() {
     setRevealedCluesCount(1);
     setStatus("playing");
     setShowExplanation(false);
+    setHintLevel(0);
   };
 
   const resetCurrentExam = () => {
@@ -267,6 +269,7 @@ export function ExamGuessGame() {
     setRevealedCluesCount(1);
     setStatus("playing");
     setShowExplanation(false);
+    setHintLevel(0);
     setQuery("");
   };
 
@@ -1193,6 +1196,17 @@ ${activeExam.debriefing.pearls.join("\n")}`;
 
               <button
                 type="button"
+                onClick={() => setHintLevel((prev) => Math.min(3, prev + 1))}
+                disabled={hintLevel >= 3}
+                title="Revelar uma dica sem gastar tentativa"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/90 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/60 disabled:opacity-50 px-4 py-3.5 text-[15px] font-semibold text-amber-700 dark:text-amber-300 transition-colors shrink-0"
+              >
+                <Lightbulb className="h-4 w-4" />
+                <span>{hintLevel > 0 ? `Dica (${hintLevel}/3)` : "Dica"}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setRevealedCluesCount(5);
                   setStatus("lost");
@@ -1205,6 +1219,51 @@ ${activeExam.debriefing.pearls.join("\n")}`;
                 Desistir
               </button>
             </div>
+
+            {hintLevel > 0 && (
+              <div className="rounded-xl border border-amber-300/70 dark:border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/25 p-4 space-y-1.5 text-sm text-amber-900 dark:text-amber-200 animate-in fade-in duration-200">
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  Dicas ({hintLevel}/3)
+                </div>
+                {hintLevel >= 1 && (
+                  <p>
+                    <strong>Categoria do exame:</strong> {activeExam.examCategory} •{" "}
+                    <strong>Nível:</strong> {activeExam.difficulty}
+                  </p>
+                )}
+                {hintLevel >= 2 && (
+                  <p>
+                    <strong>Estrutura do nome:</strong> começa com a letra{" "}
+                    <strong>&ldquo;{activeExam.examName.trim().charAt(0).toUpperCase()}&rdquo;</strong>{" "}
+                    ({activeExam.examName.trim().split(/\s+/).length}{" "}
+                    {activeExam.examName.trim().split(/\s+/).length === 1
+                      ? "palavra"
+                      : "palavras"}
+                    )
+                  </p>
+                )}
+                {hintLevel >= 3 && (
+                  <p>
+                    <strong>Dica diagnóstica extra:</strong>{" "}
+                    {(
+                      activeExam.debriefing?.pearls?.[0] ||
+                      "Releia atentamente o princípio técnico e o achado clássico do exame."
+                    ).replace(
+                      new RegExp(
+                        activeExam.examName
+                          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                          .split(/\s+/)
+                          .filter((w) => w.length >= 4)
+                          .join("|") || "____",
+                        "gi"
+                      ),
+                      "_____"
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
