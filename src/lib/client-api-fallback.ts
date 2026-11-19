@@ -1013,10 +1013,17 @@ Responda OBRIGATORIAMENTE em JSON válido:
       return jsonResponse(parsed);
     }
 
-    // 19. /api/ai/generate-interactive-case (5-Clue Progressive Clinical Case, Drug, or Exam Challenge)
+    // 19. /api/ai/generate-interactive-case (5-Clue Progressive Clinical Case, Drug, Exam, or Treatment Challenge)
     if (cleanPath.endsWith("/api/ai/generate-interactive-case")) {
       const rawMode = String(body.mode || "clinical");
-      const mode = rawMode === "drug" ? "drug" : rawMode === "exam" ? "exam" : "clinical";
+      const mode =
+        rawMode === "drug"
+          ? "drug"
+          : rawMode === "exam"
+          ? "exam"
+          : rawMode === "treatment"
+          ? "treatment"
+          : "clinical";
       const specialty = String(
         body.specialty || "Aleatória (Todas as Áreas da Medicina)"
       );
@@ -1040,6 +1047,111 @@ Responda OBRIGATORIAMENTE em JSON válido:
 
       const hasMaterial =
         materialContext.trim().length > 20 || inlineParts.length > 0;
+
+      if (mode === "treatment") {
+        const treatSys = `Você é um Professor Titular de Terapêutica Médica e Emergência criador de desafios para adivinhar o TRATAMENTO / CONDUTA padrão-ouro.
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
+{
+  "treatmentName": "Nome Claro e Objetivo do Tratamento / Conduta em Português",
+  "acceptedSynonyms": ["sinonimo", "sigla"],
+  "specialty": "Especialidade",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Cenário clínico conciso (1-2 frases) que exige uma conduta terapêutica decisiva",
+    "Pista 2/5: Sinais vitais, exame físico e critérios de gravidade",
+    "Pista 3/5: Exames diagnósticos confirmando a indicação do tratamento",
+    "Pista 4/5: Princípio terapêutico, via ou janela de tempo sem citar o nome literal",
+    "Pista 5/5: Protocolo aproximado, monitoramento ou resposta esperada sem entregar o nome"
+  ],
+  "suggestedDistractors": ["Conduta 1", "Conduta 2", "Conduta 3", "Conduta 4", "Conduta 5", "Conduta 6"],
+  "debriefing": {
+    "overview": "Síntese terapêutica completa.",
+    "clueBreakdown": ["Pista 1", "Pista 2", "Pista 3", "Pista 4", "Pista 5"],
+    "differentials": [
+      { "name": "Conduta Incorreta/Secundária A", "distinction": "Por que não é a 1ª escolha" },
+      { "name": "Conduta Incorreta/Secundária B", "distinction": "Por que não é a 1ª escolha" }
+    ],
+    "protocolAndDoses": "Protocolo completo, doses exatas, via e monitoramento.",
+    "pearls": ["Pérola 1", "Pérola 2", "Pérola 3"]
+  }
+}`;
+        const treatPrompt = `Gere um Desafio de Tratamento / Conduta Médica em 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `Escolha uma conduta terapêutica chave abordada no PDF/material anexado pelo estudante!`
+    : `- Especialidade: ${specialty}\n- Dificuldade: ${difficulty}${
+        topic ? `\n- Foco: ${topic}` : ""
+      }${
+        avoidDiagnoses.length > 0
+          ? `\n- Não repita estes tratamentos: ${avoidDiagnoses.join(", ")}`
+          : ""
+      }`
+}
+${
+  materialContext
+    ? `\nCONTEÚDO DO PDF / MATERIAL:\n"""\n${materialContext.slice(0, 35000)}\n"""`
+    : ""
+}`;
+        const rawTreat = await callGeminiDirectBrowser(
+          treatPrompt,
+          treatSys,
+          true,
+          inlineParts,
+          0.45
+        );
+        const parsedTreat = parseJsonSafe(rawTreat);
+        const now = new Date();
+        const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
+          now.getMonth() + 1
+        ).padStart(2, "0")}/${now.getFullYear()}`;
+        const rawClues = Array.isArray(parsedTreat?.clues) ? parsedTreat.clues : [];
+        return jsonResponse({
+          id: `ptreat_${Date.now()}`,
+          date: dateStr,
+          treatmentName: String(
+            parsedTreat?.treatmentName || "Conduta Terapêutica"
+          ).trim(),
+          acceptedSynonyms: Array.isArray(parsedTreat?.acceptedSynonyms)
+            ? parsedTreat.acceptedSynonyms
+            : [],
+          specialty: String(parsedTreat?.specialty || specialty),
+          difficulty:
+            parsedTreat?.difficulty === "Fácil" ||
+            parsedTreat?.difficulty === "Médio" ||
+            parsedTreat?.difficulty === "Difícil"
+              ? parsedTreat.difficulty
+              : "Médio",
+          clues: [
+            String(rawClues[0] || "Cenário clínico inicial."),
+            String(rawClues[1] || "Sinais vitais e exame físico."),
+            String(rawClues[2] || "Exames confirmatórios."),
+            String(rawClues[3] || "Princípio terapêutico."),
+            String(rawClues[4] || "Protocolo e monitoramento."),
+          ],
+          suggestedDistractors: Array.isArray(parsedTreat?.suggestedDistractors)
+            ? parsedTreat.suggestedDistractors
+            : [],
+          debriefing: {
+            overview: String(parsedTreat?.debriefing?.overview || ""),
+            clueBreakdown: [
+              String(parsedTreat?.debriefing?.clueBreakdown?.[0] || ""),
+              String(parsedTreat?.debriefing?.clueBreakdown?.[1] || ""),
+              String(parsedTreat?.debriefing?.clueBreakdown?.[2] || ""),
+              String(parsedTreat?.debriefing?.clueBreakdown?.[3] || ""),
+              String(parsedTreat?.debriefing?.clueBreakdown?.[4] || ""),
+            ],
+            differentials: Array.isArray(parsedTreat?.debriefing?.differentials)
+              ? parsedTreat.debriefing.differentials
+              : [],
+            protocolAndDoses: String(
+              parsedTreat?.debriefing?.protocolAndDoses || ""
+            ),
+            pearls: Array.isArray(parsedTreat?.debriefing?.pearls)
+              ? parsedTreat.debriefing.pearls
+              : [],
+          },
+        });
+      }
 
       if (mode === "exam") {
         const examSys = `Você é um Professor Titular de Propedêutica Médica, Radiologia e Medicina Diagnóstica criador de desafios de adivinhação do EXAME COMPLEMENTAR ideal.

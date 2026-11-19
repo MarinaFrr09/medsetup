@@ -202,10 +202,65 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
   }
 }`;
 
+const PROGRESSIVE_5CLUE_TREATMENT_SYSTEM_PROMPT = `Você é um Professor Titular de Terapêutica Médica, Emergência e Clínica Cirúrgica, criador de desafios clínicos para escolher o TRATAMENTO / CONDUTA DE PRIMEIRA LINHA ideal.
+
+SUA MISSÃO:
+Criar um DESAFIO DE ADIVINHAÇÃO DE TRATAMENTO / CONDUTA MÉDICA EM 5 PISTAS PROGRESSIVAS, onde o estudante descobre qual é o tratamento, antídoto ou procedimento terapêutico padrão-ouro para o paciente descrito, seguido de um DEBRIEFING TERAPÊUTICO DETALHADO ao final.
+
+ESTRUTURA OBRIGATÓRIA DAS 5 PISTAS ("clues", array com exatamente 5 strings):
+- Pista 1 (clues[0] — "Cenário clínico"): Apresentação concisa (1-2 frases) do paciente e quadro agudo/crônico que exige uma conduta terapêutica decisiva.
+- Pista 2/5 (clues[1]): Sinais vitais, exame físico e critérios de gravidade ou instabilidade.
+- Pista 3/5 (clues[2]): Resultados de exames diagnósticos ou escores clínicos que confirmam a indicação exata deste tratamento (sem entregar o nome literal do tratamento).
+- Pista 4/5 (clues[3]): Princípio terapêutico, via de administração, janela de tempo ou mecanismo pelo qual esta conduta salva o paciente (ainda sem citar o nome literal do tratamento).
+- Pista 5/5 (clues[4]): Protocolo/posologia aproximada, monitoramento obrigatório ou resposta clínica imediata esperada (sem citar o nome literal da conduta).
+
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
+{
+  "treatmentName": "Nome Claro e Objetivo do Tratamento / Conduta (ex: 'Cardioversão elétrica sincronizada', 'Sulfato de magnésio intravenoso (Esquema Zuspan)', 'Plasmaférese terapêutica de emergência')",
+  "acceptedSynonyms": ["sinonimo 1", "sigla ou nome curto"],
+  "specialty": "Especialidade (ex: 'Cardiologia / Emergência', 'Obstetrícia', 'Toxicologia')",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Cenário clínico",
+    "Pista 2/5",
+    "Pista 3/5",
+    "Pista 4/5",
+    "Pista 5/5"
+  ],
+  "suggestedDistractors": [
+    "Conduta Alternativa 1",
+    "Conduta Alternativa 2",
+    "Conduta Alternativa 3",
+    "Conduta Alternativa 4",
+    "Conduta Alternativa 5",
+    "Conduta Alternativa 6"
+  ],
+  "debriefing": {
+    "overview": "Síntese terapêutica completa explicando por que esta é a conduta padrão-ouro.",
+    "clueBreakdown": ["Pista 1", "Pista 2/5", "Pista 3/5", "Pista 4/5", "Pista 5/5"],
+    "differentials": [
+      {
+        "name": "Conduta Incorreta ou Secundária A",
+        "distinction": "Por que não é a 1ª escolha ou quando seria contraindicada"
+      },
+      {
+        "name": "Conduta Incorreta ou Secundária B",
+        "distinction": "Por que não é a 1ª escolha ou quando seria contraindicada"
+      }
+    ],
+    "protocolAndDoses": "Protocolo completo, doses exatas, via, tempo, contraindicações e monitoramento.",
+    "pearls": [
+      "Pérola terapêutica 1",
+      "Pérola terapêutica 2",
+      "Pérola terapêutica 3"
+    ]
+  }
+}`;
+
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") || "";
-    let mode: "clinical" | "drug" | "exam" = "clinical";
+    let mode: "clinical" | "drug" | "exam" | "treatment" = "clinical";
     let specialty = "Aleatória (Todas as Áreas da Medicina)";
     let difficulty = "Aleatório (Fácil a Difícil)";
     let topic = "";
@@ -216,7 +271,14 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
       const rawMode = String(formData.get("mode") || "clinical");
-      mode = rawMode === "drug" ? "drug" : rawMode === "exam" ? "exam" : "clinical";
+      mode =
+        rawMode === "drug"
+          ? "drug"
+          : rawMode === "exam"
+          ? "exam"
+          : rawMode === "treatment"
+          ? "treatment"
+          : "clinical";
       specialty = String(formData.get("specialty") || specialty);
       difficulty = String(formData.get("difficulty") || difficulty);
       topic = String(formData.get("topic") || "");
@@ -268,7 +330,14 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const body = await req.json();
-      mode = body.mode === "drug" ? "drug" : body.mode === "exam" ? "exam" : "clinical";
+      mode =
+        body.mode === "drug"
+          ? "drug"
+          : body.mode === "exam"
+          ? "exam"
+          : body.mode === "treatment"
+          ? "treatment"
+          : "clinical";
       specialty = body.specialty || specialty;
       difficulty = body.difficulty || difficulty;
       topic = body.topic || "";
@@ -285,6 +354,83 @@ export async function POST(req: NextRequest) {
     const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
       now.getMonth() + 1
     ).padStart(2, "0")}/${now.getFullYear()}`;
+
+    if (mode === "treatment") {
+      const treatPrompt = `Gere um Desafio de Adivinhação de Tratamento / Conduta Médica em 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `MODO BASEADO EM PDF/MATERIAL DO ESTUDANTE:
+Escolha uma conduta terapêutica ou tratamento padrão-ouro abordado no material abaixo e crie as 5 pistas fielmente baseadas nele!`
+    : `MODO ALEATÓRIO DE TERAPÊUTICA MÉDICA:
+- Especialidade solicitada: ${specialty}
+- Nível de Dificuldade solicitado: ${difficulty}
+${topic ? `- Foco/Tema sugerido: ${topic}` : ""}
+${
+  avoidDiagnoses.length > 0
+    ? `- NÃO repita nenhum destes tratamentos: ${avoidDiagnoses.join(", ")}`
+    : ""
+}`
+}
+${
+  materialContext.trim()
+    ? `\nCONTEÚDO DO PDF / MATERIAL ANEXADO:\n"""\n${materialContext.slice(0, 38000)}\n"""`
+    : ""
+}`;
+
+      const parsedTreat: any = await generateJSONFromAI({
+        systemPrompt: PROGRESSIVE_5CLUE_TREATMENT_SYSTEM_PROMPT,
+        userPrompt: treatPrompt,
+        fileAttachments: inlineParts.length > 0 ? inlineParts : undefined,
+      });
+
+      const rawClues = Array.isArray(parsedTreat?.clues) ? parsedTreat.clues : [];
+      return NextResponse.json({
+        id: `ptreat_${Date.now()}`,
+        date: dateStr,
+        treatmentName: String(
+          parsedTreat?.treatmentName || "Conduta Terapêutica"
+        ).trim(),
+        acceptedSynonyms: Array.isArray(parsedTreat?.acceptedSynonyms)
+          ? parsedTreat.acceptedSynonyms
+          : [],
+        specialty: String(parsedTreat?.specialty || specialty),
+        difficulty:
+          parsedTreat?.difficulty === "Fácil" ||
+          parsedTreat?.difficulty === "Médio" ||
+          parsedTreat?.difficulty === "Difícil"
+            ? parsedTreat.difficulty
+            : "Médio",
+        clues: [
+          String(rawClues[0] || "Cenário clínico inicial."),
+          String(rawClues[1] || "Sinais vitais e exame físico."),
+          String(rawClues[2] || "Exames confirmatórios."),
+          String(rawClues[3] || "Princípio terapêutico e janela de ação."),
+          String(rawClues[4] || "Protocolo e resposta esperada."),
+        ],
+        suggestedDistractors: Array.isArray(parsedTreat?.suggestedDistractors)
+          ? parsedTreat.suggestedDistractors
+          : [],
+        debriefing: {
+          overview: String(parsedTreat?.debriefing?.overview || ""),
+          clueBreakdown: [
+            String(parsedTreat?.debriefing?.clueBreakdown?.[0] || ""),
+            String(parsedTreat?.debriefing?.clueBreakdown?.[1] || ""),
+            String(parsedTreat?.debriefing?.clueBreakdown?.[2] || ""),
+            String(parsedTreat?.debriefing?.clueBreakdown?.[3] || ""),
+            String(parsedTreat?.debriefing?.clueBreakdown?.[4] || ""),
+          ],
+          differentials: Array.isArray(parsedTreat?.debriefing?.differentials)
+            ? parsedTreat.debriefing.differentials
+            : [],
+          protocolAndDoses: String(
+            parsedTreat?.debriefing?.protocolAndDoses || ""
+          ),
+          pearls: Array.isArray(parsedTreat?.debriefing?.pearls)
+            ? parsedTreat.debriefing.pearls
+            : [],
+        },
+      });
+    }
 
     if (mode === "exam") {
       const examPrompt = `Gere um Desafio de Adivinhação de Exame Complementar em 5 Pistas Progressivas em JSON.

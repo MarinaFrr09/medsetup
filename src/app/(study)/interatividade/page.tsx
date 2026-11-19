@@ -31,6 +31,7 @@ import {
   BookmarkCheck,
   Pill,
   FlaskConical,
+  HeartPulse,
 } from "lucide-react";
 import {
   BUILTIN_PROGRESSIVE_CASES,
@@ -43,6 +44,7 @@ import {
 } from "@/data/clinicalCasesBank";
 import { DrugGuessGame } from "@/components/interatividade/DrugGuessGame";
 import { ExamGuessGame } from "@/components/interatividade/ExamGuessGame";
+import { TreatmentGuessGame } from "@/components/interatividade/TreatmentGuessGame";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast";
 
@@ -102,11 +104,14 @@ function InteratividadeContent() {
     atelieAnalyses,
   } = useAppStore();
 
-  // Mode tab: Clinical Cases, Drug Guessing, or Exam Guessing
-  const [activeTab, setActiveTab] = useState<"clinical" | "drugs" | "exams">(() => {
+  // Mode tab: Clinical Cases, Drug Guessing, Exam Guessing, or Treatment
+  const [activeTab, setActiveTab] = useState<
+    "clinical" | "drugs" | "exams" | "treatments"
+  >(() => {
     const t = searchParams.get("tab");
     if (t === "drugs") return "drugs";
     if (t === "exams") return "exams";
+    if (t === "treatments") return "treatments";
     return "clinical";
   });
 
@@ -731,43 +736,55 @@ ${activeCase.debriefing.pearls.join("\n")}`;
 
   return (
     <div className="w-full max-w-4xl mx-auto pb-16 space-y-6">
-      {/* Mode Switcher: Casos Clínicos | Adivinhar Remédio | Adivinhar Exame */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
+      {/* Mode Switcher: Casos Clínicos | Adivinhar Remédio | Adivinhar Exame | Tratamento */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
         <button
           type="button"
           onClick={() => setActiveTab("clinical")}
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all ${
             activeTab === "clinical"
               ? "bg-[#12b76a] text-white shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
           }`}
         >
-          <Stethoscope className="h-4 w-4" />
+          <Stethoscope className="h-4 w-4 shrink-0" />
           <span>Casos Clínicos</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("drugs")}
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all ${
             activeTab === "drugs"
               ? "bg-[#12b76a] text-white shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
           }`}
         >
-          <Pill className="h-4 w-4" />
+          <Pill className="h-4 w-4 shrink-0" />
           <span>Adivinhar Remédio</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("exams")}
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all ${
             activeTab === "exams"
               ? "bg-[#12b76a] text-white shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
           }`}
         >
-          <FlaskConical className="h-4 w-4" />
+          <FlaskConical className="h-4 w-4 shrink-0" />
           <span>Adivinhar Exame</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("treatments")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+            activeTab === "treatments"
+              ? "bg-[#12b76a] text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+          }`}
+        >
+          <HeartPulse className="h-4 w-4 shrink-0" />
+          <span>Tratamento</span>
         </button>
       </div>
 
@@ -775,6 +792,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
         <DrugGuessGame />
       ) : activeTab === "exams" ? (
         <ExamGuessGame />
+      ) : activeTab === "treatments" ? (
+        <TreatmentGuessGame />
       ) : (
         <>
       {/* Top Action Toolbar: Caso do Dia | Sortear Caso Aleatório | Gerar com IA / PDF */}
