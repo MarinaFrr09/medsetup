@@ -1007,6 +1007,131 @@ Responda OBRIGATORIAMENTE em JSON válido:
       return jsonResponse(parsed);
     }
 
+    // 19. /api/ai/generate-interactive-case
+    if (cleanPath.endsWith("/api/ai/generate-interactive-case")) {
+      const topic = String(body.topic || "");
+      const setting = String(body.setting || "Automático");
+      const difficulty = String(body.difficulty || "Residência Médica");
+      const materialContext = String(body.materialContext || "");
+
+      const sys = `Você é um Professor Titular de Clínica Médica, Emergência e Propedêutica Médica especialista em Simulação Clínica Interativa com Raciocínio em Etapas.
+Construa um CASO CLÍNICO INTERATIVO COMPLETO EM 6 ETAPAS PROGRESSIVAS fiel ao tema e aos materiais fornecidos.
+Responda OBRIGATORIAMENTE em JSON válido seguindo esta estrutura exata:
+{
+  "title": "Título Clínico do Caso (sem revelar o diagnóstico final no título)",
+  "revealedDiagnosisTitle": "Nome Oficial do Diagnóstico Definitivo",
+  "specialty": "Especialidade / Disciplina",
+  "difficulty": "${difficulty}",
+  "setting": "Pronto-Socorro | Ambulatório | Enfermaria | UTI",
+  "stage1": {
+    "patientSummary": "Identificação: iniciais, idade, sexo, profissão.",
+    "chiefComplaint": "Queixa principal com tempo de evolução.",
+    "scenarioDescription": "Descrição imersiva da chegada do paciente e contexto inicial do atendimento (3 a 5 linhas).",
+    "triageNote": "Impressão inicial da triagem.",
+    "anamnesisOptions": [
+      {
+        "id": "anam_1",
+        "category": "HDA | Antecedentes | Medicações e Toxinas | Hábitos e Exposições | Alergias e Revisão de Sistemas",
+        "question": "Pergunta clínica clara a ser feita na anamnese (gere 8 opções: 6 'essential' e 2 'optional')",
+        "priority": "essential",
+        "finding": "Relato detalhado do paciente revelando dados clínicos",
+        "rationale": "Por que esta pergunta é prioritária ou secundária"
+      }
+    ]
+  },
+  "stage2": {
+    "instruction": "Selecione os sistemas e manobras propedêuticas prioritárias para o exame físico direcionado.",
+    "physicalSystems": [
+      {
+        "id": "phys_1",
+        "system": "Sinais Vitais e Ectoscopia | Neurológico | Cardiovascular | Respiratório | Abdominal | Pele e Extremidades",
+        "maneuver": "Manobras propedêuticas avaliadas (gere 6 sistemas)",
+        "priority": "essential",
+        "isAbnormal": true,
+        "findings": "Achados físicos objetivos detalhados com valores numéricos",
+        "clinicalInterpretation": "Interpretação técnica do achado"
+      }
+    ]
+  },
+  "stage3": {
+    "primaryHypothesis": "Nome do Diagnóstico Principal Esperado",
+    "acceptedSynonyms": ["sinonimo 1", "sinonimo 2"],
+    "differentials": [
+      {
+        "name": "Diagnóstico Diferencial 1",
+        "whyPlausible": "Por que entra no diferencial",
+        "howToRuleOut": "Como diferenciá-lo"
+      }
+    ],
+    "expectedJustificationKeywords": ["conceito1", "conceito2", "conceito3", "conceito4"],
+    "modelJustification": "Justificativa fisiopatológica, epidemiológica e clínica completa."
+  },
+  "stage4": {
+    "instruction": "Solicite os exames complementares considerando prioridade diagnóstica, custo e invasividade.",
+    "exams": [
+      {
+        "id": "exam_1",
+        "name": "Nome do Exame (gere 8 exames: 5 'essential', 1 'complementary', 2 'unnecessary')",
+        "category": "Laboratorial | Imagem | Funcional / Especial",
+        "costInvasiveness": "Baixo Custo • Não Invasivo | Médio Custo • Moderado | Alto Custo • Invasivo",
+        "priority": "essential",
+        "result": "Laudo ou valor numérico detalhado com valores de referência",
+        "commentary": "Por que deve ou não ser solicitado e interpretação"
+      }
+    ]
+  },
+  "stage5": {
+    "definitiveDiagnosis": "Diagnóstico Definitivo Completo",
+    "diagnosisOptions": [
+      "Diagnóstico Definitivo Completo",
+      "Diagnóstico Diferencial Plausível A",
+      "Diagnóstico Diferencial Plausível B",
+      "Diagnóstico Diferencial Plausível C"
+    ],
+    "correctDiagnosisIndex": 0,
+    "managementOptions": [
+      {
+        "id": "cond_1",
+        "category": "Medida Imediata / Suporte | Farmacoterapia / Antídoto / Dose | Critério de Internação / Destino | Monitoramento",
+        "action": "Descrição precisa da conduta com fármaco, dose, via ou suporte (gere 8 opções: 5 corretas e 3 incorretas/armadilhas)",
+        "isCorrect": true,
+        "rationale": "Mecanismo farmacológico e justificativa clínica"
+      }
+    ],
+    "completeConductSummary": {
+      "immediateMeasures": "Medidas imediatas de estabilização...",
+      "pharmacotherapyAndDoses": "Fármacos, doses exatas, ajustes, interações ou antídotos...",
+      "admissionAndDischargeCriteria": "Critérios de internação e alta...",
+      "monitoringPlan": "Plano de monitoramento clínico e laboratorial..."
+    }
+  },
+  "stage6": {
+    "pathophysiologyDeepDive": "Síntese técnica e objetiva da fisiopatologia celular e sistêmica do caso.",
+    "clinicalPitfalls": ["Armadilha Clínica 1", "Armadilha Clínica 2", "Armadilha Clínica 3"],
+    "keyTakeaways": ["Ponto-chave 1", "Ponto-chave 2", "Ponto-chave 3", "Ponto-chave 4"],
+    "stageByStageCommentary": {
+      "stage1": "Comentário gabarito da Etapa 1 (Anamnese)",
+      "stage2": "Comentário gabarito da Etapa 2 (Exame Físico)",
+      "stage3": "Comentário gabarito da Etapa 3 (Hipóteses)",
+      "stage4": "Comentário gabarito da Etapa 4 (Exames Complementares)",
+      "stage5": "Comentário gabarito da Etapa 5 (Conduta e Monitoramento)"
+    }
+  }
+}`;
+      const prompt = `Gere o Caso Clínico Interativo completo em 6 etapas.
+${topic ? `TEMA SOLICITADO: "${topic}"` : ""}
+CENÁRIO: ${setting}
+COMPLEXIDADE: ${difficulty}
+${materialContext ? `\nCONTEÚDO DOS MATERIAIS DO ALUNO:\n"""\n${materialContext.slice(0, 35000)}\n"""` : ""}`;
+      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, 0.4);
+      const parsed = parseJsonSafe(raw);
+      return jsonResponse({
+        id: `icase_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        ...parsed,
+      });
+    }
+
     // Generic fallback for any future /api/ai/* route
     if (cleanPath.includes("/api/ai/")) {
       const sys =

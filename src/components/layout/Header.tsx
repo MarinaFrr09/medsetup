@@ -29,6 +29,7 @@ export const Header = React.memo(function Header() {
     if (pathname.startsWith("/caderno-erros")) return "Caderno de Erros";
     if (pathname.startsWith("/tutoria")) return "Tutoria IA";
     if (pathname.startsWith("/atelie")) return "Ateliê";
+    if (pathname.startsWith("/interatividade")) return "Interatividade Clínica";
     if (pathname.startsWith("/audio")) return "Gravações & Áudio";
     if (pathname.startsWith("/livros")) return "Biblioteca de Livros";
     if (pathname.startsWith("/materials")) return "Materiais";

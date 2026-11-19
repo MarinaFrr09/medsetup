@@ -23,6 +23,7 @@ import {
   Library,
   BookX,
   NotebookPen,
+  Stethoscope,
   X,
 } from "lucide-react";
 import { useAppStore } from "@/stores/useAppStore";
@@ -68,6 +69,16 @@ const NAV_ITEMS: NavItem[] = [
     hoverClasses: "hover:bg-blue-50/60 dark:hover:bg-blue-950/20 hover:text-blue-700 dark:hover:text-blue-300",
     hoverIconClasses: "group-hover:text-blue-500 dark:group-hover:text-blue-400",
     badgeDot: "bg-blue-500",
+  },
+  {
+    name: "Interatividade",
+    href: "/interatividade",
+    icon: Stethoscope,
+    activeClasses: "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 font-semibold shadow-xs",
+    activeIconClasses: "text-sky-600 dark:text-sky-400",
+    hoverClasses: "hover:bg-sky-50/60 dark:hover:bg-sky-950/20 hover:text-sky-700 dark:hover:text-sky-300",
+    hoverIconClasses: "group-hover:text-sky-500 dark:group-hover:text-sky-400",
+    badgeDot: "bg-sky-500",
   },
   {
     name: "Livros",
