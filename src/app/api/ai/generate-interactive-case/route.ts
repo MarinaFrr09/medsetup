@@ -5,7 +5,7 @@ import { extractTextFromDocx, extractTextFromPptx, extractTextFromPdf } from "@/
 export const maxDuration = 600;
 export const dynamic = "force-dynamic";
 
-export const INTERACTIVE_CASE_SYSTEM_PROMPT = `Você é um Professor Titular de Clínica Médica, Emergência e Propedêutica Médica, especialista em Simulação Clínica Interativa com Raciocínio em Etapas (PBL / OSCE / USMLE Step 2 CK / Residência Médica).
+const INTERACTIVE_CASE_SYSTEM_PROMPT = `Você é um Professor Titular de Clínica Médica, Emergência e Propedêutica Médica, especialista em Simulação Clínica Interativa com Raciocínio em Etapas (PBL / OSCE / USMLE Step 2 CK / Residência Médica).
 
 SUA MISSÃO:
 Construir um CASO CLÍNICO INTERATIVO COMPLETO EM 6 ETAPAS PROGRESSIVAS, onde os dados são revelados passo a passo conforme as escolhas do estudante, exigindo raciocínio fisiopatológico, propedêutico e terapêutico.
