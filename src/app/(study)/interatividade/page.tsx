@@ -30,6 +30,7 @@ import {
   Bookmark,
   BookmarkCheck,
   Pill,
+  FlaskConical,
 } from "lucide-react";
 import {
   BUILTIN_PROGRESSIVE_CASES,
@@ -41,6 +42,7 @@ import {
   normalizeDiagnosisString,
 } from "@/data/clinicalCasesBank";
 import { DrugGuessGame } from "@/components/interatividade/DrugGuessGame";
+import { ExamGuessGame } from "@/components/interatividade/ExamGuessGame";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast";
 
@@ -100,10 +102,13 @@ function InteratividadeContent() {
     atelieAnalyses,
   } = useAppStore();
 
-  // Mode tab: Clinical Cases vs Drug Guessing (both in the exact same 5-clue progressive scheme)
-  const [activeTab, setActiveTab] = useState<"clinical" | "drugs">(() =>
-    searchParams.get("tab") === "drugs" ? "drugs" : "clinical"
-  );
+  // Mode tab: Clinical Cases, Drug Guessing, or Exam Guessing
+  const [activeTab, setActiveTab] = useState<"clinical" | "drugs" | "exams">(() => {
+    const t = searchParams.get("tab");
+    if (t === "drugs") return "drugs";
+    if (t === "exams") return "exams";
+    return "clinical";
+  });
 
   // Active case state (defaults to today's daily case)
   const [activeCase, setActiveCase] = useState<ProgressiveClinicalCase>(() =>
@@ -723,8 +728,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
 
   return (
     <div className="w-full max-w-4xl mx-auto pb-16 space-y-6">
-      {/* Mode Switcher: Casos Clínicos (5 Pistas) | Adivinhar Remédio (5 Pistas) */}
-      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
+      {/* Mode Switcher: Casos Clínicos | Adivinhar Remédio | Adivinhar Exame */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
         <button
           type="button"
           onClick={() => setActiveTab("clinical")}
@@ -735,7 +740,7 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           }`}
         >
           <Stethoscope className="h-4 w-4" />
-          <span>Casos Clínicos (5 Pistas)</span>
+          <span>Casos Clínicos</span>
         </button>
         <button
           type="button"
@@ -747,12 +752,26 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           }`}
         >
           <Pill className="h-4 w-4" />
-          <span>Adivinhar Remédio (5 Pistas)</span>
+          <span>Adivinhar Remédio</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("exams")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+            activeTab === "exams"
+              ? "bg-[#12b76a] text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+          }`}
+        >
+          <FlaskConical className="h-4 w-4" />
+          <span>Adivinhar Exame</span>
         </button>
       </div>
 
       {activeTab === "drugs" ? (
         <DrugGuessGame />
+      ) : activeTab === "exams" ? (
+        <ExamGuessGame />
       ) : (
         <>
       {/* Top Action Toolbar: Caso do Dia | Sortear Caso Aleatório | Gerar com IA / PDF */}
@@ -763,7 +782,7 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">
-              Casos Clínicos Pontuais em 5 Pistas
+              Casos Clínicos Pontuais
             </h2>
             <p className="text-xs text-muted-foreground">
               Revele as pistas a cada chute e estude o debriefing completo ao final
@@ -879,7 +898,7 @@ ${activeCase.debriefing.pearls.join("\n")}`;
             <div>
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-emerald-500" />
-                Gerar Novo Caso Clínico de 5 Pistas com IA
+                Gerar Novo Caso Clínico com IA
               </h3>
               <p className="text-xs text-muted-foreground">
                 Escolha entre um caso clínico inédito de qualquer área da medicina ou anexe seus PDFs

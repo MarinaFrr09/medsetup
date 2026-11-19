@@ -665,7 +665,7 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">
-              Adivinhar Remédio em 5 Pistas
+              Adivinhar Remédio
             </h2>
             <p className="text-xs text-muted-foreground">
               Descubra o fármaco a partir da indicação, mecanismo, farmacocinética e efeitos adversos
@@ -781,7 +781,7 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
             <div>
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-emerald-500" />
-                Gerar Novo Desafio de Remédio em 5 Pistas com IA
+                Gerar Novo Desafio de Remédio com IA
               </h3>
               <p className="text-xs text-muted-foreground">
                 Sorteie qualquer classe farmacológica ou anexe um PDF de Farmacologia

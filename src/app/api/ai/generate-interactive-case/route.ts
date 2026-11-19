@@ -141,10 +141,71 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
   }
 }`;
 
+const PROGRESSIVE_5CLUE_EXAM_SYSTEM_PROMPT = `Você é um Professor Titular de Propedêutica Médica, Radiologia e Medicina Diagnóstica, criador de desafios clínicos para escolher o EXAME COMPLEMENTAR ideal a ser solicitado.
+
+SUA MISSÃO:
+Criar um DESAFIO DE ADIVINHAÇÃO DE EXAME COMPLEMENTAR EM 5 PISTAS PROGRESSIVAS, onde o estudante descobre qual é o exame diagnóstico ou procedimento complementar que deve ser pedido, seguido de um DEBRIEFING DETALHADO ao final.
+
+ESTRUTURA OBRIGATÓRIA DAS 5 PISTAS ("clues", array com exatamente 5 strings):
+- Pista 1 (clues[0] — "Cenário clínico"): Apresentação concisa (1-2 frases) do paciente e da suspeita clínica em que este exame é decisivo.
+- Pista 2 (clues[1] — "Pista 2/5"): Achados do exame físico ou raciocínio clínico que justificam pedir este exame específico agora (sem citar o nome literal do exame).
+- Pista 3 (clues[2] — "Pista 3/5"): Natureza técnica do exame (imagem, laboratório, endoscópico, funcional ou biópsia; uso de contraste/radiação/preparo ou local de coleta).
+- Pista 4 (clues[3] — "Pista 4/5"): Achado clássico / sinal patognomônico ou alteração laboratorial típica revelada por este exame.
+- Pista 5 (clues[4] — "Pista 5/5"): Papel diagnóstico padrão-ouro, metas de tempo, contraindicações ou por que este exame supera alternativas concorrentes (ainda sem citar o nome literal do exame).
+
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
+{
+  "examName": "Nome Oficial do Exame Complementar em Português (ex: 'Angiotomografia de artérias pulmonares', 'Punção lombar (Análise do líquor)')",
+  "acceptedSynonyms": ["sigla", "sinonimo comum"],
+  "examCategory": "Categoria (ex: 'Imagem / Emergência', 'Cardiologia / Funcional', 'Laboratorial', 'Endoscopia')",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Texto da Pista 1 (Cenário clínico)",
+    "Texto da Pista 2/5 (Raciocínio clínico / Exame físico)",
+    "Texto da Pista 3/5 (Princípio técnico / Preparo / Invasividade)",
+    "Texto da Pista 4/5 (Achado clássico / Sinal patognomônico)",
+    "Texto da Pista 5/5 (Papel padrão-ouro / Contraindicações / Diferencial)"
+  ],
+  "suggestedDistractors": [
+    "Exame Alternativo 1",
+    "Exame Alternativo 2",
+    "Exame Alternativo 3",
+    "Exame Alternativo 4",
+    "Exame Alternativo 5",
+    "Exame Alternativo 6"
+  ],
+  "debriefing": {
+    "overview": "Síntese diagnóstica completa sobre o exame, sua acurácia e papel na prática médica.",
+    "clueBreakdown": [
+      "Explicação da Pista 1",
+      "Explicação da Pista 2/5",
+      "Explicação da Pista 3/5",
+      "Explicação da Pista 4/5",
+      "Explicação da Pista 5/5"
+    ],
+    "differentials": [
+      {
+        "name": "Exame Concorrente A",
+        "distinction": "Quando pedir o concorrente e por que neste cenário o exame escolhido é superior"
+      },
+      {
+        "name": "Exame Concorrente B",
+        "distinction": "Quando pedir o concorrente e por que neste cenário o exame escolhido é superior"
+      }
+    ],
+    "indicationsAndInterpretation": "Principais indicações, critérios de interpretação dos resultados e contraindicações.",
+    "pearls": [
+      "Pérola diagnóstica de alto rendimento 1",
+      "Pérola diagnóstica de alto rendimento 2",
+      "Pérola diagnóstica de alto rendimento 3"
+    ]
+  }
+}`;
+
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") || "";
-    let mode: "clinical" | "drug" = "clinical";
+    let mode: "clinical" | "drug" | "exam" = "clinical";
     let specialty = "Aleatória (Todas as Áreas da Medicina)";
     let difficulty = "Aleatório (Fácil a Difícil)";
     let topic = "";
@@ -154,7 +215,8 @@ export async function POST(req: NextRequest) {
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
-      mode = String(formData.get("mode") || "clinical") === "drug" ? "drug" : "clinical";
+      const rawMode = String(formData.get("mode") || "clinical");
+      mode = rawMode === "drug" ? "drug" : rawMode === "exam" ? "exam" : "clinical";
       specialty = String(formData.get("specialty") || specialty);
       difficulty = String(formData.get("difficulty") || difficulty);
       topic = String(formData.get("topic") || "");
@@ -206,7 +268,7 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const body = await req.json();
-      mode = body.mode === "drug" ? "drug" : "clinical";
+      mode = body.mode === "drug" ? "drug" : body.mode === "exam" ? "exam" : "clinical";
       specialty = body.specialty || specialty;
       difficulty = body.difficulty || difficulty;
       topic = body.topic || "";
@@ -223,6 +285,81 @@ export async function POST(req: NextRequest) {
     const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
       now.getMonth() + 1
     ).padStart(2, "0")}/${now.getFullYear()}`;
+
+    if (mode === "exam") {
+      const examPrompt = `Gere um Desafio de Adivinhação de Exame Complementar em 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `MODO BASEADO EM PDF/MATERIAL DO ESTUDANTE:
+Escolha um exame diagnóstico ou complementar chave abordado no material abaixo e crie as 5 pistas fielmente baseadas nele!`
+    : `MODO ALEATÓRIO DE EXAMES DIAGNÓSTICOS:
+- Área/Categoria solicitada: ${specialty}
+- Nível de Dificuldade solicitado: ${difficulty}
+${topic ? `- Foco/Tema sugerido: ${topic}` : ""}
+${
+  avoidDiagnoses.length > 0
+    ? `- NÃO repita nenhum destes exames: ${avoidDiagnoses.join(", ")}`
+    : ""
+}`
+}
+${
+  materialContext.trim()
+    ? `\nCONTEÚDO DO PDF / MATERIAL ANEXADO:\n"""\n${materialContext.slice(0, 38000)}\n"""`
+    : ""
+}`;
+
+      const parsedExam: any = await generateJSONFromAI({
+        systemPrompt: PROGRESSIVE_5CLUE_EXAM_SYSTEM_PROMPT,
+        userPrompt: examPrompt,
+        fileAttachments: inlineParts.length > 0 ? inlineParts : undefined,
+      });
+
+      const rawClues = Array.isArray(parsedExam?.clues) ? parsedExam.clues : [];
+      return NextResponse.json({
+        id: `pexam_${Date.now()}`,
+        date: dateStr,
+        examName: String(parsedExam?.examName || "Exame Complementar").trim(),
+        acceptedSynonyms: Array.isArray(parsedExam?.acceptedSynonyms)
+          ? parsedExam.acceptedSynonyms
+          : [],
+        examCategory: String(parsedExam?.examCategory || specialty),
+        difficulty:
+          parsedExam?.difficulty === "Fácil" ||
+          parsedExam?.difficulty === "Médio" ||
+          parsedExam?.difficulty === "Difícil"
+            ? parsedExam.difficulty
+            : "Médio",
+        clues: [
+          String(rawClues[0] || "Cenário clínico inicial."),
+          String(rawClues[1] || "Raciocínio clínico e exame físico."),
+          String(rawClues[2] || "Características técnicas do exame."),
+          String(rawClues[3] || "Achado clássico do exame."),
+          String(rawClues[4] || "Papel padrão-ouro e contraindicações."),
+        ],
+        suggestedDistractors: Array.isArray(parsedExam?.suggestedDistractors)
+          ? parsedExam.suggestedDistractors
+          : [],
+        debriefing: {
+          overview: String(parsedExam?.debriefing?.overview || ""),
+          clueBreakdown: [
+            String(parsedExam?.debriefing?.clueBreakdown?.[0] || ""),
+            String(parsedExam?.debriefing?.clueBreakdown?.[1] || ""),
+            String(parsedExam?.debriefing?.clueBreakdown?.[2] || ""),
+            String(parsedExam?.debriefing?.clueBreakdown?.[3] || ""),
+            String(parsedExam?.debriefing?.clueBreakdown?.[4] || ""),
+          ],
+          differentials: Array.isArray(parsedExam?.debriefing?.differentials)
+            ? parsedExam.debriefing.differentials
+            : [],
+          indicationsAndInterpretation: String(
+            parsedExam?.debriefing?.indicationsAndInterpretation || ""
+          ),
+          pearls: Array.isArray(parsedExam?.debriefing?.pearls)
+            ? parsedExam.debriefing.pearls
+            : [],
+        },
+      });
+    }
 
     if (mode === "drug") {
       const drugPrompt = `Gere um Desafio de Adivinhação de Remédio/Fármaco em 5 Pistas Progressivas em JSON.
