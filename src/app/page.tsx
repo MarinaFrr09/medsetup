@@ -2,7 +2,6 @@ import { StatsCards } from '@/components/dashboard/StatsCards';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { MedicalCuriosityWidget } from '@/components/dashboard/MedicalCuriosityWidget';
-import { ContextualResumeWidget } from '@/components/dashboard/ContextualResumeWidget';
 import { DailyClinicalCaseWidget } from '@/components/dashboard/DailyClinicalCaseWidget';
 
 function getGreeting() {
@@ -26,8 +25,6 @@ export default function DashboardPage() {
 
       {/* Resolver Caso Clínico do Dia */}
       <DailyClinicalCaseWidget />
-
-      <ContextualResumeWidget />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         <div className="lg:col-span-2 space-y-6">
