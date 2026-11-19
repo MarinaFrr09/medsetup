@@ -543,31 +543,15 @@ function InteratividadeContent() {
     }
   };
 
-  // Build rich clinical text from the finished case to feed Flashcards, Questions, and MindMap generators
+  // Build pure medical study content (NO case numbers, NO vignette/clue labels!)
   const buildCaseContextForAI = () => {
-    return `CASO CLÍNICO #${activeCase.caseNumber} — DIAGNÓSTICO DEFINITIVO: ${activeCase.diagnosis}
-Área: ${activeCase.specialty} | Nível: ${activeCase.difficulty}
+    return `TEMA MÉDICO: ${activeCase.diagnosis} (${activeCase.specialty})
 
-1. VINHETA CLÍNICA:
-${activeCase.clues[0]}
-
-2. PISTA 2/5 (HISTÓRIA DA DOENÇA ATUAL):
-${activeCase.clues[1]}
-
-3. PISTA 3/5 (EXAME FÍSICO DIRECIONADO):
-${activeCase.clues[2]}
-
-4. PISTA 4/5 (EXAMES COMPLEMENTARES):
-${activeCase.clues[3]}
-
-5. PISTA 5/5 (CONDUTA E EVOLUÇÃO):
-${activeCase.clues[4]}
-
-DEBRIEFING E FISIOPATOLOGIA:
+FISIOPATOLOGIA E CONCEITO:
 ${activeCase.debriefing.overview}
 
-ANÁLISE DAS PISTAS:
-${activeCase.debriefing.clueBreakdown.map((c, i) => `- Pista ${i + 1}: ${c}`).join("\n")}
+QUADRO CLÍNICO, EXAME FÍSICO E ACHADOS COMPLEMENTARES:
+${activeCase.clues.join("\n")}
 
 DIAGNÓSTICOS DIFERENCIAIS:
 ${activeCase.debriefing.differentials
@@ -577,8 +561,10 @@ ${activeCase.debriefing.differentials
 CONDUTA E TRATAMENTO PADRÃO-OURO:
 ${activeCase.debriefing.management}
 
-PÉROLAS CLÍNICAS:
-${activeCase.debriefing.pearls.join("\n")}`;
+PONTOS-CHAVE DE ALTO RENDIMENTO:
+${activeCase.debriefing.pearls.join("\n")}
+
+INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o conteúdo médico de "${activeCase.diagnosis}", de forma 100% autossuficiente e sem mencionar casos numerados, vinhetas clínicas ou pistas.`;
   };
 
   const handleGenerateFlashcardsFromCase = async () => {
@@ -589,7 +575,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: `${activeCase.diagnosis} (Caso Clínico #${activeCase.caseNumber})\n\n${contextText}`,
+          prompt: contextText,
+          topic: activeCase.diagnosis,
           count: 8,
           difficulty: "hard",
         }),
@@ -605,11 +592,11 @@ ${activeCase.debriefing.pearls.join("\n")}`;
       }
 
       const folder = getOrCreateFolder("Casos Clínicos Interativos", "flashcards");
-      const deckId = `deck_case_${activeCase.caseNumber}_${Date.now()}`;
+      const deckId = `deck_case_${Date.now()}`;
       addDeck({
         id: deckId,
-        name: `Caso #${activeCase.caseNumber} — ${activeCase.diagnosis}`,
-        description: `Flashcards gerados do Caso Clínico #${activeCase.caseNumber} (${activeCase.specialty})`,
+        name: activeCase.diagnosis,
+        description: `Flashcards médicos sobre ${activeCase.diagnosis} (${activeCase.specialty})`,
         subject: activeCase.specialty,
         folderId: folder.id,
         cardCount: cards.length,
@@ -642,6 +629,7 @@ ${activeCase.debriefing.pearls.join("\n")}`;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: contextText,
           topic: `${activeCase.diagnosis} — ${activeCase.specialty}`,
           content: contextText,
           count: 5,
@@ -661,8 +649,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
 
       const folder = getOrCreateFolder("Casos Clínicos Interativos", "questions");
       const formatted = rawQuestions.map((q: any, idx: number) => ({
-        id: `q_case_${activeCase.caseNumber}_${Date.now()}_${idx}`,
-        text: q.text,
+        id: `q_case_${Date.now()}_${idx}`,
+        text: q.question || q.text || "",
         type: "multiple_choice",
         difficulty: activeCase.difficulty,
         subject: activeCase.specialty,

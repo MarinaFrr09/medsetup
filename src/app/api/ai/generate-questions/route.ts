@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       const body = await request.json();
-      prompt = body.prompt || "";
+      prompt = body.prompt || [body.topic, body.content].filter(Boolean).join("\n\n") || "";
       count = Number(body.count) || 10;
       difficulty = body.difficulty || "medium";
       type = body.type || "multiple_choice";
@@ -221,6 +221,10 @@ Bancas de excelência acadêmica (Revalida, USMLE, Residência Médica) NUNCA de
 
 4. RANDOMIZAÇÃO DO GABARITO:
    - Alterne de forma randômica e equilibrada a letra da resposta correta entre A, B, C, D e E.
+
+5. PROIBIÇÃO ABSOLUTA DE METARREFERÊNCIAS:
+   - NUNCA mencione "na vinheta clínica", "no Caso #...", "na Pista X/5", "no caso apresentado acima", "segundo o texto", "conforme o documento" ou "no debriefing".
+   - Formule cada questão de forma 100% independente, direta e autossuficiente sobre o conteúdo médico solicitado.
 ══════════════════════════════════════════════════════════════════════════════════
 ${
   hasFiles

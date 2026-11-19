@@ -483,26 +483,13 @@ export function ExamGuessGame() {
   };
 
   const buildExamContextForAI = () => {
-    return `EXAME COMPLEMENTAR: ${activeExam.examName}
-Categoria: ${activeExam.examCategory} | Nível: ${activeExam.difficulty}
+    return `TEMA DE MEDICINA DIAGNÓSTICA: ${activeExam.examName} (${activeExam.examCategory})
 
-1. CENÁRIO CLÍNICO:
-${activeExam.clues[0]}
-
-2. PISTA 2/5:
-${activeExam.clues[1]}
-
-3. PISTA 3/5:
-${activeExam.clues[2]}
-
-4. PISTA 4/5:
-${activeExam.clues[3]}
-
-5. PISTA 5/5:
-${activeExam.clues[4]}
-
-DEBRIEFING DIAGNÓSTICO:
+PAPEL DIAGNÓSTICO:
 ${activeExam.debriefing.overview}
+
+INDICAÇÕES CLÍNICAS, PRINCÍPIO TÉCNICO E ACHADOS CLÁSSICOS:
+${activeExam.clues.join("\n")}
 
 EXAMES CONCORRENTES / DIFERENCIAIS:
 ${activeExam.debriefing.differentials
@@ -512,18 +499,22 @@ ${activeExam.debriefing.differentials
 INDICAÇÕES, INTERPRETAÇÃO E CONTRAINDICAÇÕES:
 ${activeExam.debriefing.indicationsAndInterpretation}
 
-PÉROLAS DIAGNÓSTICAS:
-${activeExam.debriefing.pearls.join("\n")}`;
+PONTOS-CHAVE:
+${activeExam.debriefing.pearls.join("\n")}
+
+INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o exame "${activeExam.examName}", de forma 100% autossuficiente e sem mencionar pistas, casos numerados ou vinhetas.`;
   };
 
   const handleGenerateFlashcards = async () => {
     setGeneratingStudyType("flashcards");
     try {
+      const ctx = buildExamContextForAI();
       const res = await fetch("/api/ai/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: `${activeExam.examName} (${activeExam.examCategory})\n\n${buildExamContextForAI()}`,
+          prompt: ctx,
+          topic: activeExam.examName,
           count: 8,
           difficulty: "hard",
         }),
@@ -565,12 +556,14 @@ ${activeExam.debriefing.pearls.join("\n")}`;
   const handleGenerateQuestions = async () => {
     setGeneratingStudyType("questions");
     try {
+      const ctx = buildExamContextForAI();
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: ctx,
           topic: `${activeExam.examName} — ${activeExam.examCategory}`,
-          content: buildExamContextForAI(),
+          content: ctx,
           count: 5,
           difficulty: "hard",
           type: "multiple_choice",
@@ -587,7 +580,7 @@ ${activeExam.debriefing.pearls.join("\n")}`;
       const folder = getOrCreateFolder("Exames Diagnósticos", "questions");
       const formatted = rawQ.map((q: any, idx: number) => ({
         id: `q_exam_${Date.now()}_${idx}`,
-        text: q.text,
+        text: q.question || q.text || "",
         type: "multiple_choice",
         difficulty: activeExam.difficulty,
         subject: activeExam.examCategory,

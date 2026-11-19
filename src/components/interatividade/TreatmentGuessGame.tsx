@@ -510,26 +510,13 @@ export function TreatmentGuessGame() {
   };
 
   const buildTreatmentContextForAI = () => {
-    return `TRATAMENTO / CONDUTA PADRÃO-OURO: ${activeTreatment.treatmentName}
-Especialidade: ${activeTreatment.specialty} | Nível: ${activeTreatment.difficulty}
+    return `TEMA DE TERAPÊUTICA MÉDICA: ${activeTreatment.treatmentName} (${activeTreatment.specialty})
 
-1. CENÁRIO CLÍNICO:
-${activeTreatment.clues[0]}
-
-2. PISTA 2/5:
-${activeTreatment.clues[1]}
-
-3. PISTA 3/5:
-${activeTreatment.clues[2]}
-
-4. PISTA 4/5:
-${activeTreatment.clues[3]}
-
-5. PISTA 5/5:
-${activeTreatment.clues[4]}
-
-DEBRIEFING TERAPÊUTICO:
+RACIONAL TERAPÊUTICO:
 ${activeTreatment.debriefing.overview}
+
+INDICAÇÃO CLÍNICA, CRITÉRIOS DE GRAVIDADE E MECANISMO:
+${activeTreatment.clues.join("\n")}
 
 CONDUTAS ALTERNATIVAS / INCORRETAS:
 ${activeTreatment.debriefing.differentials
@@ -539,18 +526,22 @@ ${activeTreatment.debriefing.differentials
 PROTOCOLO E POSOLOGIA:
 ${activeTreatment.debriefing.protocolAndDoses}
 
-PÉROLAS TERAPÊUTICAS:
-${activeTreatment.debriefing.pearls.join("\n")}`;
+PONTOS-CHAVE:
+${activeTreatment.debriefing.pearls.join("\n")}
+
+INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre a conduta "${activeTreatment.treatmentName}", de forma 100% autossuficiente e sem mencionar pistas, casos numerados ou vinhetas.`;
   };
 
   const handleGenerateFlashcards = async () => {
     setGeneratingStudyType("flashcards");
     try {
+      const ctx = buildTreatmentContextForAI();
       const res = await fetch("/api/ai/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: `${activeTreatment.treatmentName} (${activeTreatment.specialty})\n\n${buildTreatmentContextForAI()}`,
+          prompt: ctx,
+          topic: activeTreatment.treatmentName,
           count: 8,
           difficulty: "hard",
         }),
@@ -592,12 +583,14 @@ ${activeTreatment.debriefing.pearls.join("\n")}`;
   const handleGenerateQuestions = async () => {
     setGeneratingStudyType("questions");
     try {
+      const ctx = buildTreatmentContextForAI();
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: ctx,
           topic: `${activeTreatment.treatmentName} — ${activeTreatment.specialty}`,
-          content: buildTreatmentContextForAI(),
+          content: ctx,
           count: 5,
           difficulty: "hard",
           type: "multiple_choice",
@@ -614,7 +607,7 @@ ${activeTreatment.debriefing.pearls.join("\n")}`;
       const folder = getOrCreateFolder("Condutas e Tratamentos", "questions");
       const formatted = rawQ.map((q: any, idx: number) => ({
         id: `q_treat_${Date.now()}_${idx}`,
-        text: q.text,
+        text: q.question || q.text || "",
         type: "multiple_choice",
         difficulty: activeTreatment.difficulty,
         subject: activeTreatment.specialty,

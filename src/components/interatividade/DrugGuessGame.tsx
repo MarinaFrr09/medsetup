@@ -485,26 +485,13 @@ export function DrugGuessGame() {
   };
 
   const buildDrugContextForAI = () => {
-    return `MEDICAMENTO: ${activeDrug.drugName}
-Classe Farmacológica: ${activeDrug.drugClass} | Nível: ${activeDrug.difficulty}
+    return `TEMA DE FARMACOLOGIA: ${activeDrug.drugName} (${activeDrug.drugClass})
 
-1. INDICAÇÃO CLÍNICA:
-${activeDrug.clues[0]}
-
-2. PISTA 2/5 (MECANISMO DE AÇÃO):
-${activeDrug.clues[1]}
-
-3. PISTA 3/5 (FARMACOCINÉTICA):
-${activeDrug.clues[2]}
-
-4. PISTA 4/5 (EFEITOS ADVERSOS E TOXICIDADE):
-${activeDrug.clues[3]}
-
-5. PISTA 5/5 (INTERAÇÕES, CONTRAINDICAÇÕES E ANTÍDOTO):
-${activeDrug.clues[4]}
-
-DEBRIEFING FARMACOLÓGICO:
+VISÃO GERAL E MECANISMO:
 ${activeDrug.debriefing.overview}
+
+INDICAÇÕES, FARMACOCINÉTICA, EFEITOS ADVERSOS E INTERAÇÕES:
+${activeDrug.clues.join("\n")}
 
 FÁRMACOS COMPARÁVEIS:
 ${activeDrug.debriefing.differentials
@@ -514,18 +501,22 @@ ${activeDrug.debriefing.differentials
 USO CLÍNICO, MONITORAMENTO E ANTÍDOTO:
 ${activeDrug.debriefing.clinicalUseAndMonitoring}
 
-PÉROLAS FARMACOLÓGICAS:
-${activeDrug.debriefing.pearls.join("\n")}`;
+PONTOS-CHAVE:
+${activeDrug.debriefing.pearls.join("\n")}
+
+INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o fármaco "${activeDrug.drugName}", de forma 100% autossuficiente e sem mencionar pistas, casos ou textos anteriores.`;
   };
 
   const handleGenerateFlashcards = async () => {
     setGeneratingStudyType("flashcards");
     try {
+      const ctx = buildDrugContextForAI();
       const res = await fetch("/api/ai/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: `${activeDrug.drugName} (${activeDrug.drugClass})\n\n${buildDrugContextForAI()}`,
+          prompt: ctx,
+          topic: activeDrug.drugName,
           count: 8,
           difficulty: "hard",
         }),
@@ -567,12 +558,14 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
   const handleGenerateQuestions = async () => {
     setGeneratingStudyType("questions");
     try {
+      const ctx = buildDrugContextForAI();
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: ctx,
           topic: `${activeDrug.drugName} — ${activeDrug.drugClass}`,
-          content: buildDrugContextForAI(),
+          content: ctx,
           count: 5,
           difficulty: "hard",
           type: "multiple_choice",
@@ -589,7 +582,7 @@ ${activeDrug.debriefing.pearls.join("\n")}`;
       const folder = getOrCreateFolder("Farmacologia Interativa", "questions");
       const formatted = rawQ.map((q: any, idx: number) => ({
         id: `q_drug_${Date.now()}_${idx}`,
-        text: q.text,
+        text: q.question || q.text || "",
         type: "multiple_choice",
         difficulty: activeDrug.difficulty,
         subject: activeDrug.drugClass,

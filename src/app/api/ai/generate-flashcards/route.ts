@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, count = 20, fileAttachment, fileAttachments } = await request.json();
+    const { prompt, topic, count = 20, fileAttachment, fileAttachments } = await request.json();
 
     const rawFiles: Array<{ data: string; mimeType: string; name?: string }> = [];
     if (fileAttachments && Array.isArray(fileAttachments) && fileAttachments.length > 0) {
@@ -16,8 +16,9 @@ export async function POST(request: NextRequest) {
     }
 
     const hasFiles = rawFiles.length > 0;
-    const finalPrompt = prompt?.trim()
-      ? prompt.trim()
+    const rawPromptText = String(prompt || topic || "").trim();
+    const finalPrompt = rawPromptText
+      ? rawPromptText
       : hasFiles
       ? "Analise detalhadamente todos os documentos anexados e extraia os conceitos basilares, definições essenciais, terminologias e fórmulas para criar flashcards de alta qualidade para revisão acadêmica."
       : "";
@@ -42,8 +43,12 @@ ${
     : ""
 }
 Cada flashcard deve conter:
-- 'front': Pergunta ou conceito direto, desafiador e claro (frente do card)
+- 'front': Pergunta ou conceito direto, desafiador, claro e 100% autossuficiente (frente do card)
 - 'back': Resposta precisa, completa e explicativa (verso do card)
+
+PROIBIÇÃO ABSOLUTA DE METARREFERÊNCIAS:
+- NUNCA mencione "na vinheta clínica", "no Caso #...", "na Pista X/5", "no caso clínico apresentado", "segundo o texto", "conforme o documento", "de acordo com o material" ou "no debriefing".
+- Formule TODAS as perguntas diretamente sobre o conteúdo médico/científico em si, sem nenhum direcionamento externo (ex: escreva "Quais são os sintomas cardinais clássicos do Tromboembolismo Pulmonar (TEP)?" e NUNCA "Quais sintomas foram apresentados na vinheta do Caso #...?").
 
 Responda APENAS em JSON válido com esta exata estrutura:
 {

@@ -441,6 +441,7 @@ async function handleStaticApiRequest(
       const sys = `Você é um professor titular de Medicina elaborando questões de residência médica (USP, UNICAMP, ENARE, Revalida).
 Crie exatamente ${count} questões do tipo "${type}" com dificuldade "${difficulty}".
 REGRA CRÍTICA DE PARIDADE: Todas as alternativas devem ter extensão equivalente (proibido a correta ser a mais longa).
+PROIBIÇÃO ABSOLUTA DE METARREFERÊNCIAS: NUNCA mencione "na vinheta clínica", "no Caso #...", "na Pista X/5", "no caso apresentado", "segundo o texto", "conforme o documento" ou "no debriefing". Formule cada questão de forma 100% direta, independente e puramente sobre o conteúdo médico.
 Responda APENAS em JSON válido neste formato:
 {
   "questions": [
@@ -481,6 +482,7 @@ Responda APENAS em JSON válido neste formato:
       const userTopic = body.prompt || body.topic || body.text || "Medicina";
       const sys = `Você é um professor de Medicina especialista em repetição espaçada (Anki).
 Crie exatamente ${count} flashcards de alto rendimento.
+PROIBIÇÃO ABSOLUTA DE METARREFERÊNCIAS: NUNCA mencione "na vinheta clínica", "no Caso #...", "na Pista X/5", "no caso apresentado", "segundo o texto", "conforme o documento" ou "no debriefing". Formule cada pergunta (front) de forma 100% direta, autossuficiente e puramente sobre o conteúdo médico em si.
 Retorne APENAS JSON válido no formato:
 {
   "flashcards": [
