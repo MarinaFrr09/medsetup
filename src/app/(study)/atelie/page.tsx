@@ -79,6 +79,22 @@ export default function AteliePage() {
   const [loadingStepIdx, setLoadingStepIdx] = useState(0);
 
   const [currentAnalysisId, setCurrentAnalysisId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentAnalysisId) {
+      try {
+        localStorage.setItem("medsetup_last_atelie_id", currentAnalysisId);
+      } catch {}
+    }
+  }, [currentAnalysisId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || atelieAnalyses.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resumeId");
+    if (resumeId && atelieAnalyses.some((a) => a.id === resumeId)) {
+      setCurrentAnalysisId(resumeId);
+    }
+  }, [atelieAnalyses]);
   const [isDraggingSP, setIsDraggingSP] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewPdfName, setPreviewPdfName] = useState<string | null>(null);

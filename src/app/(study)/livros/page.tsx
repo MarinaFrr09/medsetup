@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   Library,
   Plus,
@@ -56,6 +56,25 @@ export default function LivrosPage() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [previewBook, setPreviewBook] = useState<BookItem | null>(null);
+
+  useEffect(() => {
+    if (previewBook?.id) {
+      try {
+        localStorage.setItem("medsetup_last_book_id", previewBook.id);
+      } catch {}
+    }
+  }, [previewBook]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || books.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resumeId");
+    if (resumeId) {
+      const target = books.find((b) => b.id === resumeId);
+      if (target) {
+        setPreviewBook(target);
+      }
+    }
+  }, [books]);
 
   // Form State for Adding Book
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);

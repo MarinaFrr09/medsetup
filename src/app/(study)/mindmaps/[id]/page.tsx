@@ -3437,19 +3437,24 @@ export default function MindMapEditorPage({ params }: { params?: any }) {
   const [resolvedId, setResolvedId] = useState<string>(rawRouteId);
 
   useEffect(() => {
+    let targetId = rawRouteId;
     if (typeof window !== "undefined") {
       const searchId = new URLSearchParams(window.location.search).get("id");
       if (searchId) {
-        setResolvedId(searchId);
-        return;
+        targetId = searchId;
+      } else {
+        const match = window.location.pathname.match(/\/mindmaps\/([^/?#]+)/);
+        if (match && match[1] && match[1] !== "default") {
+          targetId = decodeURIComponent(match[1]);
+        }
       }
-      const match = window.location.pathname.match(/\/mindmaps\/([^/?#]+)/);
-      if (match && match[1] && match[1] !== "default") {
-        setResolvedId(decodeURIComponent(match[1]));
-        return;
+      if (targetId && targetId !== "default") {
+        try {
+          localStorage.setItem("medsetup_last_mindmap_id", targetId);
+        } catch {}
       }
     }
-    setResolvedId(rawRouteId);
+    setResolvedId(targetId);
   }, [rawRouteId]);
 
   return (

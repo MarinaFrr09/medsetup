@@ -61,6 +61,25 @@ export default function TutoriaPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentAnalysis, setCurrentAnalysis] = useState<TutoriaAnalysis | null>(null);
 
+  useEffect(() => {
+    if (currentAnalysis?.id) {
+      try {
+        localStorage.setItem("medsetup_last_tutoria_id", currentAnalysis.id);
+      } catch {}
+    }
+  }, [currentAnalysis]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || tutoriaAnalyses.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resumeId");
+    if (resumeId) {
+      const target = tutoriaAnalyses.find((t) => t.id === resumeId);
+      if (target) {
+        setCurrentAnalysis(target);
+      }
+    }
+  }, [tutoriaAnalyses]);
+
   // PDF Preview Modal State
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewPdfName, setPreviewPdfName] = useState<string>("");

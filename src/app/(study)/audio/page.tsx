@@ -25,6 +25,20 @@ export default function AudioPage() {
   const [currentResult, setCurrentResult] = useState<any | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || audioRecordings.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resumeId");
+    if (resumeId) {
+      const target = audioRecordings.find((r) => r.id === resumeId);
+      if (target?.processedData) {
+        setCurrentResult(target.processedData);
+        try {
+          localStorage.setItem("medsetup_last_audio_id", target.id);
+        } catch {}
+      }
+    }
+  }, [audioRecordings]);
+
   // Timer while AI is processing large audio
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -107,6 +121,9 @@ export default function AudioPage() {
       };
 
       addAudioRecording(newRecording);
+      try {
+        localStorage.setItem("medsetup_last_audio_id", newRecording.id);
+      } catch {}
       toast.success(
         willExpand
           ? "Aula decodificada com Resumo e Mapa Mental Expandidos!"
@@ -257,7 +274,12 @@ export default function AudioPage() {
               audioRecordings.map((rec) => (
                 <div
                   key={rec.id}
-                  onClick={() => setCurrentResult(rec.processedData)}
+                  onClick={() => {
+                    setCurrentResult(rec.processedData);
+                    try {
+                      localStorage.setItem("medsetup_last_audio_id", rec.id);
+                    } catch {}
+                  }}
                   className="p-4 bg-white dark:bg-[#1A1D27] rounded-xl border border-gray-200 dark:border-[#2a2d3a] hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer shadow-sm group relative"
                 >
                   <div className="flex items-start justify-between gap-2">

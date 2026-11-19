@@ -47,6 +47,17 @@ export default function TranscriptionPage() {
   } = useAppStore();
 
   const [activeTranscriptionId, setActiveTranscriptionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || documentTranscriptions.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resumeId");
+    if (resumeId) {
+      const target = documentTranscriptions.find((d) => d.id === resumeId);
+      if (target) {
+        handleLoadFromHistory(target);
+      }
+    }
+  }, [documentTranscriptions]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandMode, setExpandMode] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -233,6 +244,9 @@ export default function TranscriptionPage() {
       };
       addDocumentTranscription(newTranscription);
       setActiveTranscriptionId(newTranscription.id);
+      try {
+        localStorage.setItem("medsetup_last_transcription_id", newTranscription.id);
+      } catch {}
 
       toast.success(
         expandMode
@@ -288,6 +302,9 @@ export default function TranscriptionPage() {
 
   const handleLoadFromHistory = (item: DocumentTranscription) => {
     setActiveTranscriptionId(item.id);
+    try {
+      localStorage.setItem("medsetup_last_transcription_id", item.id);
+    } catch {}
     const fullText = (item.content && item.content.length >= (item.summary?.length || 0))
       ? item.content
       : (item.summary || item.content || "");
