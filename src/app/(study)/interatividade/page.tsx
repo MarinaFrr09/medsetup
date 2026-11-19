@@ -29,6 +29,7 @@ import {
   Trash2,
   Bookmark,
   BookmarkCheck,
+  Pill,
 } from "lucide-react";
 import {
   BUILTIN_PROGRESSIVE_CASES,
@@ -39,6 +40,7 @@ import {
   isDiagnosisMatch,
   normalizeDiagnosisString,
 } from "@/data/clinicalCasesBank";
+import { DrugGuessGame } from "@/components/interatividade/DrugGuessGame";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast";
 
@@ -97,6 +99,11 @@ function InteratividadeContent() {
     tutoriaAnalyses,
     atelieAnalyses,
   } = useAppStore();
+
+  // Mode tab: Clinical Cases vs Drug Guessing (both in the exact same 5-clue progressive scheme)
+  const [activeTab, setActiveTab] = useState<"clinical" | "drugs">(() =>
+    searchParams.get("tab") === "drugs" ? "drugs" : "clinical"
+  );
 
   // Active case state (defaults to today's daily case)
   const [activeCase, setActiveCase] = useState<ProgressiveClinicalCase>(() =>
@@ -716,6 +723,38 @@ ${activeCase.debriefing.pearls.join("\n")}`;
 
   return (
     <div className="w-full max-w-4xl mx-auto pb-16 space-y-6">
+      {/* Mode Switcher: Casos Clínicos (5 Pistas) | Adivinhar Remédio (5 Pistas) */}
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveTab("clinical")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+            activeTab === "clinical"
+              ? "bg-[#12b76a] text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+          }`}
+        >
+          <Stethoscope className="h-4 w-4" />
+          <span>Casos Clínicos (5 Pistas)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("drugs")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+            activeTab === "drugs"
+              ? "bg-[#12b76a] text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+          }`}
+        >
+          <Pill className="h-4 w-4" />
+          <span>Adivinhar Remédio (5 Pistas)</span>
+        </button>
+      </div>
+
+      {activeTab === "drugs" ? (
+        <DrugGuessGame />
+      ) : (
+        <>
       {/* Top Action Toolbar: Caso do Dia | Sortear Caso Aleatório | Gerar com IA / PDF */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card/90 p-3.5 shadow-sm">
         <div className="flex items-center gap-2.5">
@@ -1614,6 +1653,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

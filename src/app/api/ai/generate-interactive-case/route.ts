@@ -80,9 +80,71 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
   }
 }`;
 
+const PROGRESSIVE_5CLUE_DRUG_SYSTEM_PROMPT = `Você é um Professor Titular de Farmacologia Clínica e Terapêutica Médica (Goodman & Gilman, Katzung), criador de desafios diagnósticos de medicamentos em 5 Pistas Progressivas.
+
+SUA MISSÃO:
+Criar um DESAFIO DE ADIVINHAÇÃO DE FÁRMACO / REMÉDIO EM 5 PISTAS PROGRESSIVAS, onde o estudante tenta descobrir qual é o medicamento a cada pista liberada, seguido de um DEBRIEFING FARMACOLÓGICO DETALHADO ao final.
+
+ESTRUTURA OBRIGATÓRIA DAS 5 PISTAS ("clues", array com exatamente 5 strings):
+- Pista 1 (clues[0] — "Indicação clínica"): Apresentação inicial concisa (1 a 2 frases) com a principal indicação clínica e cenário de uso do fármaco, sem entregar o nome.
+- Pista 2 (clues[1] — "Pista 2/5"): Mecanismo de ação molecular/celular e alvo farmacológico (receptor, enzima ou canal iônico), sem mencionar o nome literal do remédio.
+- Pista 3 (clues[2] — "Pista 3/5"): Farmacocinética marcante (via, biodisponibilidade, meia-vida, ligação proteica, CYP450, excreção renal/hepática ou janela terapêutica).
+- Pista 4 (clues[3] — "Pista 4/5"): Efeitos adversos clássicos, toxicidades específicas, sinais de intoxicação ou exames de monitorização obrigatórios.
+- Pista 5 (clues[4] — "Pista 5/5"): Contraindicações absolutas, interações medicamentosas marcantes, antídoto/reversor específico ou pérola farmacológica inconfundível (ainda sem citar o nome literal do fármaco).
+
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
+{
+  "drugName": "Nome Genérico Oficial do Medicamento em Português (ex: 'Amiodarona', 'Varfarina', 'Vancomicina')",
+  "acceptedSynonyms": ["nome comercial principal", "sigla ou sinonimo"],
+  "drugClass": "Classe Farmacológica (ex: 'Antiarrítmico Classe III', 'Antibiótico Glicopeptídeo')",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Texto da Pista 1 (Indicação clínica inicial)",
+    "Texto da Pista 2/5 (Mecanismo de ação)",
+    "Texto da Pista 3/5 (Farmacocinética)",
+    "Texto da Pista 4/5 (Efeitos adversos / toxicidade)",
+    "Texto da Pista 5/5 (Contraindicações, interações, antídoto ou pérola final)"
+  ],
+  "suggestedDistractors": [
+    "Fármaco Similar 1",
+    "Fármaco Similar 2",
+    "Fármaco Similar 3",
+    "Fármaco Similar 4",
+    "Fármaco Similar 5",
+    "Fármaco Similar 6"
+  ],
+  "debriefing": {
+    "overview": "Síntese farmacológica completa do medicamento, seu mecanismo e papel clínico.",
+    "clueBreakdown": [
+      "Explicação da Pista 1 (Indicação clínica)",
+      "Explicação da Pista 2/5 (Mecanismo de ação)",
+      "Explicação da Pista 3/5 (Farmacocinética)",
+      "Explicação da Pista 4/5 (Efeitos adversos)",
+      "Explicação da Pista 5/5 (Interações / Antídoto / Pérola)"
+    ],
+    "differentials": [
+      {
+        "name": "Fármaco Comparável A",
+        "distinction": "Semelhança e principal diferença farmacológica ou clínica"
+      },
+      {
+        "name": "Fármaco Comparável B",
+        "distinction": "Semelhança e principal diferença farmacológica ou clínica"
+      }
+    ],
+    "clinicalUseAndMonitoring": "Posologia/conduta prática, parâmetros laboratoriais de monitorização e antídoto/reversão em caso de intoxicação.",
+    "pearls": [
+      "Pérola farmacológica de alto rendimento 1",
+      "Pérola farmacológica de alto rendimento 2",
+      "Pérola farmacológica de alto rendimento 3"
+    ]
+  }
+}`;
+
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") || "";
+    let mode: "clinical" | "drug" = "clinical";
     let specialty = "Aleatória (Todas as Áreas da Medicina)";
     let difficulty = "Aleatório (Fácil a Difícil)";
     let topic = "";
@@ -92,6 +154,7 @@ export async function POST(req: NextRequest) {
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
+      mode = String(formData.get("mode") || "clinical") === "drug" ? "drug" : "clinical";
       specialty = String(formData.get("specialty") || specialty);
       difficulty = String(formData.get("difficulty") || difficulty);
       topic = String(formData.get("topic") || "");
@@ -143,6 +206,7 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const body = await req.json();
+      mode = body.mode === "drug" ? "drug" : "clinical";
       specialty = body.specialty || specialty;
       difficulty = body.difficulty || difficulty;
       topic = body.topic || "";
@@ -159,6 +223,81 @@ export async function POST(req: NextRequest) {
     const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
       now.getMonth() + 1
     ).padStart(2, "0")}/${now.getFullYear()}`;
+
+    if (mode === "drug") {
+      const drugPrompt = `Gere um Desafio de Adivinhação de Remédio/Fármaco em 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `MODO BASEADO EM PDF/MATERIAL DO ESTUDANTE:
+Escolha um fármaco relevante abordado no material abaixo e crie as 5 pistas fielmente baseadas nele!`
+    : `MODO ALEATÓRIO DE FARMACOLOGIA:
+- Sistema/Classe solicitada: ${specialty}
+- Nível de Dificuldade solicitado: ${difficulty}
+${topic ? `- Foco/Tema sugerido: ${topic}` : ""}
+${
+  avoidDiagnoses.length > 0
+    ? `- NÃO repita nenhum destes medicamentos: ${avoidDiagnoses.join(", ")}`
+    : ""
+}`
+}
+${
+  materialContext.trim()
+    ? `\nCONTEÚDO DO PDF / MATERIAL ANEXADO:\n"""\n${materialContext.slice(0, 38000)}\n"""`
+    : ""
+}`;
+
+      const parsedDrug: any = await generateJSONFromAI({
+        systemPrompt: PROGRESSIVE_5CLUE_DRUG_SYSTEM_PROMPT,
+        userPrompt: drugPrompt,
+        fileAttachments: inlineParts.length > 0 ? inlineParts : undefined,
+      });
+
+      const rawClues = Array.isArray(parsedDrug?.clues) ? parsedDrug.clues : [];
+      return NextResponse.json({
+        id: `pdrug_${Date.now()}`,
+        date: dateStr,
+        drugName: String(parsedDrug?.drugName || "Medicamento").trim(),
+        acceptedSynonyms: Array.isArray(parsedDrug?.acceptedSynonyms)
+          ? parsedDrug.acceptedSynonyms
+          : [],
+        drugClass: String(parsedDrug?.drugClass || specialty),
+        difficulty:
+          parsedDrug?.difficulty === "Fácil" ||
+          parsedDrug?.difficulty === "Médio" ||
+          parsedDrug?.difficulty === "Difícil"
+            ? parsedDrug.difficulty
+            : "Médio",
+        clues: [
+          String(rawClues[0] || "Indicação clínica inicial."),
+          String(rawClues[1] || "Mecanismo de ação."),
+          String(rawClues[2] || "Farmacocinética."),
+          String(rawClues[3] || "Efeitos adversos e toxicidade."),
+          String(rawClues[4] || "Contraindicações, interações e antídoto."),
+        ],
+        suggestedDistractors: Array.isArray(parsedDrug?.suggestedDistractors)
+          ? parsedDrug.suggestedDistractors
+          : [],
+        debriefing: {
+          overview: String(parsedDrug?.debriefing?.overview || ""),
+          clueBreakdown: [
+            String(parsedDrug?.debriefing?.clueBreakdown?.[0] || ""),
+            String(parsedDrug?.debriefing?.clueBreakdown?.[1] || ""),
+            String(parsedDrug?.debriefing?.clueBreakdown?.[2] || ""),
+            String(parsedDrug?.debriefing?.clueBreakdown?.[3] || ""),
+            String(parsedDrug?.debriefing?.clueBreakdown?.[4] || ""),
+          ],
+          differentials: Array.isArray(parsedDrug?.debriefing?.differentials)
+            ? parsedDrug.debriefing.differentials
+            : [],
+          clinicalUseAndMonitoring: String(
+            parsedDrug?.debriefing?.clinicalUseAndMonitoring || ""
+          ),
+          pearls: Array.isArray(parsedDrug?.debriefing?.pearls)
+            ? parsedDrug.debriefing.pearls
+            : [],
+        },
+      });
+    }
 
     const prompt = `Gere um Caso Clínico Pontual Interativo de 5 Pistas Progressivas em JSON.
 ${

@@ -1013,8 +1013,9 @@ Responda OBRIGATORIAMENTE em JSON válido:
       return jsonResponse(parsed);
     }
 
-    // 19. /api/ai/generate-interactive-case (5-Clue Progressive Clinical Case)
+    // 19. /api/ai/generate-interactive-case (5-Clue Progressive Clinical Case or Drug Challenge)
     if (cleanPath.endsWith("/api/ai/generate-interactive-case")) {
+      const mode = String(body.mode || "clinical") === "drug" ? "drug" : "clinical";
       const specialty = String(
         body.specialty || "Aleatória (Todas as Áreas da Medicina)"
       );
@@ -1035,6 +1036,112 @@ Responda OBRIGATORIAMENTE em JSON válido:
             }
           })()
         : [];
+
+      const hasMaterial =
+        materialContext.trim().length > 20 || inlineParts.length > 0;
+
+      if (mode === "drug") {
+        const drugSys = `Você é um Professor Titular de Farmacologia Clínica criador de desafios de adivinhação de medicamentos em 5 Pistas Progressivas.
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
+{
+  "drugName": "Nome Genérico Oficial do Medicamento em Português",
+  "acceptedSynonyms": ["nome comercial", "sinonimo"],
+  "drugClass": "Classe Farmacológica",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Indicação clínica inicial concisa (1-2 frases) sem citar o nome do remédio",
+    "Pista 2/5: Mecanismo de ação molecular/celular",
+    "Pista 3/5: Farmacocinética (meia-vida, metabolismo, excreção, janela terapêutica)",
+    "Pista 4/5: Efeitos adversos clássicos, toxicidades ou monitorização",
+    "Pista 5/5: Contraindicações, interações marcantes, antídoto ou pérola final sem entregar o nome"
+  ],
+  "suggestedDistractors": ["Fármaco 1", "Fármaco 2", "Fármaco 3", "Fármaco 4", "Fármaco 5", "Fármaco 6"],
+  "debriefing": {
+    "overview": "Síntese farmacológica completa do medicamento.",
+    "clueBreakdown": ["Pista 1", "Pista 2", "Pista 3", "Pista 4", "Pista 5"],
+    "differentials": [
+      { "name": "Fármaco Comparável A", "distinction": "Como diferenciar" },
+      { "name": "Fármaco Comparável B", "distinction": "Como diferenciar" }
+    ],
+    "clinicalUseAndMonitoring": "Posologia prática, monitorização e antídoto.",
+    "pearls": ["Pérola 1", "Pérola 2", "Pérola 3"]
+  }
+}`;
+        const drugPrompt = `Gere um Desafio de Remédio em 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `Escolha um medicamento relevante presente no PDF/material anexado pelo estudante!`
+    : `- Sistema/Classe: ${specialty}\n- Dificuldade: ${difficulty}${
+        topic ? `\n- Foco: ${topic}` : ""
+      }${
+        avoidDiagnoses.length > 0
+          ? `\n- Não repita estes fármacos: ${avoidDiagnoses.join(", ")}`
+          : ""
+      }`
+}
+${
+  materialContext
+    ? `\nCONTEÚDO DO PDF / MATERIAL:\n"""\n${materialContext.slice(0, 35000)}\n"""`
+    : ""
+}`;
+        const rawDrug = await callGeminiDirectBrowser(
+          drugPrompt,
+          drugSys,
+          true,
+          inlineParts,
+          0.45
+        );
+        const parsedDrug = parseJsonSafe(rawDrug);
+        const now = new Date();
+        const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
+          now.getMonth() + 1
+        ).padStart(2, "0")}/${now.getFullYear()}`;
+        const rawClues = Array.isArray(parsedDrug?.clues) ? parsedDrug.clues : [];
+        return jsonResponse({
+          id: `pdrug_${Date.now()}`,
+          date: dateStr,
+          drugName: String(parsedDrug?.drugName || "Medicamento").trim(),
+          acceptedSynonyms: Array.isArray(parsedDrug?.acceptedSynonyms)
+            ? parsedDrug.acceptedSynonyms
+            : [],
+          drugClass: String(parsedDrug?.drugClass || specialty),
+          difficulty:
+            parsedDrug?.difficulty === "Fácil" ||
+            parsedDrug?.difficulty === "Médio" ||
+            parsedDrug?.difficulty === "Difícil"
+              ? parsedDrug.difficulty
+              : "Médio",
+          clues: [
+            String(rawClues[0] || "Indicação clínica inicial."),
+            String(rawClues[1] || "Mecanismo de ação."),
+            String(rawClues[2] || "Farmacocinética."),
+            String(rawClues[3] || "Efeitos adversos."),
+            String(rawClues[4] || "Contraindicações, interações e antídoto."),
+          ],
+          suggestedDistractors: Array.isArray(parsedDrug?.suggestedDistractors)
+            ? parsedDrug.suggestedDistractors
+            : [],
+          debriefing: {
+            overview: String(parsedDrug?.debriefing?.overview || ""),
+            clueBreakdown: [
+              String(parsedDrug?.debriefing?.clueBreakdown?.[0] || ""),
+              String(parsedDrug?.debriefing?.clueBreakdown?.[1] || ""),
+              String(parsedDrug?.debriefing?.clueBreakdown?.[2] || ""),
+              String(parsedDrug?.debriefing?.clueBreakdown?.[3] || ""),
+              String(parsedDrug?.debriefing?.clueBreakdown?.[4] || ""),
+            ],
+            differentials: Array.isArray(parsedDrug?.debriefing?.differentials)
+              ? parsedDrug.debriefing.differentials
+              : [],
+            clinicalUseAndMonitoring: String(
+              parsedDrug?.debriefing?.clinicalUseAndMonitoring || ""
+            ),
+            pearls: Array.isArray(parsedDrug?.debriefing?.pearls)
+              ? parsedDrug.debriefing.pearls
+              : [],
+          },
+        });
+      }
 
       const sys = `Você é um Professor Titular de Medicina criador de desafios diagnósticos baseados em 5 Pistas Progressivas.
 Crie um CASO CLÍNICO PONTUAL DE DIAGNÓSTICO EM 5 PISTAS PROGRESSIVAS com debriefing completo ao final.
@@ -1087,8 +1194,6 @@ Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
   }
 }`;
 
-      const hasMaterial =
-        materialContext.trim().length > 20 || inlineParts.length > 0;
       const prompt = `Gere um Caso Clínico Pontual Interativo de 5 Pistas Progressivas em JSON.
 ${
   hasMaterial
