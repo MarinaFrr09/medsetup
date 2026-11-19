@@ -1146,7 +1146,7 @@ ${activeCase.debriefing.pearls.join("\n")}`;
               )}
             </button>
 
-            {attempts.length > 0 && (
+            {(attempts.length > 0 || status !== "playing") && (
               <button
                 type="button"
                 onClick={resetCurrentCase}
@@ -1302,6 +1302,20 @@ ${activeCase.debriefing.pearls.join("\n")}`;
               >
                 Tentar
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setRevealedCluesCount(5);
+                  setStatus("lost");
+                  setShowExplanation(true);
+                  setDropdownOpen(false);
+                  saveCaseProgress(activeCase, attempts, 5, "lost");
+                }}
+                className="rounded-xl border border-red-300 dark:border-red-500/40 bg-red-50/80 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/60 px-5 py-3.5 text-[15px] font-semibold text-red-600 dark:text-red-300 transition-colors shrink-0"
+              >
+                Desistir
+              </button>
             </div>
           </div>
         )}
@@ -1334,6 +1348,8 @@ ${activeCase.debriefing.pearls.join("\n")}`;
               >
                 {status === "won"
                   ? `Acertou na ${attempts.length}ª tentativa!`
+                  : attempts.length < 5
+                  ? "Desistiu — resposta e debriefing liberados"
                   : "Não acertou"}
               </p>
             </div>
