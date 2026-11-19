@@ -64,6 +64,8 @@ import {
 import VerticalFolderSidebar from "@/components/common/VerticalFolderSidebar";
 import { SubfoldersGrid } from "@/components/common/FolderCardGrid";
 import FolderManagerModal from "@/components/common/FolderManagerModal";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { cleanLatexAndBadges } from "@/lib/text-sanitize";
 import { renderFormattedText, cleanFlashcardText } from "@/lib/questionUtils";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -171,12 +173,12 @@ function AnotacoesContent() {
     quickFilter === "all" &&
     sourceFilter === "all";
 
-  // Open note in studio editor
+  // Open note in studio editor (automatically sanitizing any raw LaTeX artifacts)
   const openEditor = (note: AnotacaoItem, isNew: boolean = false) => {
     setEditingNote(note);
     setIsNewNote(isNew);
-    setEditTitle(note.title);
-    setEditContent(note.content);
+    setEditTitle(cleanLatexAndBadges(note.title || ""));
+    setEditContent(cleanLatexAndBadges(note.content || ""));
     setEditFolderId(note.folderId || selectedFolderId || "folder-geral");
     setEditMateria(note.materia || "");
     setEditSubtema(note.subtema || "");
@@ -332,8 +334,10 @@ function AnotacoesContent() {
         }),
       });
       const data = await res.json();
-      if (data.expandedText) {
-        setEditContent((prev) => prev + "\n\n### 🧠 Aprofundamento Clínico (IA):\n" + data.expandedText);
+      const expanded = data.expandedText || data.result || "";
+      if (expanded) {
+        const cleanExpanded = cleanLatexAndBadges(expanded);
+        setEditContent((prev) => `${prev}\n\n### Aprofundamento Clínico\n\n${cleanExpanded}`);
         setIsDirty(true);
         toast.success("Conteúdo enriquecido com IA!");
       } else {
@@ -358,13 +362,17 @@ function AnotacoesContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: `${editTitle}\n\n${cleanLatexAndBadges(editContent)}`,
           topic: editTitle || "Anotações Clínicas",
-          content: editContent,
-          count: 4,
+          count: 6,
         }),
       });
       const data = await res.json();
-      const rawCards = Array.isArray(data.cards) ? data.cards : [];
+      const rawCards = Array.isArray(data.flashcards)
+        ? data.flashcards
+        : Array.isArray(data.cards)
+        ? data.cards
+        : [];
       if (rawCards.length > 0) {
         const sanitizedCards = rawCards.map((c: any, idx: number) => ({
           id: c.id || `card-anot-${Date.now()}-${idx}`,
@@ -380,7 +388,7 @@ function AnotacoesContent() {
           cards: sanitizedCards,
           cardCount: sanitizedCards.length,
         });
-        toast.success(`🎉 ${sanitizedCards.length} Flashcards gerados e salvos na pasta!`);
+        toast.success(`${sanitizedCards.length} Flashcards gerados e salvos!`);
       } else {
         toast.error("A IA não retornou cartões válidos.");
       }
@@ -403,10 +411,11 @@ function AnotacoesContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subject: editMateria || editTitle || "Clínica Médica",
-          sourceText: `${editTitle}\n${editContent}`,
-          count: 1,
-          difficulty: "Médio",
+          prompt: `${editTitle}\n\n${cleanLatexAndBadges(editContent)}`,
+          topic: editMateria || editTitle || "Clínica Médica",
+          count: 3,
+          difficulty: "medium",
+          type: "multiple_choice",
         }),
       });
       const data = await res.json();
@@ -861,304 +870,109 @@ function AnotacoesContent() {
                 </div>
               </div>
 
-              {/* Title & Metadata inputs */}
-              <div className="space-y-3">
+              {/* Title & Subtle Metadata Line */}
+              <div className="space-y-3 pt-1">
                 <input
                   type="text"
-                  placeholder="Título da Anotação (ex: Critérios de Centor para Faringite)..."
+                  placeholder="Título da Anotação..."
                   value={editTitle}
                   onChange={(e) => {
                     setEditTitle(e.target.value);
                     setIsDirty(true);
                   }}
-                  className="w-full text-lg sm:text-2xl font-black text-gray-900 dark:text-white bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-gray-600 border-b border-gray-200 dark:border-gray-800 pb-2 focus:border-amber-500 dark:focus:border-amber-400 transition-colors"
+                  className="w-full text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 bg-transparent outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600"
                 />
 
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-[#0F1117] px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300">
-                    <Stethoscope size={13} className="text-amber-500" />
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pb-3 border-b border-slate-200/70 dark:border-slate-800">
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100/80 dark:bg-slate-800/70 px-2.5 py-1">
+                    <Stethoscope size={12} className="text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Especialidade (ex: Infectologia)"
+                      placeholder="Especialidade"
                       value={editMateria}
                       onChange={(e) => {
                         setEditMateria(e.target.value);
                         setIsDirty(true);
                       }}
-                      className="bg-transparent outline-none text-xs w-36 placeholder:text-gray-400 font-medium"
+                      className="bg-transparent outline-none text-xs w-28 sm:w-32 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 font-medium"
                     />
                   </div>
 
-                  <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-[#0F1117] px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300">
-                    <FileText size={13} className="text-amber-500" />
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100/80 dark:bg-slate-800/70 px-2.5 py-1">
+                    <FileText size={12} className="text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Subtema (ex: Conduta & Diagnóstico)"
+                      placeholder="Subtema"
                       value={editSubtema}
                       onChange={(e) => {
                         setEditSubtema(e.target.value);
                         setIsDirty(true);
                       }}
-                      className="bg-transparent outline-none text-xs w-44 placeholder:text-gray-400 font-medium"
+                      className="bg-transparent outline-none text-xs w-32 sm:w-40 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 font-medium"
                     />
                   </div>
 
-                  {/* Tags */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {editTags.map((t) => (
-                      <span
-                        key={t}
-                        className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-amber-200 dark:border-amber-800"
+                  {editTags.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 px-2 py-1 text-[11px] font-medium"
+                    >
+                      <span>#{t}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(t)}
+                        className="hover:text-rose-500 cursor-pointer"
                       >
-                        <span>#{t}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(t)}
-                          className="hover:text-rose-500 cursor-pointer"
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    ))}
-                    <div className="flex items-center gap-1 bg-gray-50 dark:bg-[#0F1117] px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-800">
-                      <Tag size={11} className="text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="+ tag"
-                        value={tagInput}
-                        onChange={(e) => setTagInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddTag();
-                          }
-                        }}
-                        className="bg-transparent outline-none text-[11px] w-14 placeholder:text-gray-400"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
 
-              {/* 4. PRODUCTIVITY RICH TOOLBAR */}
-              <div className="bg-gray-50 dark:bg-[#0F1117] border border-gray-200 dark:border-gray-800 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2.5">
-                {/* Formatting Tools */}
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("# ", "", "Título Principal")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Título H1"
-                  >
-                    <Heading1 size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("## ", "", "Subtítulo H2")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Subtítulo H2"
-                  >
-                    <Heading2 size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("### ", "", "Seção H3")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Seção H3"
-                  >
-                    <Heading3 size={15} />
-                  </button>
-
-                  <span className="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1" />
-
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("**", "**", "texto em negrito")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Negrito"
-                  >
-                    <Bold size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("*", "*", "texto em itálico")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Itálico"
-                  >
-                    <Italic size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("- ", "", "Item da lista")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Lista com marcadores"
-                  >
-                    <List size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("1. ", "", "Passo numerado")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Lista numerada"
-                  >
-                    <ListOrdered size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("- [ ] ", "", "Checklist de estudo")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Checklist / Tarefa"
-                  >
-                    <CheckSquare size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertSnippet("\n---\n")}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                    title="Linha Divisória"
-                  >
-                    <Minus size={15} />
-                  </button>
-
-                  <span className="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1" />
-
-                  {/* Medical Callouts dropdown / quick buttons */}
-                  <button
-                    type="button"
-                    onClick={() => insertCallout("dica")}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100/70 hover:bg-amber-200/80 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 transition-colors cursor-pointer"
-                    title="Inserir Macete de Prova"
-                  >
-                    <Lightbulb size={13} />
-                    <span>Macete</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertCallout("alerta")}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-100/70 hover:bg-rose-200/80 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 transition-colors cursor-pointer"
-                    title="Inserir Alerta Clínico / Red Flag"
-                  >
-                    <AlertTriangle size={13} />
-                    <span>Red Flag</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertCallout("criterios")}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100/70 hover:bg-blue-200/80 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 transition-colors cursor-pointer"
-                    title="Inserir Critérios Diagnósticos"
-                  >
-                    <Bookmark size={13} />
-                    <span>Critérios</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertCallout("tratamento")}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100/70 hover:bg-emerald-200/80 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 transition-colors cursor-pointer"
-                    title="Inserir Conduta / Tratamento"
-                  >
-                    <Pill size={13} />
-                    <span>Conduta</span>
-                  </button>
-                </div>
-
-                {/* Editor View Tabs: Editar, Preview, Split */}
-                <div className="flex items-center bg-gray-200/60 dark:bg-gray-800 p-0.5 rounded-xl text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab("edit")}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg transition-colors cursor-pointer",
-                      editorTab === "edit"
-                        ? "bg-white dark:bg-[#1A1D27] text-gray-900 dark:text-white shadow-2xs font-bold"
-                        : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                    )}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab("preview")}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg transition-colors cursor-pointer",
-                      editorTab === "preview"
-                        ? "bg-white dark:bg-[#1A1D27] text-gray-900 dark:text-white shadow-2xs font-bold"
-                        : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                    )}
-                  >
-                    Visualizar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab("split")}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg transition-colors cursor-pointer hidden md:inline-block",
-                      editorTab === "split"
-                        ? "bg-white dark:bg-[#1A1D27] text-gray-900 dark:text-white shadow-2xs font-bold"
-                        : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                    )}
-                  >
-                    Lado a Lado
-                  </button>
-                </div>
-              </div>
-
-              {/* 5. EDITOR & PREVIEW AREA */}
-              <div className="min-h-[380px]">
-                {editorTab === "edit" && (
-                  <textarea
-                    ref={textareaRef}
-                    value={editContent}
-                    onChange={(e) => {
-                      setEditContent(e.target.value);
-                      setIsDirty(true);
-                    }}
-                    placeholder="Escreva sua anotação clínica aqui... Use Markdown, dicas de prova, posologias e critérios diagnósticos."
-                    rows={16}
-                    className="w-full bg-transparent font-sans text-sm text-gray-800 dark:text-gray-200 leading-relaxed outline-none resize-y p-3 rounded-2xl border border-gray-200 dark:border-gray-800 focus:border-amber-500 dark:focus:border-amber-400 transition-colors"
-                  />
-                )}
-
-                {editorTab === "preview" && (
-                  <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-[#0F1117] min-h-[380px] text-sm text-gray-800 dark:text-gray-200 leading-relaxed space-y-3">
-                    {renderFormattedText(editContent || "*Nenhum conteúdo digitado ainda.*")}
-                  </div>
-                )}
-
-                {editorTab === "split" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <textarea
-                      ref={textareaRef}
-                      value={editContent}
-                      onChange={(e) => {
-                        setEditContent(e.target.value);
-                        setIsDirty(true);
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 px-2 py-1">
+                    <Tag size={11} className="text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="+ tag"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddTag();
+                        }
                       }}
-                      placeholder="Editor Markdown..."
-                      rows={16}
-                      className="w-full bg-transparent font-mono text-xs sm:text-sm text-gray-800 dark:text-gray-200 leading-relaxed outline-none resize-none p-3 rounded-2xl border border-gray-200 dark:border-gray-800 focus:border-amber-500 dark:focus:border-amber-400 transition-colors"
+                      className="bg-transparent outline-none text-[11px] w-14 text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
                     />
-                    <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-[#0F1117] max-h-[460px] overflow-y-auto text-sm text-gray-800 dark:text-gray-200 leading-relaxed space-y-3">
-                      {renderFormattedText(editContent || "*Prévia formatada aparecerá aqui...*")}
-                    </div>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* 6. AI POWERHOUSE ACTIONS ROW */}
-              <div className="border-t border-gray-100 dark:border-gray-800 pt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-bold text-gray-400 dark:text-gray-500 flex items-center gap-1.5 mr-1">
-                    <Sparkles size={14} className="text-amber-500" />
-                    <span>Ferramentas IA:</span>
-                  </span>
+              {/* CLEAN WYSIWYG RICH TEXT EDITOR (Renders formatted headings, bold, lists & clean Unicode instead of raw Markdown/LaTeX) */}
+              <div className="min-h-[440px]">
+                <RichTextEditor
+                  key={editingNote?.id || "new-note"}
+                  value={editContent}
+                  onChange={(md) => {
+                    setEditContent(cleanLatexAndBadges(md));
+                    setIsDirty(true);
+                  }}
+                  placeholder="Escreva sua anotação clínica aqui..."
+                  minHeight="440px"
+                  theme="preto"
+                  onSave={handleSaveNote}
+                />
+              </div>
 
+              {/* CLEAN AI & UTILITY FOOTER */}
+              <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={handleAiExpand}
                     disabled={isAiLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 font-bold text-xs border border-purple-200 dark:border-purple-800 transition-colors disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
                   >
-                    <Sparkles size={13} />
+                    <Sparkles size={13} className="text-emerald-600 dark:text-emerald-400" />
                     <span>Expandir com IA</span>
                   </button>
 
@@ -1166,9 +980,9 @@ function AnotacoesContent() {
                     type="button"
                     onClick={handleGenerateFlashcards}
                     disabled={isAiLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300 font-bold text-xs border border-cyan-200 dark:border-cyan-800 transition-colors disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
                   >
-                    <Layers size={13} />
+                    <Layers size={13} className="text-blue-600 dark:text-blue-400" />
                     <span>Criar Flashcards</span>
                   </button>
 
@@ -1176,26 +990,26 @@ function AnotacoesContent() {
                     type="button"
                     onClick={handleGenerateQuestion}
                     disabled={isAiLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-bold text-xs border border-blue-200 dark:border-blue-800 transition-colors disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
                   >
-                    <HelpCircle size={13} />
+                    <HelpCircle size={13} className="text-amber-600 dark:text-amber-400" />
                     <span>Gerar Questão</span>
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${editTitle}\n\n${editContent}`);
-                      toast.success("Conteúdo copiado!");
-                    }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-xs transition-colors cursor-pointer"
-                  >
-                    <Copy size={13} />
-                    <span>Copiar Texto</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      `${editTitle}\n\n${cleanLatexAndBadges(editContent)}`
+                    );
+                    toast.success("Conteúdo copiado!");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  <Copy size={13} />
+                  <span>Copiar Texto</span>
+                </button>
               </div>
             </div>
           ) : isViewingFolders ? (
@@ -1649,8 +1463,14 @@ function AnotacoesContent() {
                           </h3>
 
                           {/* Content Snippet */}
-                          <p className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed whitespace-pre-wrap">
-                            {note.content.replace(/[#*>`]/g, "").slice(0, 160)}...
+                          <p className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed">
+                            {cleanLatexAndBadges(note.content || "")
+                              .replace(/<[^>]+>/g, " ")
+                              .replace(/[#*>`]/g, "")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .slice(0, 160)}
+                            {(note.content || "").length > 160 ? "..." : ""}
                           </p>
 
                           {/* Origin Question info if available */}
