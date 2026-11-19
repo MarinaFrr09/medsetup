@@ -38,6 +38,7 @@ import {
   History,
 } from "lucide-react";
 import { useAppStore } from "@/stores/useAppStore";
+import { PrescriptionSimulator } from "@/components/interatividade/PrescriptionSimulator";
 import toast from "react-hot-toast";
 
 export interface AnamnesisOption {
@@ -536,6 +537,9 @@ export default function InteratividadePage() {
     books = [],
   } = useAppStore();
 
+  // Active Module in Interatividade Tab
+  const [activeModule, setActiveModule] = useState<"clinical_cases" | "prescription">("clinical_cases");
+
   // Generator Configuration State
   const [sourceMode, setSourceMode] = useState<"materials" | "topic">("materials");
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
@@ -1019,6 +1023,69 @@ export default function InteratividadePage() {
 
   return (
     <div className="w-full space-y-6 pb-14">
+      {/* ─── INTERATIVIDADE MODULE SWITCHER ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white dark:bg-[#1A1D27] p-2.5 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
+        <button
+          type="button"
+          onClick={() => setActiveModule("clinical_cases")}
+          className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-all cursor-pointer border ${
+            activeModule === "clinical_cases"
+              ? "bg-sky-50/90 dark:bg-sky-950/50 border-sky-500 text-sky-700 dark:text-sky-300 shadow-2xs"
+              : "bg-gray-50/50 dark:bg-[#141720] border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/70"
+          }`}
+        >
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              activeModule === "clinical_cases"
+                ? "bg-sky-600 text-white shadow-xs"
+                : "bg-gray-200 dark:bg-gray-800 text-gray-500"
+            }`}
+          >
+            <Stethoscope className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs sm:text-sm font-extrabold truncate">
+              1. Gerador de Casos Clínicos Interativos em Etapas
+            </p>
+            <p className="text-[11px] opacity-80 truncate">
+              Anamnese → Exame Físico → Hipóteses → Exames → Conduta → Debriefing
+            </p>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveModule("prescription")}
+          className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-all cursor-pointer border ${
+            activeModule === "prescription"
+              ? "bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-2xs"
+              : "bg-gray-50/50 dark:bg-[#141720] border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/70"
+          }`}
+        >
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              activeModule === "prescription"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-gray-200 dark:bg-gray-800 text-gray-500"
+            }`}
+          >
+            <Pill className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs sm:text-sm font-extrabold truncate">
+              2. Simulador de Prescrição e Checagem de Interações
+            </p>
+            <p className="text-[11px] opacity-80 truncate">
+              Fármaco, dose, via, frequência, interações ADME/CYP450, ajustes e toxicidade
+            </p>
+          </div>
+        </button>
+      </div>
+
+      {activeModule === "prescription" ? (
+        <PrescriptionSimulator />
+      ) : (
+        <>
       {/* ─── TOP HEADER & GENERATOR TOGGLE ─── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#1A1D27] p-5 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
         <div className="flex items-start gap-3.5">
@@ -2424,6 +2491,8 @@ export default function InteratividadePage() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
