@@ -686,7 +686,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre a conduta
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">
-              Adivinhar Tratamento
+              Tratamento
             </h2>
             <p className="text-xs text-muted-foreground">
               Escolha a conduta terapêutica padrão-ouro conforme os dados clínicos são revelados

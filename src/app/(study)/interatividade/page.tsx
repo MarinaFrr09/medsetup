@@ -748,7 +748,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o conteú
           }`}
         >
           <Pill className="h-4 w-4 shrink-0" />
-          <span>Adivinhar Remédio</span>
+          <span>Remédios</span>
         </button>
         <button
           type="button"
@@ -760,7 +760,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o conteú
           }`}
         >
           <FlaskConical className="h-4 w-4 shrink-0" />
-          <span>Adivinhar Exame</span>
+          <span>Exames</span>
         </button>
         <button
           type="button"

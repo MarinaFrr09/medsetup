@@ -661,7 +661,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o fármac
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">
-              Adivinhar Remédio
+              Remédios
             </h2>
             <p className="text-xs text-muted-foreground">
               Descubra o fármaco a partir da indicação, mecanismo, farmacocinética e efeitos adversos

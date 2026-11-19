@@ -659,7 +659,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o exame "
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">
-              Adivinhar Exame
+              Exames
             </h2>
             <p className="text-xs text-muted-foreground">
               Descubra qual exame complementar pedir com base no cenário clínico e nos achados
