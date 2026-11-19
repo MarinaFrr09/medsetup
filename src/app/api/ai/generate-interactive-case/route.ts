@@ -1,248 +1,259 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJSONFromAI } from "@/lib/ai";
-import { extractTextFromDocx, extractTextFromPptx, extractTextFromPdf } from "@/lib/document-parser";
+import {
+  extractTextFromDocx,
+  extractTextFromPptx,
+  extractTextFromPdf,
+} from "@/lib/document-parser";
 
 export const maxDuration = 600;
 export const dynamic = "force-dynamic";
 
-const INTERACTIVE_CASE_SYSTEM_PROMPT = `Você é um Professor Titular de Clínica Médica, Emergência e Propedêutica Médica, especialista em Simulação Clínica Interativa com Raciocínio em Etapas (PBL / OSCE / USMLE Step 2 CK / Residência Médica).
+const PROGRESSIVE_5CLUE_SYSTEM_PROMPT = `Você é um Professor Titular de Clínica Médica, Cirurgia, Pediatria, Ginecologia/Obstetrícia e Emergência, criador de desafios diagnósticos médicos baseados em 5 Pistas Progressivas.
 
 SUA MISSÃO:
-Construir um CASO CLÍNICO INTERATIVO COMPLETO EM 6 ETAPAS PROGRESSIVAS, onde os dados são revelados passo a passo conforme as escolhas do estudante, exigindo raciocínio fisiopatológico, propedêutico e terapêutico.
+Criar um CASO CLÍNICO PONTUAL DE DIAGNÓSTICO EM 5 PISTAS PROGRESSIVAS, onde o estudante tenta adivinhar o diagnóstico a cada pista revelada, seguido de um DEBRIEFING DETALHADO ao final.
+
+ESTRUTURA OBRIGATÓRIA DAS 5 PISTAS ("clues", array com exatamente 5 strings):
+- Pista 1 (clues[0] — "Vinheta clínica"): Apresentação inicial concisa (1 a 2 frases) contendo perfil do paciente (idade, sexo, ocupação ou contexto), local de atendimento (pronto-socorro, ambulatório, enfermaria) e queixa principal com tempo de evolução, intrigante mas ainda ampla.
+- Pista 2 (clues[1] — "Pista 2/5"): História da Doença Atual (HDA) detalhada, circunstâncias do início, fatores desencadeantes/epidemiológicos, evolução dos sintomas e antecedentes relevantes. NUNCA mencione o nome do diagnóstico aqui.
+- Pista 3 (clues[2] — "Pista 3/5"): Sinais vitais completos e achados do exame físico direcionado, incluindo sinais semiológicos clássicos, mas sem entregar o diagnóstico de forma explícita.
+- Pista 4 (clues[3] — "Pista 4/5"): Resultados de exames laboratoriais, líquor, ECG ou exames de imagem com valores numéricos realistas e valores de referência entre parênteses — ex: "CPK 25.000 U/L (referência: 39 a 308 U/L)".
+- Pista 5 (clues[4] — "Pista 5/5"): Conduta terapêutica/emergencial instituída e evolução clínica nas horas/dias seguintes, descrevendo o tratamento específico sem citar o nome literal da doença (ex: "infusão intravenosa imediata de 20 ampolas do soro específico...").
 
 REGRAS MANDATÓRIAS:
-1. FIDELIDADE AO MATERIAL/TEMA FORNECIDO:
-   - Se o estudante selecionou materiais do MedSetup (PDFs, Roteiros de Tutoria/Ateliê, Anotações ou Transcrições de Aulas) ou anexou arquivos, o caso clínico DEVE cobrar diretamente a fisiopatologia, semiologia, diagnóstico, exames, fármacos, doses/antídotos e condutas presentes nesse material!
-2. ESTRUTURA DAS 6 ETAPAS NO JSON:
-   - ETAPA 1 (Anamnese e Cenário):
-     * Apresente paciente (iniciais, idade, sexo, profissão), cenário de atendimento ("Pronto-Socorro", "Ambulatório", "Enfermaria" ou "UTI"), queixa principal com duração e contexto inicial realista.
-     * Forneça de 7 a 9 opções de perguntas de anamnese distribuídas nas categorias: "HDA", "Antecedentes", "Medicações e Toxinas", "Hábitos e Exposições", "Alergias e Revisão de Sistemas".
-     * Marque 5 ou 6 perguntas como "priority": "essential" (indispensáveis para o raciocínio) e 2 ou 3 como "priority": "optional" ou "distractor" (menos prioritárias no momento inicial), cada uma com o "finding" (achado clínico detalhado que o paciente relata quando perguntado) e "rationale" (por que essa pergunta é ou não prioritária).
-   - ETAPA 2 (Exame Físico Direcionado):
-     * Forneça de 6 a 7 sistemas/manobras propedêuticas ("Sinais Vitais e Ectoscopia", "Neurológico", "Cardiovascular", "Respiratório", "Abdominal", "Pele e Extremidades", mais 1 manobra específica do caso).
-     * Em cada item, inclua "findings" (achados objetivos detalhados com valores numéricos reais: PA, FC, FR, SpO2, Temperatura, ausculta, palpação, sinais semióticos), "isAbnormal" (true/false), "priority" ("essential" | "complementary") e "clinicalInterpretation" (significado fisiopatológico do achado).
-   - ETAPA 3 (Hipóteses Diagnósticas e Justificativa):
-     * Defina "primaryHypothesis" (diagnóstico principal esperado), "acceptedSynonyms" (array de termos equivalentes aceitos), "differentials" (3 a 4 diagnósticos diferenciais plausíveis com explicação de como diferenciá-los), "expectedJustificationKeywords" (5 a 8 conceitos/palavras-chave fisiopatológicos ou clínicos que devem constar na justificativa do estudante) e "modelJustification" (justificativa fisiopatológica, epidemiológica e sindrômica padrão-ouro).
-   - ETAPA 4 (Solicitação de Exames Complementares):
-     * Forneça de 8 a 10 opções de exames distribuídas entre "Laboratorial", "Imagem" e "Funcional / Especial".
-     * Inclua 4 a 6 exames "priority": "essential" (indispensáveis/padrão-ouro), 2 "priority": "complementary" (apoio) e 2 a 3 "priority": "unnecessary" (desnecessários, redundantes ou invasivos/alto custo sem indicação imediata).
-     * Para CADA exame, informe "costInvasiveness" ("Baixo Custo • Não Invasivo" | "Médio Custo • Moderado" | "Alto Custo • Invasivo"), "result" (laudo ou valor numérico detalhado com valores de referência entre parênteses) e "commentary" (por que deve ou não ser solicitado e como interpretar).
-   - ETAPA 5 (Diagnóstico Definitivo e Conduta Terapêutica):
-     * Defina "definitiveDiagnosis" (diagnóstico definitivo completo com classificação/gravidade).
-     * Forneça de 7 a 9 opções de conduta em "managementOptions" cobrindo: "Medida Imediata / Suporte", "Farmacoterapia / Antídoto / Dose", "Critério de Internação / Destino" e "Monitoramento", sendo 5 a 6 corretas ("isCorrect": true) com posologia, dose, via, mecanismo de ação ou antídoto detalhado, e 2 a 3 incorretas/contraindicadas ("isCorrect": false, armadilhas terapêuticas) com "rationale" explicando por que está correta ou por que é contraindicada.
-     * Inclua também "completeConductSummary" com os pilares detalhados: "immediateMeasures", "pharmacotherapyAndDoses", "admissionAndDischargeCriteria" e "monitoringPlan".
-   - ETAPA 6 (Debriefing e Devolutiva Estruturada):
-     * Inclua "clinicalPitfalls" (3 a 5 armadilhas clínicas / red flags clássicas desse caso), "pathophysiologyDeepDive" (explicação densa e objetiva do mecanismo fisiopatológico central), "keyTakeaways" (4 a 6 pontos de alto rendimento para prova e prática clínica) e "stageByStageCommentary" (comentário do gabarito para cada uma das 5 etapas).
+1. Se um PDF ou texto de material do aluno foi anexado, o caso clínico DEVE ser fiel ao tema/doença abordado no documento anexado.
+2. Se for geração aleatória sem PDF, escolha uma doença relevante de qualquer área da Medicina (Clínica Médica, Cardiologia, Pneumologia, Gastroenterologia, Nefrologia, Endocrinologia, Neurologia, Infectologia, Hematologia, Reumatologia, Toxicologia/Emergência, Cirurgia, Pediatria ou Ginecologia e Obstetrícia), respeitando o nível de dificuldade solicitado ("Fácil", "Médio" ou "Difícil").
+3. Inclua "suggestedDistractors": lista de 8 diagnósticos diferenciais plausíveis em português (para enriquecer a lista de seleção do aluno sem revelar a resposta).
+4. O Debriefing ("debriefing") deve ser completo, didático e aprofundado, explicando fisiopatologia, o raciocínio por trás de cada uma das 5 pistas, diagnósticos diferenciais e tratamento com doses/condutas.
 
-Responda OBRIGATORIAMENTE em JSON válido seguindo esta estrutura exata:
+Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
 {
-  "title": "Título Clínico do Caso (sem revelar o diagnóstico final no título, ex: 'Caso Clínico: Dor Abdominal Aguda e Rebaixamento Sensório' ou 'Síndrome Febril e Dispneia no Pronto-Socorro')",
-  "revealedDiagnosisTitle": "Nome Oficial do Diagnóstico Definitivo (revelado apenas no Debriefing)",
-  "specialty": "Especialidade / Disciplina (ex: Toxicologia / Emergência, Ginecologia e Obstetrícia, Clínica Médica)",
-  "difficulty": "Graduação / Internato | Residência Médica | Alta Complexidade",
-  "setting": "Pronto-Socorro | Ambulatório | Enfermaria | UTI",
-  "stage1": {
-    "patientSummary": "Identificação: ex. J.M.S., 34 anos, sexo feminino, professora.",
-    "chiefComplaint": "Queixa principal com tempo de evolução entre aspas.",
-    "scenarioDescription": "Descrição imersiva da chegada do paciente e contexto inicial do atendimento (3 a 5 linhas).",
-    "triageNote": "Impressão inicial da triagem / acolhimento.",
-    "anamnesisOptions": [
-      {
-        "id": "anam_1",
-        "category": "HDA",
-        "question": "Pergunta clínica clara a ser feita na anamnese",
-        "priority": "essential",
-        "finding": "Relato detalhado do paciente/acompanhante revelando dados cruciais da HDA",
-        "rationale": "Explicação objetiva do valor propedêutico desta pergunta"
-      }
-    ]
-  },
-  "stage2": {
-    "instruction": "Selecione os sistemas e manobras propedêuticas prioritárias para o exame físico direcionado.",
-    "physicalSystems": [
-      {
-        "id": "phys_1",
-        "system": "Sinais Vitais e Ectoscopia Geral",
-        "maneuver": "Aferição de PA, FC, FR, SpO2, Temperatura, glicemia capilar e estado geral",
-        "priority": "essential",
-        "isAbnormal": true,
-        "findings": "PA: 165x110 mmHg | FC: 112 bpm | FR: 24 irpm | SpO2: 94% AA | Temp: 36,8°C. Paciente lúcida, agitada, mucosas hipocoradas +/4+...",
-        "clinicalInterpretation": "Interpretação técnica dos sinais vitais e repercussão hemodinâmica."
-      }
-    ]
-  },
-  "stage3": {
-    "primaryHypothesis": "Nome do Diagnóstico Principal Esperado",
-    "acceptedSynonyms": ["sinonimo 1", "sinonimo 2"],
+  "diagnosis": "Nome Oficial e Conciso do Diagnóstico (ex: 'Acidente crotálico', 'Dissecção aguda de aorta', 'Púrpura trombocitopênica trombótica')",
+  "acceptedSynonyms": ["sinonimo 1", "sinonimo 2", "sigla se houver"],
+  "specialty": "Área da Medicina (ex: Emergência / Toxicologia, Cardiologia, Neurologia, Pediatria, GO, Cirurgia, etc.)",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Texto da Vinheta clínica (1 a 2 frases concisas)",
+    "Texto da Pista 2/5 (HDA detalhada, história e contexto epidemiológico)",
+    "Texto da Pista 3/5 (Sinais vitais e exame físico direcionado com sinais semiológicos)",
+    "Texto da Pista 4/5 (Exames laboratoriais/complementares com valores de referência entre parênteses)",
+    "Texto da Pista 5/5 (Conduta instituída e evolução clínica sem citar o nome literal da doença)"
+  ],
+  "suggestedDistractors": [
+    "Diagnóstico Diferencial 1",
+    "Diagnóstico Diferencial 2",
+    "Diagnóstico Diferencial 3",
+    "Diagnóstico Diferencial 4",
+    "Diagnóstico Diferencial 5",
+    "Diagnóstico Diferencial 6"
+  ],
+  "debriefing": {
+    "overview": "Explicação fisiopatológica e clínica completa da doença e do caso (1 a 2 parágrafos densos).",
+    "clueBreakdown": [
+      "Explicação detalhada do que a Vinheta clínica indicava",
+      "Explicação detalhada dos achados da Pista 2/5",
+      "Explicação detalhada dos sinais físicos da Pista 3/5",
+      "Explicação detalhada dos exames complementares da Pista 4/5",
+      "Explicação detalhada da conduta e desfecho da Pista 5/5"
+    ],
     "differentials": [
       {
-        "name": "Diagnóstico Diferencial 1",
-        "whyPlausible": "Por que entra no diferencial nesta fase",
-        "howToRuleOut": "Critério clínico ou propedêutico que o diferencia da hipótese principal"
+        "name": "Diagnóstico Diferencial A",
+        "distinction": "Por que se assemelha ao caso e qual achado clínico/laboratorial permite descartá-lo"
+      },
+      {
+        "name": "Diagnóstico Diferencial B",
+        "distinction": "Por que se assemelha ao caso e qual achado clínico/laboratorial permite descartá-lo"
+      },
+      {
+        "name": "Diagnóstico Diferencial C",
+        "distinction": "Por que se assemelha ao caso e qual achado clínico/laboratorial permite descartá-lo"
       }
     ],
-    "expectedJustificationKeywords": ["termo1", "termo2", "termo3", "termo4"],
-    "modelJustification": "Justificativa fisiopatológica, epidemiológica e clínica completa explicando por que os achados da anamnese e exame físico apontam para a hipótese principal."
-  },
-  "stage4": {
-    "instruction": "Solicite os exames complementares considerando prioridade diagnóstica, custo e invasividade.",
-    "exams": [
-      {
-        "id": "exam_1",
-        "name": "Nome do Exame Complementar",
-        "category": "Laboratorial",
-        "costInvasiveness": "Baixo Custo • Não Invasivo",
-        "priority": "essential",
-        "result": "Resultado detalhado com valores numéricos e valores de referência entre parênteses",
-        "commentary": "Justificativa técnica: exame de 1ª linha que confirma/avalia..."
-      }
+    "management": "Conduta médica padrão-ouro detalhada (medidas imediatas, fármacos, doses, antídotos ou cirurgia e monitoramento).",
+    "pearls": [
+      "Pérola clínica de alto rendimento 1",
+      "Pérola clínica de alto rendimento 2",
+      "Pérola clínica de alto rendimento 3"
     ]
-  },
-  "stage5": {
-    "definitiveDiagnosis": "Diagnóstico Definitivo Completo",
-    "diagnosisOptions": [
-      "Diagnóstico Definitivo Completo (Correto)",
-      "Diagnóstico Diferencial Plausível A",
-      "Diagnóstico Diferencial Plausível B",
-      "Diagnóstico Diferencial Plausível C"
-    ],
-    "correctDiagnosisIndex": 0,
-    "managementOptions": [
-      {
-        "id": "cond_1",
-        "category": "Farmacoterapia / Antídoto / Dose",
-        "action": "Descrição precisa da conduta (fármaco, dose de ataque/manutenção, via de administração ou suporte)",
-        "isCorrect": true,
-        "rationale": "Mecanismo farmacológico e justificativa clínica da conduta"
-      }
-    ],
-    "completeConductSummary": {
-      "immediateMeasures": "Medidas imediatas de estabilização e suporte...",
-      "pharmacotherapyAndDoses": "Fármacos de 1ª linha, doses exatas, diluição/via, ajustes renais/hepáticos, interações e antídotos...",
-      "admissionAndDischargeCriteria": "Critérios de internação em enfermaria/UTI e critérios futuros de alta segura...",
-      "monitoringPlan": "Parâmetros clínicos e laboratoriais de monitoramento seriado e intervalos..."
-    }
-  },
-  "stage6": {
-    "pathophysiologyDeepDive": "Síntese técnica e objetiva da fisiopatologia celular, molecular e sistêmica do caso.",
-    "clinicalPitfalls": [
-      "Armadilha Clínica 1: descrição do erro comum e como evitá-lo",
-      "Armadilha Clínica 2: ..."
-    ],
-    "keyTakeaways": [
-      "Ponto-chave 1",
-      "Ponto-chave 2"
-    ],
-    "stageByStageCommentary": {
-      "stage1": "O que era prioritário investigar na anamnese e por quê.",
-      "stage2": "Quais achados do exame físico selaram a síndrome clínica.",
-      "stage3": "Como articular a hipótese principal e excluir os diferenciais antes mesmo dos exames.",
-      "stage4": "Uso racional de exames: quais exames tinham maior valor preditivo e quais eram desnecessários.",
-      "stage5": "Fundamentação da terapêutica específica, doses, antídotos e monitoramento."
-    }
   }
 }`;
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
+    const contentType = req.headers.get("content-type") || "";
+    let specialty = "Aleatória (Todas as Áreas da Medicina)";
+    let difficulty = "Aleatório (Fácil a Difícil)";
     let topic = "";
-    let setting = "Automático";
-    let difficulty = "Residência Médica";
     let materialContext = "";
-    const rawFiles: Array<{ data: string; mimeType: string; name?: string }> = [];
+    let avoidDiagnoses: string[] = [];
+    const inlineParts: Array<{ mimeType: string; data: string }> = [];
 
-    const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
-      topic = ((formData.get("topic") as string) || "").trim();
-      setting = ((formData.get("setting") as string) || "Automático").trim();
-      difficulty = ((formData.get("difficulty") as string) || "Residência Médica").trim();
-      materialContext = ((formData.get("materialContext") as string) || "").trim();
+      const formData = await req.formData();
+      specialty = String(formData.get("specialty") || specialty);
+      difficulty = String(formData.get("difficulty") || difficulty);
+      topic = String(formData.get("topic") || "");
+      materialContext = String(formData.get("materialContext") || "");
+      const avoidRaw = String(formData.get("avoidDiagnoses") || "");
+      if (avoidRaw) {
+        try {
+          avoidDiagnoses = JSON.parse(avoidRaw);
+        } catch {}
+      }
 
-      const files = formData.getAll("files") as File[];
-      for (const file of files) {
-        if (!file || file.size === 0) continue;
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const ext = (file.name || "").toLowerCase().split(".").pop() || "";
+      const uploadedFiles = [
+        ...formData.getAll("files"),
+        ...formData.getAll("file"),
+      ].filter((item): item is File => item instanceof File && item.size > 0);
 
-        if (ext === "docx") {
-          const text = extractTextFromDocx(buffer);
-          if (text) {
-            materialContext += `\n\n[DOCUMENTO ${file.name}]:\n${text.slice(0, 30000)}`;
-            continue;
+      for (const file of uploadedFiles) {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const fName = file.name.toLowerCase();
+
+        if (fName.endsWith(".pdf")) {
+          const pdfRes = await extractTextFromPdf(buffer);
+          const pdfText =
+            typeof pdfRes === "string" ? pdfRes : pdfRes?.text || "";
+          if (pdfText && pdfText.trim().length > 100) {
+            materialContext += `\n\n=== CONTEÚDO EXTRAÍDO DO PDF (${file.name}) ===\n${pdfText.slice(0, 35000)}`;
+          } else {
+            inlineParts.push({
+              mimeType: "application/pdf",
+              data: buffer.toString("base64"),
+            });
           }
+        } else if (fName.endsWith(".docx") || fName.endsWith(".doc")) {
+          const docText = (await extractTextFromDocx(buffer)) || "";
+          materialContext += `\n\n=== CONTEÚDO DO DOCUMENTO (${file.name}) ===\n${docText.slice(0, 35000)}`;
+        } else if (fName.endsWith(".pptx") || fName.endsWith(".ppt")) {
+          const pptText = (await extractTextFromPptx(buffer)) || "";
+          materialContext += `\n\n=== CONTEÚDO DOS SLIDES (${file.name}) ===\n${pptText.slice(0, 35000)}`;
+        } else if (file.type.startsWith("image/")) {
+          inlineParts.push({
+            mimeType: file.type,
+            data: buffer.toString("base64"),
+          });
+        } else {
+          const txt = buffer.toString("utf-8");
+          materialContext += `\n\n=== ARQUIVO (${file.name}) ===\n${txt.slice(0, 35000)}`;
         }
-        if (ext === "pptx") {
-          const text = extractTextFromPptx(buffer);
-          if (text) {
-            materialContext += `\n\n[SLIDES ${file.name}]:\n${text.slice(0, 30000)}`;
-            continue;
-          }
-        }
-        if (ext === "pdf" || file.type?.includes("pdf")) {
-          try {
-            const parsed = await extractTextFromPdf(buffer);
-            if (parsed?.text && parsed.text.trim().length > 80) {
-              materialContext += `\n\n[PDF ${file.name}]:\n${parsed.text.slice(0, 35000)}`;
-              continue;
-            }
-          } catch {}
-        }
-        rawFiles.push({
-          data: buffer.toString("base64"),
-          mimeType: file.type || (ext === "pdf" ? "application/pdf" : "image/png"),
-          name: file.name,
-        });
       }
     } else {
-      const body = await request.json();
-      topic = (body.topic || "").trim();
-      setting = (body.setting || "Automático").trim();
-      difficulty = (body.difficulty || "Residência Médica").trim();
-      materialContext = (body.materialContext || "").trim();
-      if (Array.isArray(body.fileAttachments)) {
-        rawFiles.push(...body.fileAttachments);
+      const body = await req.json();
+      specialty = body.specialty || specialty;
+      difficulty = body.difficulty || difficulty;
+      topic = body.topic || "";
+      materialContext = body.materialContext || "";
+      if (Array.isArray(body.avoidDiagnoses)) {
+        avoidDiagnoses = body.avoidDiagnoses;
       }
     }
 
-    if (!topic && !materialContext && rawFiles.length === 0) {
-      return NextResponse.json(
-        { error: "Informe um tema clínico ou selecione um material de estudo do MedSetup para gerar o caso interativo." },
-        { status: 400 }
-      );
-    }
+    const hasMaterial =
+      materialContext.trim().length > 20 || inlineParts.length > 0;
 
-    const userPrompt = `Gere um Caso Clínico Interativo completo em 6 etapas progressivas.
-${topic ? `TEMA / FOCO SOLICITADO: "${topic}"` : ""}
-CENÁRIO DE ATENDIMENTO PREFERENCIAL: ${setting === "Automático" ? "Escolha o cenário mais realista para o tema (Pronto-Socorro, Ambulatório, Enfermaria ou UTI)" : setting}
-NÍVEL DE COMPLEXIDADE: ${difficulty}
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}/${now.getFullYear()}`;
+
+    const prompt = `Gere um Caso Clínico Pontual Interativo de 5 Pistas Progressivas em JSON.
 ${
-  materialContext
-    ? `\nCONTEÚDO DOS MATERIAIS DE ESTUDO DO ALUNO (BASE OBRIGATÓRIA DO CASO — mantenha total fidelidade aos conceitos, fármacos, mecanismos, exames e condutas cobrados neste material):\n"""\n${materialContext.slice(0, 40000)}\n"""`
+  hasMaterial
+    ? `MODO BASEADO EM PDF/MATERIAL DO ESTUDANTE:
+Baseie o caso clínico DIRETAMENTE nas patologias, quadro clínico, exames laboratoriais e condutas presentes no documento abaixo!`
+    : `MODO ALEATÓRIO MULTIESPECIALIDADE:
+- Área/Especialidade solicitada: ${specialty}
+- Nível de Dificuldade solicitado: ${difficulty}
+${topic ? `- Foco/Tema específico sugerido: ${topic}` : ""}
+${
+  avoidDiagnoses.length > 0
+    ? `- NÃO repita nenhum destes diagnósticos já sorteados recentemente: ${avoidDiagnoses.join(", ")}`
     : ""
-}`;
+}`
+}
+${
+  materialContext.trim()
+    ? `\nCONTEÚDO DO PDF / MATERIAL ANEXADO:\n"""\n${materialContext.slice(0, 38000)}\n"""`
+    : ""
+}
 
-    const result = await generateJSONFromAI({
-      systemPrompt: INTERACTIVE_CASE_SYSTEM_PROMPT,
-      userPrompt,
-      fileAttachments: rawFiles.length > 0 ? rawFiles : undefined,
-      maxOutputTokens: 32768,
-      temperature: 0.4,
+Garanta que "clues" tenha EXATAMENTE 5 pistas na ordem:
+1) Vinheta clínica (1-2 frases concisas)
+2) Pista 2/5 (HDA e história detalhada)
+3) Pista 3/5 (Sinais vitais e exame físico direcionado)
+4) Pista 4/5 (Exames laboratoriais/imagem com valores de referência entre parênteses)
+5) Pista 5/5 (Conduta instituída e evolução clínica sem entregar o nome literal do diagnóstico).`;
+
+    const parsed: any = await generateJSONFromAI({
+      systemPrompt: PROGRESSIVE_5CLUE_SYSTEM_PROMPT,
+      userPrompt: prompt,
+      fileAttachments: inlineParts.length > 0 ? inlineParts : undefined,
     });
 
-    if (!result || !result.stage1 || !result.stage2 || !result.stage4 || !result.stage5) {
-      throw new Error("A IA retornou um caso clínico incompleto. Tente novamente.");
-    }
+    const rawClues = Array.isArray(parsed?.clues) ? parsed.clues : [];
+    const normalizedClues: [string, string, string, string, string] = [
+      String(rawClues[0] || "Paciente dá entrada no pronto-socorro com quadro agudo."),
+      String(rawClues[1] || "História clínica detalhada revelando progressão dos sintomas."),
+      String(rawClues[2] || "Exame físico direcionado com achados semiológicos clássicos."),
+      String(rawClues[3] || "Exames complementares com alterações laboratoriais específicas."),
+      String(rawClues[4] || "Conduta terapêutica específica instituída com resposta clínica favorável."),
+    ];
 
     return NextResponse.json({
-      id: `icase_${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      ...result,
+      id: `pcase_${Date.now()}`,
+      caseNumber: Math.floor(220 + Math.random() * 780),
+      date: dateStr,
+      diagnosis: String(parsed?.diagnosis || "Diagnóstico Clínico").trim(),
+      acceptedSynonyms: Array.isArray(parsed?.acceptedSynonyms)
+        ? parsed.acceptedSynonyms
+        : [],
+      specialty: String(parsed?.specialty || specialty),
+      difficulty:
+        parsed?.difficulty === "Fácil" ||
+        parsed?.difficulty === "Médio" ||
+        parsed?.difficulty === "Difícil"
+          ? parsed.difficulty
+          : "Médio",
+      clues: normalizedClues,
+      suggestedDistractors: Array.isArray(parsed?.suggestedDistractors)
+        ? parsed.suggestedDistractors
+        : [],
+      debriefing: {
+        overview: String(
+          parsed?.debriefing?.overview ||
+            "Síntese fisiopatológica e clínica do caso."
+        ),
+        clueBreakdown: [
+          String(parsed?.debriefing?.clueBreakdown?.[0] || "Análise da Vinheta clínica."),
+          String(parsed?.debriefing?.clueBreakdown?.[1] || "Análise da Pista 2/5."),
+          String(parsed?.debriefing?.clueBreakdown?.[2] || "Análise da Pista 3/5."),
+          String(parsed?.debriefing?.clueBreakdown?.[3] || "Análise da Pista 4/5."),
+          String(parsed?.debriefing?.clueBreakdown?.[4] || "Análise da Pista 5/5."),
+        ],
+        differentials: Array.isArray(parsed?.debriefing?.differentials)
+          ? parsed.debriefing.differentials
+          : [],
+        management: String(
+          parsed?.debriefing?.management ||
+            "Conduta terapêutica e monitoramento recomendados."
+        ),
+        pearls: Array.isArray(parsed?.debriefing?.pearls)
+          ? parsed.debriefing.pearls
+          : [],
+      },
     });
   } catch (error: any) {
-    console.error("[generate-interactive-case] Error:", error);
+    console.error("Erro ao gerar caso clínico 5 pistas:", error);
     return NextResponse.json(
-      { error: error?.message || "Erro ao gerar caso clínico interativo com a IA." },
+      {
+        error:
+          error?.message ||
+          "Erro ao gerar caso clínico com IA. Verifique sua chave de API nas configurações.",
+      },
       { status: 500 }
     );
   }

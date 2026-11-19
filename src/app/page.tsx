@@ -3,6 +3,7 @@ import { QuickActions } from '@/components/dashboard/QuickActions';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { MedicalCuriosityWidget } from '@/components/dashboard/MedicalCuriosityWidget';
 import { ContextualResumeWidget } from '@/components/dashboard/ContextualResumeWidget';
+import { DailyClinicalCaseWidget } from '@/components/dashboard/DailyClinicalCaseWidget';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -22,6 +23,9 @@ export default function DashboardPage() {
       </div>
 
       <StatsCards />
+
+      {/* Resolver Caso Clínico do Dia */}
+      <DailyClinicalCaseWidget />
 
       <ContextualResumeWidget />
 

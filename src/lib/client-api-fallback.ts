@@ -1013,221 +1013,156 @@ Responda OBRIGATORIAMENTE em JSON válido:
       return jsonResponse(parsed);
     }
 
-    // 19. /api/ai/generate-interactive-case
+    // 19. /api/ai/generate-interactive-case (5-Clue Progressive Clinical Case)
     if (cleanPath.endsWith("/api/ai/generate-interactive-case")) {
+      const specialty = String(
+        body.specialty || "Aleatória (Todas as Áreas da Medicina)"
+      );
+      const difficulty = String(
+        body.difficulty || "Aleatório (Fácil a Difícil)"
+      );
       const topic = String(body.topic || "");
-      const setting = String(body.setting || "Automático");
-      const difficulty = String(body.difficulty || "Residência Médica");
       const materialContext = String(body.materialContext || "");
-
-      const sys = `Você é um Professor Titular de Clínica Médica, Emergência e Propedêutica Médica especialista em Simulação Clínica Interativa com Raciocínio em Etapas.
-Construa um CASO CLÍNICO INTERATIVO COMPLETO EM 6 ETAPAS PROGRESSIVAS fiel ao tema e aos materiais fornecidos.
-Responda OBRIGATORIAMENTE em JSON válido seguindo esta estrutura exata:
-{
-  "title": "Título Clínico do Caso (sem revelar o diagnóstico final no título)",
-  "revealedDiagnosisTitle": "Nome Oficial do Diagnóstico Definitivo",
-  "specialty": "Especialidade / Disciplina",
-  "difficulty": "${difficulty}",
-  "setting": "Pronto-Socorro | Ambulatório | Enfermaria | UTI",
-  "stage1": {
-    "patientSummary": "Identificação: iniciais, idade, sexo, profissão.",
-    "chiefComplaint": "Queixa principal com tempo de evolução.",
-    "scenarioDescription": "Descrição imersiva da chegada do paciente e contexto inicial do atendimento (3 a 5 linhas).",
-    "triageNote": "Impressão inicial da triagem.",
-    "anamnesisOptions": [
-      {
-        "id": "anam_1",
-        "category": "HDA | Antecedentes | Medicações e Toxinas | Hábitos e Exposições | Alergias e Revisão de Sistemas",
-        "question": "Pergunta clínica clara a ser feita na anamnese (gere 8 opções: 6 'essential' e 2 'optional')",
-        "priority": "essential",
-        "finding": "Relato detalhado do paciente revelando dados clínicos",
-        "rationale": "Por que esta pergunta é prioritária ou secundária"
-      }
-    ]
-  },
-  "stage2": {
-    "instruction": "Selecione os sistemas e manobras propedêuticas prioritárias para o exame físico direcionado.",
-    "physicalSystems": [
-      {
-        "id": "phys_1",
-        "system": "Sinais Vitais e Ectoscopia | Neurológico | Cardiovascular | Respiratório | Abdominal | Pele e Extremidades",
-        "maneuver": "Manobras propedêuticas avaliadas (gere 6 sistemas)",
-        "priority": "essential",
-        "isAbnormal": true,
-        "findings": "Achados físicos objetivos detalhados com valores numéricos",
-        "clinicalInterpretation": "Interpretação técnica do achado"
-      }
-    ]
-  },
-  "stage3": {
-    "primaryHypothesis": "Nome do Diagnóstico Principal Esperado",
-    "acceptedSynonyms": ["sinonimo 1", "sinonimo 2"],
-    "differentials": [
-      {
-        "name": "Diagnóstico Diferencial 1",
-        "whyPlausible": "Por que entra no diferencial",
-        "howToRuleOut": "Como diferenciá-lo"
-      }
-    ],
-    "expectedJustificationKeywords": ["conceito1", "conceito2", "conceito3", "conceito4"],
-    "modelJustification": "Justificativa fisiopatológica, epidemiológica e clínica completa."
-  },
-  "stage4": {
-    "instruction": "Solicite os exames complementares considerando prioridade diagnóstica, custo e invasividade.",
-    "exams": [
-      {
-        "id": "exam_1",
-        "name": "Nome do Exame (gere 8 exames: 5 'essential', 1 'complementary', 2 'unnecessary')",
-        "category": "Laboratorial | Imagem | Funcional / Especial",
-        "costInvasiveness": "Baixo Custo • Não Invasivo | Médio Custo • Moderado | Alto Custo • Invasivo",
-        "priority": "essential",
-        "result": "Laudo ou valor numérico detalhado com valores de referência",
-        "commentary": "Por que deve ou não ser solicitado e interpretação"
-      }
-    ]
-  },
-  "stage5": {
-    "definitiveDiagnosis": "Diagnóstico Definitivo Completo",
-    "diagnosisOptions": [
-      "Diagnóstico Definitivo Completo",
-      "Diagnóstico Diferencial Plausível A",
-      "Diagnóstico Diferencial Plausível B",
-      "Diagnóstico Diferencial Plausível C"
-    ],
-    "correctDiagnosisIndex": 0,
-    "managementOptions": [
-      {
-        "id": "cond_1",
-        "category": "Medida Imediata / Suporte | Farmacoterapia / Antídoto / Dose | Critério de Internação / Destino | Monitoramento",
-        "action": "Descrição precisa da conduta com fármaco, dose, via ou suporte (gere 8 opções: 5 corretas e 3 incorretas/armadilhas)",
-        "isCorrect": true,
-        "rationale": "Mecanismo farmacológico e justificativa clínica"
-      }
-    ],
-    "completeConductSummary": {
-      "immediateMeasures": "Medidas imediatas de estabilização...",
-      "pharmacotherapyAndDoses": "Fármacos, doses exatas, ajustes, interações ou antídotos...",
-      "admissionAndDischargeCriteria": "Critérios de internação e alta...",
-      "monitoringPlan": "Plano de monitoramento clínico e laboratorial..."
-    }
-  },
-  "stage6": {
-    "pathophysiologyDeepDive": "Síntese técnica e objetiva da fisiopatologia celular e sistêmica do caso.",
-    "clinicalPitfalls": ["Armadilha Clínica 1", "Armadilha Clínica 2", "Armadilha Clínica 3"],
-    "keyTakeaways": ["Ponto-chave 1", "Ponto-chave 2", "Ponto-chave 3", "Ponto-chave 4"],
-    "stageByStageCommentary": {
-      "stage1": "Comentário gabarito da Etapa 1 (Anamnese)",
-      "stage2": "Comentário gabarito da Etapa 2 (Exame Físico)",
-      "stage3": "Comentário gabarito da Etapa 3 (Hipóteses)",
-      "stage4": "Comentário gabarito da Etapa 4 (Exames Complementares)",
-      "stage5": "Comentário gabarito da Etapa 5 (Conduta e Monitoramento)"
-    }
-  }
-}`;
-      const prompt = `Gere o Caso Clínico Interativo completo em 6 etapas.
-${topic ? `TEMA SOLICITADO: "${topic}"` : ""}
-CENÁRIO: ${setting}
-COMPLEXIDADE: ${difficulty}
-${materialContext ? `\nCONTEÚDO DOS MATERIAIS DO ALUNO:\n"""\n${materialContext.slice(0, 35000)}\n"""` : ""}`;
-      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, 0.4);
-      const parsed = parseJsonSafe(raw);
-      return jsonResponse({
-        id: `icase_${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        ...parsed,
-      });
-    }
-
-    // 20. /api/ai/evaluate-prescription
-    if (cleanPath.endsWith("/api/ai/evaluate-prescription")) {
-      const patientProfile = body.patientProfile || {};
-      const prescriptionItems = Array.isArray(body.prescriptionItems)
-        ? body.prescriptionItems
+      const avoidRaw = body.avoidDiagnoses;
+      const avoidDiagnoses: string[] = Array.isArray(avoidRaw)
+        ? avoidRaw
+        : typeof avoidRaw === "string" && avoidRaw.startsWith("[")
+        ? (() => {
+            try {
+              return JSON.parse(avoidRaw);
+            } catch {
+              return [];
+            }
+          })()
         : [];
-      const materialContext = String(body.materialContext || "");
 
-      const sys = `Você é um Professor Titular de Farmacologia Clínica, Toxicologia e Terapêutica Médica (Goodman & Gilman, Katzung, UpToDate Lexidrug).
-Avalie tecnicamente a prescrição médica montada pelo estudante para o paciente descrito.
+      const sys = `Você é um Professor Titular de Medicina criador de desafios diagnósticos baseados em 5 Pistas Progressivas.
+Crie um CASO CLÍNICO PONTUAL DE DIAGNÓSTICO EM 5 PISTAS PROGRESSIVAS com debriefing completo ao final.
 Responda OBRIGATORIAMENTE em JSON válido com esta estrutura exata:
 {
-  "safetyScore": 75,
-  "riskClassification": "Segura e Adequada | Atenção — Exige Ajustes | Alto Risco — Contraindicação ou Interação Grave",
-  "overallVerdict": "Síntese técnica e direta da avaliação global da prescrição.",
-  "pharmacokineticInteractions": [
-    {
-      "pair": "Fármaco A + Fármaco B",
-      "severity": "Grave | Moderada | Leve",
-      "phase": "Absorção | Distribuição | Metabolismo (CYP450) | Excreção Renal",
-      "mechanism": "Explicação objetiva do mecanismo farmacocinético molecular/enzimático",
-      "clinicalManagement": "Conduta prática recomendada"
-    }
+  "diagnosis": "Nome Oficial e Conciso do Diagnóstico (ex: 'Acidente crotálico', 'Dissecção aguda de aorta')",
+  "acceptedSynonyms": ["sinonimo 1", "sinonimo 2"],
+  "specialty": "Área da Medicina",
+  "difficulty": "Fácil | Médio | Difícil",
+  "clues": [
+    "Vinheta clínica: apresentação inicial concisa em 1 a 2 frases (idade, sexo, contexto de atendimento e queixa principal com tempo de evolução)",
+    "Pista 2/5: HDA detalhada, história da exposição, início e progressão dos sintomas, sem citar o nome da doença",
+    "Pista 3/5: Sinais vitais e achados do exame físico direcionado com sinais semiológicos clássicos",
+    "Pista 4/5: Exames laboratoriais/complementares com valores numéricos e valores de referência entre parênteses",
+    "Pista 5/5: Conduta terapêutica específica instituída e evolução clínica sem entregar o nome literal do diagnóstico"
   ],
-  "pharmacodynamicInteractions": [
-    {
-      "pair": "Fármaco A + Fármaco B (ou Condição Clínica)",
-      "severity": "Grave | Moderada | Leve",
-      "mechanism": "Mecanismo farmacodinâmico (sinergismo, antagonismo, fisiologia)",
-      "clinicalConsequence": "Repercussão clínica esperada no paciente",
-      "clinicalManagement": "Conduta recomendada"
-    }
+  "suggestedDistractors": [
+    "Diagnóstico Diferencial 1",
+    "Diagnóstico Diferencial 2",
+    "Diagnóstico Diferencial 3",
+    "Diagnóstico Diferencial 4",
+    "Diagnóstico Diferencial 5",
+    "Diagnóstico Diferencial 6"
   ],
-  "duplicitiesAndContraindications": [
-    {
-      "type": "Duplicidade Terapêutica | Contraindicação na Gestação | Contraindicação Renal | Contraindicação Hepática | Alerta no Idoso / Alergia",
-      "drugInvolved": "Nome do fármaco",
-      "explanation": "Explicação técnica direta do risco e da recomendação"
-    }
-  ],
-  "itemEvaluations": [
-    {
-      "drug": "Nome do fármaco prescrito",
-      "prescribedRegimen": "Dose, via, frequência e duração informadas pelo aluno",
-      "status": "Adequado | Exige Ajuste | Contraindicado",
-      "recommendedAdjustment": "Dose/via/frequência corrigida ou fármaco substituto de escolha",
-      "rationale": "Justificativa farmacológica do ajuste"
-    }
-  ],
-  "toxicityMonitoring": [
-    {
-      "target": "Fármaco ou Sistema Orgânico",
-      "clinicalSigns": "Sinais clínicos de toxicidade a monitorar",
-      "labParameters": "Exames laboratoriais, biomarcadores e metas de controle",
-      "antidoteOrAction": "Antídoto específico (com dose) ou conduta de suspensão"
-    }
-  ],
-  "goldStandardPrescription": [
-    {
-      "drug": "Fármaco padrão-ouro recomendado",
-      "dose": "Dose exata",
-      "route": "Via",
-      "frequency": "Frequência",
-      "duration": "Duração",
-      "notes": "Diluição, velocidade de infusão ou orientação essencial"
-    }
-  ]
+  "debriefing": {
+    "overview": "Explicação fisiopatológica e clínica completa da doença e do caso.",
+    "clueBreakdown": [
+      "Explicação detalhada do que a Vinheta clínica indicava",
+      "Explicação detalhada dos achados da Pista 2/5",
+      "Explicação detalhada dos sinais físicos da Pista 3/5",
+      "Explicação detalhada dos exames complementares da Pista 4/5",
+      "Explicação detalhada da conduta e desfecho da Pista 5/5"
+    ],
+    "differentials": [
+      {
+        "name": "Diagnóstico Diferencial A",
+        "distinction": "Por que se assemelha ao caso e como descartá-lo"
+      },
+      {
+        "name": "Diagnóstico Diferencial B",
+        "distinction": "Por que se assemelha ao caso e como descartá-lo"
+      }
+    ],
+    "management": "Conduta médica padrão-ouro detalhada (medidas imediatas, fármacos, doses, antídotos ou cirurgia e monitoramento).",
+    "pearls": [
+      "Pérola clínica de alto rendimento 1",
+      "Pérola clínica de alto rendimento 2",
+      "Pérola clínica de alto rendimento 3"
+    ]
+  }
 }`;
-      const prompt = `Avalie a prescrição médica:
-PERFIL DO PACIENTE:
-- Diagnóstico/Quadro: ${patientProfile.diagnosis || "Não informado"}
-- Idade/Sexo/Peso: ${patientProfile.age || "—"} anos, ${patientProfile.sex || "—"}, ${patientProfile.weight || "—"} kg
-- Função Renal: ${patientProfile.renalFunction || "Normal"}
-- Função Hepática: ${patientProfile.hepaticFunction || "Normal"}
-- Condições Especiais: ${(patientProfile.specialConditions || []).join(", ") || "Nenhuma"}
-- Alergias: ${patientProfile.allergies || "Nega"}
-- Medicações de Uso Prévio: ${(patientProfile.homeMedications || []).join("; ") || "Nenhuma"}
 
-PRESCRIÇÃO DO ESTUDANTE:
-${prescriptionItems
-  .map(
-    (item: any, i: number) =>
-      `${i + 1}. ${item.drug} | Dose: ${item.dose} | Via: ${item.route} | Freq: ${item.frequency} | Duração: ${item.duration} | Obs: ${item.notes || "—"}`
-  )
-  .join("\n")}
-${materialContext ? `\nCONTEXTO DOS MATERIAIS:\n${materialContext.slice(0, 15000)}` : ""}`;
+      const hasMaterial =
+        materialContext.trim().length > 20 || inlineParts.length > 0;
+      const prompt = `Gere um Caso Clínico Pontual Interativo de 5 Pistas Progressivas em JSON.
+${
+  hasMaterial
+    ? `Baseie o caso clínico DIRETAMENTE no documento/PDF anexado pelo estudante!`
+    : `- Área/Especialidade: ${specialty}\n- Dificuldade: ${difficulty}${
+        topic ? `\n- Tema sugerido: ${topic}` : ""
+      }${
+        avoidDiagnoses.length > 0
+          ? `\n- Não repita estes diagnósticos: ${avoidDiagnoses.join(", ")}`
+          : ""
+      }`
+}
+${
+  materialContext
+    ? `\nCONTEÚDO DO PDF / MATERIAL:\n"""\n${materialContext.slice(0, 35000)}\n"""`
+    : ""
+}`;
 
-      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, 0.25);
+      const raw = await callGeminiDirectBrowser(
+        prompt,
+        sys,
+        true,
+        inlineParts,
+        0.45
+      );
       const parsed = parseJsonSafe(raw);
-      return jsonResponse(parsed);
+      const now = new Date();
+      const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}/${now.getFullYear()}`;
+      const rawClues = Array.isArray(parsed?.clues) ? parsed.clues : [];
+      return jsonResponse({
+        id: `pcase_${Date.now()}`,
+        caseNumber: Math.floor(220 + Math.random() * 780),
+        date: dateStr,
+        diagnosis: String(parsed?.diagnosis || "Diagnóstico Clínico").trim(),
+        acceptedSynonyms: Array.isArray(parsed?.acceptedSynonyms)
+          ? parsed.acceptedSynonyms
+          : [],
+        specialty: String(parsed?.specialty || specialty),
+        difficulty:
+          parsed?.difficulty === "Fácil" ||
+          parsed?.difficulty === "Médio" ||
+          parsed?.difficulty === "Difícil"
+            ? parsed.difficulty
+            : "Médio",
+        clues: [
+          String(rawClues[0] || "Vinheta clínica inicial."),
+          String(rawClues[1] || "História clínica detalhada."),
+          String(rawClues[2] || "Exame físico direcionado."),
+          String(rawClues[3] || "Exames complementares com valores de referência."),
+          String(rawClues[4] || "Conduta instituída e evolução clínica."),
+        ],
+        suggestedDistractors: Array.isArray(parsed?.suggestedDistractors)
+          ? parsed.suggestedDistractors
+          : [],
+        debriefing: {
+          overview: String(parsed?.debriefing?.overview || ""),
+          clueBreakdown: [
+            String(parsed?.debriefing?.clueBreakdown?.[0] || ""),
+            String(parsed?.debriefing?.clueBreakdown?.[1] || ""),
+            String(parsed?.debriefing?.clueBreakdown?.[2] || ""),
+            String(parsed?.debriefing?.clueBreakdown?.[3] || ""),
+            String(parsed?.debriefing?.clueBreakdown?.[4] || ""),
+          ],
+          differentials: Array.isArray(parsed?.debriefing?.differentials)
+            ? parsed.debriefing.differentials
+            : [],
+          management: String(parsed?.debriefing?.management || ""),
+          pearls: Array.isArray(parsed?.debriefing?.pearls)
+            ? parsed.debriefing.pearls
+            : [],
+        },
+      });
     }
 
     // Generic fallback for any future /api/ai/* route
