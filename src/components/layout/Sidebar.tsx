@@ -210,16 +210,16 @@ export const Sidebar = React.memo(function Sidebar() {
 
       <aside
         className={cn(
-          "flex h-screen flex-col border-r border-gray-200 bg-white dark:border-[#2a2d3a] dark:bg-[#1A1D27] select-none transition-all duration-300 ease-in-out",
+          "flex h-dvh max-h-dvh flex-col border-r border-gray-200 bg-white dark:border-[#2a2d3a] dark:bg-[#1A1D27] select-none transition-all duration-300 ease-in-out",
           // Mobile & Tablet drawer: fixed overlay
-          "fixed inset-y-0 left-0 z-50 w-72 lg:static lg:z-20",
+          "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] lg:static lg:z-20",
           sidebarOpen ? "translate-x-0 shadow-2xl lg:shadow-none" : "-translate-x-full lg:translate-x-0",
           // Desktop collapsed state
           isCollapsed ? "lg:w-20" : "lg:w-64"
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-gray-200 dark:border-[#2a2d3a] flex-shrink-0">
+        <div className="flex h-14 lg:h-16 items-center justify-between px-4 border-b border-gray-200 dark:border-[#2a2d3a] flex-shrink-0">
           {!isCollapsed ? (
             <Link
               href="/"
@@ -254,8 +254,8 @@ export const Sidebar = React.memo(function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-          <nav className="space-y-1">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-2 px-3 space-y-0.5">
+          <nav className="space-y-0.5">
             {NAV_ITEMS.map((item) => {
               const active = isActive(item.href);
 
@@ -266,7 +266,7 @@ export const Sidebar = React.memo(function Sidebar() {
                   prefetch={true}
                   onClick={handleLinkClick}
                   className={cn(
-                    "group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 relative min-h-[44px]",
+                    "group flex items-center rounded-xl px-3 py-2 lg:py-2.5 text-sm font-medium transition-all duration-150 relative min-h-[38px] lg:min-h-[42px]",
                     active
                       ? item.activeClasses
                       : cn("text-gray-600 dark:text-gray-400", item.hoverClasses)
@@ -292,13 +292,13 @@ export const Sidebar = React.memo(function Sidebar() {
         </div>
 
         {/* Bottom section */}
-        <div className="border-t border-gray-200 p-3 dark:border-[#2a2d3a] flex-shrink-0 space-y-1">
+        <div className="border-t border-gray-200 px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] lg:py-2.5 dark:border-[#2a2d3a] flex-shrink-0 space-y-0.5 bg-white dark:bg-[#1A1D27]">
           <Link
             href="/trash"
             prefetch={true}
             onClick={handleLinkClick}
             className={cn(
-              "group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 min-h-[44px]",
+              "group flex items-center rounded-xl px-3 py-2 text-sm font-medium transition-colors duration-150 min-h-[38px] lg:min-h-[42px]",
               isActive("/trash")
                 ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white font-semibold"
                 : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800/60"
@@ -318,7 +318,7 @@ export const Sidebar = React.memo(function Sidebar() {
             prefetch={true}
             onClick={handleLinkClick}
             className={cn(
-              "group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 min-h-[44px]",
+              "group flex items-center rounded-xl px-3 py-2 text-sm font-medium transition-colors duration-150 min-h-[38px] lg:min-h-[42px]",
               isActive("/settings")
                 ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white font-semibold"
                 : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800/60"

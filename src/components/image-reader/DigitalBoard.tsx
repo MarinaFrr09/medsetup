@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { 
   Download, Copy, Check, Image as ImageIcon, Sparkles, ArrowDown, ArrowRight, 
   CornerDownRight, Layout, Columns2, Table as TableIcon, AlertTriangle, 
-  AlertCircle, Lightbulb, ShieldAlert, Clock, Activity, CheckCircle2 
+  AlertCircle, Lightbulb, ShieldAlert, Clock, Activity, CheckCircle2,
+  ZoomIn, ZoomOut, Maximize2, Smartphone
 } from "lucide-react";
 import { toPng } from "html-to-image";
 import { exportBoardToPdf } from "@/lib/pdf-export";
@@ -277,10 +278,19 @@ function balanceClustersToHorizontalColumns(rawCols: BoardColumn[]): BoardColumn
 
 export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardProps) {
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const pinchStartDistRef = useRef<number | null>(null);
+  const pinchStartScaleRef = useRef<number>(1);
+
   const [isExporting, setIsExporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const currentTheme = DEFAULT_THEME;
   const [viewMode, setViewMode] = useState<"side_by_side" | "board_only">("board_only");
+  const [autoFit, setAutoFit] = useState(true);
+  const [responsiveStack, setResponsiveStack] = useState(false);
+  const [manualScale, setManualScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
+  const [boardNaturalHeight, setBoardNaturalHeight] = useState<number>(0);
 
   const title = data.title || "QUADRO DIGITAL DE ESTUDOS";
   const subtitle = data.subtitle || "";
@@ -288,14 +298,98 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
   const columns = balanceClustersToHorizontalColumns(rawColumns);
 
   const colCount = columns.length;
-  const gridLayoutClass =
-    colCount === 1
+  const boardNaturalWidth = colCount >= 4 ? 1320 : colCount === 3 ? 1100 : colCount === 2 ? 840 : 680;
+
+  const gridLayoutClass = responsiveStack
+    ? colCount === 1
       ? "grid-cols-1 max-w-2xl mx-auto"
-      : colCount === 2
-      ? "grid-cols-2"
-      : colCount === 3
-      ? "grid-cols-3"
-      : "grid-cols-4";
+      : "grid-cols-1 md:grid-cols-2"
+    : colCount === 1
+    ? "grid-cols-1 max-w-2xl mx-auto"
+    : colCount === 2
+    ? "grid-cols-2"
+    : colCount === 3
+    ? "grid-cols-3"
+    : "grid-cols-4";
+
+  const recalcFit = useCallback(() => {
+    if (!viewportRef.current || !boardRef.current) return;
+    const availW = viewportRef.current.clientWidth || window.innerWidth;
+    const naturalH = boardRef.current.offsetHeight || boardRef.current.scrollHeight || 0;
+    if (naturalH > 0) {
+      setBoardNaturalHeight(naturalH);
+    }
+    if (responsiveStack) {
+      setFitScale(1);
+      return;
+    }
+    const computed = Math.max(0.32, Math.min(1, (availW - 8) / boardNaturalWidth));
+    setFitScale(Number(computed.toFixed(3)));
+  }, [boardNaturalWidth, responsiveStack]);
+
+  useEffect(() => {
+    recalcFit();
+    const ro = new ResizeObserver(() => recalcFit());
+    if (viewportRef.current) ro.observe(viewportRef.current);
+    if (boardRef.current) ro.observe(boardRef.current);
+    window.addEventListener("resize", recalcFit);
+    window.addEventListener("orientationchange", recalcFit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", recalcFit);
+      window.removeEventListener("orientationchange", recalcFit);
+    };
+  }, [recalcFit, data, viewMode]);
+
+  const effectiveScale = responsiveStack ? 1 : autoFit ? fitScale : manualScale;
+
+  const handleZoomOut = () => {
+    setResponsiveStack(false);
+    const base = autoFit ? fitScale : manualScale;
+    const next = Math.max(0.3, Number((base - 0.1).toFixed(2)));
+    setAutoFit(false);
+    setManualScale(next);
+  };
+
+  const handleZoomIn = () => {
+    setResponsiveStack(false);
+    const base = autoFit ? fitScale : manualScale;
+    const next = Math.min(1.5, Number((base + 0.1).toFixed(2)));
+    setAutoFit(false);
+    setManualScale(next);
+  };
+
+  const handleResetFit = () => {
+    setResponsiveStack(false);
+    setAutoFit(true);
+    recalcFit();
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchStartDistRef.current = Math.hypot(dx, dy);
+      pinchStartScaleRef.current = effectiveScale;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartDistRef.current) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const ratio = dist / pinchStartDistRef.current;
+      const next = Math.max(0.3, Math.min(1.5, Number((pinchStartScaleRef.current * ratio).toFixed(2))));
+      setResponsiveStack(false);
+      setAutoFit(false);
+      setManualScale(next);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    pinchStartDistRef.current = null;
+  };
 
 
   // 1. Download PNG Image (Exact user request: "fazendo literalmente uma imagem de um quadro")
@@ -398,32 +492,85 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
     <div className="space-y-6">
       {/* Top Action Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-[#1A1D27] p-4 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
-        {/* Single View Mode Toggle */}
-        <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200/60 dark:border-gray-700/60">
-          <button
-            type="button"
-            onClick={() => setViewMode("board_only")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              viewMode === "board_only"
-                ? "bg-white dark:bg-[#1A1D27] text-blue-600 dark:text-blue-400 shadow-2xs"
-                : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            }`}
-          >
-            <Layout className="w-3.5 h-3.5" />
-            <span>Apenas Quadro</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("side_by_side")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              viewMode === "side_by_side"
-                ? "bg-white dark:bg-[#1A1D27] text-blue-600 dark:text-blue-400 shadow-2xs"
-                : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            }`}
-          >
-            <Columns2 className="w-3.5 h-3.5" />
-            <span>Lado a Lado</span>
-          </button>
+        {/* Single View Mode Toggle & Zoom Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200/60 dark:border-gray-700/60">
+            <button
+              type="button"
+              onClick={() => setViewMode("board_only")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === "board_only"
+                  ? "bg-white dark:bg-[#1A1D27] text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Layout className="w-3.5 h-3.5" />
+              <span>Apenas Quadro</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("side_by_side")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === "side_by_side"
+                  ? "bg-white dark:bg-[#1A1D27] text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span>Lado a Lado</span>
+            </button>
+          </div>
+
+          {/* Interactive Zoom & Tablet Proportion Bar */}
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200/60 dark:border-gray-700/60">
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-[#1A1D27] transition-colors cursor-pointer"
+              title="Diminuir Zoom"
+              aria-label="Diminuir Zoom"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="px-2 text-xs font-bold text-gray-700 dark:text-gray-200 min-w-[46px] text-center">
+              {Math.round(effectiveScale * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-[#1A1D27] transition-colors cursor-pointer"
+              title="Aumentar Zoom"
+              aria-label="Aumentar Zoom"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleResetFit}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                autoFit && !responsiveStack
+                  ? "bg-blue-600 text-white shadow-2xs"
+                  : "text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-[#1A1D27]"
+              }`}
+              title="Ajustar o quadro inteiro proporcionalmente à tela"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Ajustar à Tela</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setResponsiveStack((v) => !v)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                responsiveStack
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-[#1A1D27]"
+              }`}
+              title="Empilhar colunas verticalmente para leitura no tablet em modo retrato"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Modo Tablet</span>
+            </button>
+          </div>
         </div>
 
         {/* Export buttons */}
@@ -509,22 +656,44 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
         )}
 
         {/* ─── O QUADRO BRANCO DIGITALIZADO E DIGITADO (PADRÃO STUDYGRAM) ─── */}
-        <div className="w-full flex justify-center overflow-x-auto p-1 scrollbar-thin">
+        <div
+          ref={viewportRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className="w-full overflow-x-auto overflow-y-hidden p-1 scrollbar-thin"
+        >
           <div
-            ref={boardRef}
-            className="rounded-3xl select-none relative shadow-xl overflow-hidden transition-all"
-            style={{
-              width: "100%",
-              minWidth: colCount >= 4 ? "1380px" : colCount === 3 ? "1150px" : "850px",
-              maxWidth: "1600px",
-              backgroundColor: currentTheme.boardBg,
-              border: `4px solid ${currentTheme.frameBorder}`,
-              color: currentTheme.textPrimary,
-              padding: viewMode === "side_by_side" ? "24px 20px" : "30px 36px",
-              fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              boxSizing: "border-box",
-            }}
+            className="mx-auto transition-all duration-150"
+            style={
+              responsiveStack
+                ? { width: "100%" }
+                : {
+                    width: `${Math.round(boardNaturalWidth * effectiveScale)}px`,
+                    height:
+                      boardNaturalHeight > 0
+                        ? `${Math.round(boardNaturalHeight * effectiveScale) + 8}px`
+                        : "auto",
+                  }
+            }
           >
+            <div
+              ref={boardRef}
+              className="rounded-3xl select-none relative shadow-xl overflow-hidden transition-transform duration-150"
+              style={{
+                width: responsiveStack ? "100%" : `${boardNaturalWidth}px`,
+                minWidth: responsiveStack ? "100%" : `${boardNaturalWidth}px`,
+                maxWidth: responsiveStack ? "100%" : "1600px",
+                transform: responsiveStack ? "none" : `scale(${effectiveScale})`,
+                transformOrigin: "top left",
+                backgroundColor: currentTheme.boardBg,
+                border: `4px solid ${currentTheme.frameBorder}`,
+                color: currentTheme.textPrimary,
+                padding: responsiveStack ? "20px 18px" : viewMode === "side_by_side" ? "24px 20px" : "30px 36px",
+                fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                boxSizing: "border-box",
+              }}
+            >
             {/* Whiteboard Frame Accents */}
             <div className="absolute top-2 left-4 flex items-center gap-1.5 opacity-40">
               <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
@@ -1031,6 +1200,7 @@ export default function DigitalBoard({ data, originalImageUrl }: DigitalBoardPro
                 ))}
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

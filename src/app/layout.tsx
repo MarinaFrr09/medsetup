@@ -76,7 +76,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} flex h-screen overflow-hidden bg-gray-50 text-gray-900 dark:bg-[#0f1117] dark:text-gray-100 transition-colors duration-150`}
+        className={`${inter.className} flex h-dvh max-h-dvh overflow-hidden bg-gray-50 text-gray-900 dark:bg-[#0f1117] dark:text-gray-100 transition-colors duration-150`}
       >
         <ThemeInitializer />
         <AISelectionAssistant />

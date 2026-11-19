@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Search, Menu } from "lucide-react";
+import { Bell, Search, Menu, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { SearchBar } from "./SearchBar";
@@ -78,13 +79,32 @@ export const Header = React.memo(function Header() {
             </kbd>
           </button>
 
-          <button className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen(true)}
+            className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 cursor-pointer"
+            aria-label="Pesquisar"
+          >
             <Search className="h-5 w-5" />
           </button>
 
           <div className="h-6 w-px bg-gray-200 dark:bg-gray-800" />
 
           <ThemeToggle />
+
+          <Link
+            href="/settings"
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors",
+              pathname.startsWith("/settings")
+                ? "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+                : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            )}
+            title="Configurações e Chave de API"
+          >
+            <Settings className="h-5 w-5" />
+            <span className="hidden sm:inline">Configurações</span>
+          </Link>
 
           <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">
             <Bell className="h-5 w-5" />
