@@ -5,9 +5,46 @@ import {
   calculateFree4DLayout,
   DEFAULT_MINDMAP_PALETTE,
 } from "@/lib/mindmap-layout";
-import { balanceQuestionBatch } from "@/lib/question-balancer";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
 import { reduceExcessiveBulletsInTranscription } from "@/lib/rich-text-utils";
+
+function balanceQuestionsBrowser(questions: any[]): any[] {
+  const letters = ["a", "b", "c", "d", "e"];
+  return (questions || []).map((q, idx) => {
+    if (!q || !Array.isArray(q.options) || q.options.length < 2 || q.type === "true_false" || q.type === "essay") {
+      return q;
+    }
+    const rawAnswer = String(q.answer || q.correctOptionId || "a").toLowerCase().trim();
+    const opts = q.options.map((o: any, i: number) => ({
+      origId: String(o?.id || letters[i] || "a").toLowerCase().trim(),
+      text: String(o?.text || o || "").replace(/^[A-Ea-e][).:\-]\s*/, "").trim(),
+    }));
+    const correctIdx = Math.max(
+      0,
+      opts.findIndex((o: any) => o.origId === rawAnswer || rawAnswer.startsWith(o.origId))
+    );
+    const correctText = opts[correctIdx]?.text || opts[0]?.text || "";
+    const shuffled = shuffleArray(opts);
+    const targetLetterIdx = idx % Math.min(letters.length, shuffled.length);
+    const currentCorrectPos = shuffled.findIndex((o: any) => o.text === correctText);
+    if (currentCorrectPos >= 0 && currentCorrectPos !== targetLetterIdx) {
+      const tmp = shuffled[targetLetterIdx];
+      shuffled[targetLetterIdx] = shuffled[currentCorrectPos];
+      shuffled[currentCorrectPos] = tmp;
+    }
+    const newOptions = shuffled.map((o: any, i: number) => ({
+      id: letters[i] || String(i),
+      text: o.text,
+    }));
+    const newCorrectId = letters[targetLetterIdx] || "a";
+    return {
+      ...q,
+      options: newOptions,
+      answer: newCorrectId,
+      correctOptionId: newCorrectId,
+    };
+  });
+}
 
 const SESSION_KEY_STORAGE = "medsetup_volatile_session_api_key";
 const SESSION_SETTINGS_STORAGE = "medsetup_volatile_session_settings";
@@ -434,7 +471,7 @@ Responda APENAS em JSON válido neste formato:
         : Array.isArray(parsed)
         ? parsed
         : [];
-      const balanced = await balanceQuestionBatch(list);
+      const balanced = balanceQuestionsBrowser(list);
       return jsonResponse({ questions: shuffleArray(balanced) });
     }
 
@@ -772,7 +809,7 @@ Retorne APENAS JSON válido:
       const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, 0.45);
       const parsed = parseJsonSafe(raw);
       const rawQs = Array.isArray(parsed?.questions) ? parsed.questions : [];
-      const balanced = await balanceQuestionBatch(rawQs);
+      const balanced = balanceQuestionsBrowser(rawQs);
       const formatted = shuffleArray(balanced).map((q: any, idx: number) => ({
         ...q,
         id: q.id || `q_${Date.now()}_${idx}`,
