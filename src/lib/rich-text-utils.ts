@@ -611,11 +611,10 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
 }
 
 /**
- * Reduces excessive bullet points (`• ... ->`) in PDF transcriptions and summaries:
- * 1. Converts empty bullets with trailing arrows (`- **Aspectos Essenciais** ->`) into `####` subheadings.
- * 2. Converts lead-in bullets ending in `:` (`- **Monitoramento** -> Atenção a:`) into clean paragraphs.
- * 3. Converts narrative/explanatory bullets (`Princípios`, `Controle`, `Avaliação`, or multi-sentence/long explanations)
- *    into fluid paragraphs (`**Termo:** Explicação`), keeping bullet markers ONLY for concise enumerated items.
+ * Conservative cleanup for PDF/slide transcriptions.
+ * Preserves ALL hierarchical bullet points (`* ` and indented `  * ` sub-bullets)
+ * while repairing false headings, wrapped lines, repeated slide titles, stray arrows,
+ * and ordering (Theory -> Clinical Case -> Questions at the very end).
  */
 export function reduceExcessiveBulletsInTranscription(markdown: string): string {
   if (!markdown) return "";
@@ -623,10 +622,6 @@ export function reduceExcessiveBulletsInTranscription(markdown: string): string 
   const repairedMarkdown = repairTranscriptionHeadingsAndOrder(markdown);
   const lines = repairedMarkdown.split("\n");
   const out: string[] = [];
-  let inShortColonList = false;
-
-  const narrativeLabelRegex =
-    /^(?:princ[íi]pios?|introdu[çc][ãa]o|defini[çc][ãa]o|conceito|fisiopatologia|mecanismo|epidemiologia|etiologia|patog[êe]nese|diagn[óo]stico|tratamento|conduta|manejo|controle|avalia[çc][ãa]o|retorno|acompanhamento|preven[çc][ãa]o|progn[óo]stico|conclus[ãa]o|observa[çc][ãa]o|nota|importante|resumo|vis[ãa]o geral|objetivo|indica[çc][ãa]o|contextualiza[çc][ãa]o|orienta[çc][õo]es|recomenda[çc][õo]es|considera[çc][õo]es)\b/i;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -637,20 +632,18 @@ export function reduceExcessiveBulletsInTranscription(markdown: string): string 
       continue;
     }
 
-    // Any heading resets colon list state
+    // Any heading: strip trailing arrow if present
     if (/^#{1,6}\s+/.test(trimmed)) {
-      inShortColonList = false;
       out.push(rawLine.replace(/\s*(?:->|→)\s*$/, ""));
       continue;
     }
 
-    // 1. Bullet with ONLY a bold title and optional trailing arrow/colon (e.g. "- **Aspectos Pré-Natais Essenciais** ->")
-    const emptyBulletHeadingMatch = rawLine.match(
-      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*([^*]+?)\*\*\s*(?:->|→|:|—|–|-)?\s*$/
+    // Convert empty bullets with trailing arrow (e.g. "- **Medicações** ->") into clean subheadings
+    const emptyArrowBullet = rawLine.match(
+      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*([^*]+?)\*\*\s*(?:->|→)\s*$/
     );
-    if (emptyBulletHeadingMatch) {
-      inShortColonList = false;
-      const cleanHeading = emptyBulletHeadingMatch[2]
+    if (emptyArrowBullet) {
+      const cleanHeading = emptyArrowBullet[2]
         .replace(/\s*(?:->|→|:|—|–|-)+\s*$/, "")
         .trim();
       out.push("");
@@ -659,95 +652,16 @@ export function reduceExcessiveBulletsInTranscription(markdown: string): string 
       continue;
     }
 
-    // 2. Bullet with "**Label** -> Description" or "**Label**: Description"
-    const labeledBulletMatch = rawLine.match(
-      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*([^*]+?)\*\*\s*(?:->|→|:|—|–)?\s*(.+)$/
-    );
-    const hasExplicitSeparator =
-      /^(\s*)(?:[\*\-]|\u2022)\s+\*\*[^*]+?\*\*\s*(?:->|→|:|—|–)\s*/.test(rawLine) ||
-      Boolean(labeledBulletMatch && /(?:->|→|:)$/.test(labeledBulletMatch[2].trim()));
-
-    if (labeledBulletMatch && hasExplicitSeparator) {
-      const indent = labeledBulletMatch[1].replace(/\t/g, "  ");
-      const cleanLabel = labeledBulletMatch[2]
-        .replace(/\s*(?:->|→|:|—|–|-)+\s*$/, "")
-        .trim();
-      const desc = labeledBulletMatch[3]
-        .replace(/^(?:->|→|:|—|–)\s*/, "")
-        .replace(/\s*(?:->|→)\s*$/, "")
-        .trim();
-
-      if (!desc) {
-        inShortColonList = false;
-        out.push("");
-        out.push(`#### ${cleanLabel}`);
-        out.push("");
-        continue;
-      }
-
-      // 2a. If description ends with ":" (e.g., "Atenção especial a:" or "Para HAC leve sem outras complicações:")
-      if (desc.endsWith(":")) {
-        inShortColonList = true;
-        out.push("");
-        out.push(`**${cleanLabel}:** ${desc}`);
-        continue;
-      }
-
-      const sentenceCount = desc
-        .split(/\.\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ])/)
-        .filter((s) => s.trim().length > 0).length;
-
-      const isNarrativeLabel = narrativeLabelRegex.test(cleanLabel);
-      const isLongOrMultiSentence = desc.length > 105 || sentenceCount >= 2;
-      const isIndentedSubBullet = indent.length >= 2;
-
-      // Keep as bullet ONLY when it's an indented sub-bullet that is concise,
-      // OR a concise single-sentence item (<= 105 chars) that belongs to a short list
-      if (!isLongOrMultiSentence && !isNarrativeLabel && (inShortColonList || isIndentedSubBullet || desc.length <= 85)) {
-        const prefix = isIndentedSubBullet ? "  * " : "* ";
-        out.push(`${prefix}**${cleanLabel}:** ${desc}`);
-        continue;
-      }
-
-      // Otherwise convert into a clean paragraph without a bullet dot
-      inShortColonList = false;
-      out.push("");
-      out.push(`**${cleanLabel}:** ${desc}`);
-      out.push("");
-      continue;
-    }
-
-    // 3. Plain bullet without bold label: "- Texto..."
-    const plainBulletMatch = rawLine.match(/^(\s*)(?:[\*\-]|\u2022)\s+(.+)$/);
-    if (plainBulletMatch) {
-      const indent = plainBulletMatch[1].replace(/\t/g, "  ");
-      const content = plainBulletMatch[2].replace(/\s*(?:->|→)\s*/g, ": ").trim();
-      const sentenceCount = content
-        .split(/\.\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ])/)
-        .filter((s) => s.trim().length > 0).length;
-
-      if (content.endsWith(":")) {
-        inShortColonList = true;
-        out.push("");
-        out.push(content);
-        continue;
-      }
-
-      if (content.length > 115 || sentenceCount >= 2) {
-        inShortColonList = false;
-        out.push("");
-        out.push(content);
-        out.push("");
-        continue;
-      }
-
-      const prefix = indent.length >= 2 ? "  * " : "* ";
+    // Normalize bullet indentation cleanly (preserve top-level `* ` and nested `  * ` / `    * `)
+    const bulletMatch = rawLine.match(/^(\s*)(?:[\*\-]|\u2022)\s+(.+)$/);
+    if (bulletMatch) {
+      const spaces = bulletMatch[1].replace(/\t/g, "  ").length;
+      const prefix = spaces >= 4 ? "    * " : spaces >= 2 ? "  * " : "* ";
+      const content = bulletMatch[2].trim();
       out.push(`${prefix}${content}`);
       continue;
     }
 
-    // Regular paragraph line
-    inShortColonList = trimmed.endsWith(":");
     out.push(rawLine);
   }
 

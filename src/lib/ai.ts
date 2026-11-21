@@ -372,12 +372,15 @@ export async function generateJSONFromAI({
   fileAttachments,
   maxOutputTokens = 65536,
   temperature = 0.6,
+  keepPdfBinary = false,
 }: {
   systemPrompt: string;
   userPrompt: string;
   customApiKey?: string;
   maxOutputTokens?: number;
   temperature?: number;
+  /** When true, digital PDFs are ALSO sent as binary (visual) alongside the extracted text. */
+  keepPdfBinary?: boolean;
   fileAttachment?: {
     data: string;
     mimeType: string;
@@ -493,7 +496,7 @@ ${systemPrompt}`;
               const minCharsNeeded = isTutoriaOrPbl ? Math.max(500, 300 * (parsedPdf?.total || 1)) : 80;
               if (parsedPdf && parsedPdf.text && parsedPdf.text.trim().length > minCharsNeeded) {
                 textParts.push(`\n═══════════════════════════════════════════════════════════\nTEXTO INTEGRAL EXTRAÍDO DO PDF: "${file.name || `documento_${i + 1}`}" (${parsedPdf.total || parsedPdf.pages.length} páginas)\n═══════════════════════════════════════════════════════════\n${parsedPdf.text}\n`);
-                if (!isTutoriaOrPbl) {
+                if (!isTutoriaOrPbl && !keepPdfBinary) {
                   continue;
                 }
               }

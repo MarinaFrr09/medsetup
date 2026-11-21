@@ -7,6 +7,7 @@ import {
 } from "@/lib/mindmap-layout";
 import { cleanLatexAndBadges } from "@/lib/text-sanitize";
 import { reduceExcessiveBulletsInTranscription } from "@/lib/rich-text-utils";
+import { FAITHFUL_TRANSCRIPTION_RULES } from "@/lib/transcription-prompts";
 
 function balanceQuestionsBrowser(questions: any[]): any[] {
   const letters = ["a", "b", "c", "d", "e"];
@@ -575,27 +576,21 @@ Responda OBRIGATORIAMENTE em JSON válido:
     if (cleanPath.endsWith("/api/ai/transcribe-document")) {
       const expand = body.expand === "true" || body.expand === true;
       const customPrompt = String(body.customPrompt || "");
-      const sys = `Você é um professor titular de Medicina especialista em transcrição e estruturação acadêmica de PDFs e slides médicos.
-REGRAS OBRIGATÓRIAS:
-1. Transcreva TODO o conteúdo do documento do início ao fim em Markdown estruturado (##, ###, ####).
-2. Prefira parágrafos fluidos e explicativos; use marcadores com bolinhas (* ) APENAS quando estritamente necessário para enumerações curtas.
-3. NUNCA repita o mesmo título de slide ou página (agrupe slides do mesmo tema sob um único título).
-4. NUNCA transforme frases explicativas, consequências com setas ("Menor produção -> ..."), definições ("Heme: pequena molécula..."), frases terminadas em ":" ou linhas de tabelas em títulos grandes (## ou ###)! Use títulos APENAS para nomes reais de seções.
-5. NUNCA use linhas divisórias (---) após os tópicos.
-6. ORDEM OBRIGATÓRIA DO DOCUMENTO:
-   - 1º) Todo o conteúdo teórico unificado;
-   - 2º) O Caso Clínico (se houver no documento, posicionado após todo o conteúdo teórico);
-   - 3º) As Questões / Perguntas / Exercícios do documento DEVEM FICAR SEMPRE AO FINAL ABSOLUTO DO DOCUMENTO, DEPOIS DO CASO CLÍNICO!
-7. ${expand ? "MODO EXPANDIDO: Aprofunde cada tópico com mecanismos fisiopatológicos, farmacológicos e correlações clínicas." : "Mantenha fidelidade integral a todos os dados e conceitos do documento."}
+      const sys = `${FAITHFUL_TRANSCRIPTION_RULES}
+${
+  expand
+    ? "\nMODO EXPANDIDO ATIVADO: Aprofunde cada tópico com mecanismos fisiopatológicos, farmacológicos e correlações clínicas mantendo EXATAMENTE a mesma hierarquia limpa (##, ###, * **Termo:** e subtópicos recuados   * )."
+    : ""
+}
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título do Documento (máximo 6 palavras)",
-  "transcription": "Transcrição completa e estruturada em Markdown...",
-  "summary": "Síntese executiva introdutória...",
+  "transcription": "Transcrição completa e estruturada em Markdown seguindo exatamente a hierarquia acima...",
+  "summary": "Uma única frase neutra descrevendo o tema do material...",
   "keyPoints": ["Ponto-chave 1", "Ponto-chave 2", "Ponto-chave 3", "Ponto-chave 4"]
 }`;
-      const prompt = `Transcreva e estruture integralmente o documento anexado.${customPrompt ? ` Instruções adicionais: ${customPrompt}` : ""}`;
-      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts);
+      const prompt = `Transcreva e estruture integralmente o documento anexado seguindo exatamente o modelo hierárquico (## tema principal + frase introdutória, ### subseções, * **Termo:** explicação fluida e subtópicos recuados   * ).${customPrompt ? ` Instruções adicionais: ${customPrompt}` : ""}`;
+      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, expand ? 0.3 : 0.15);
       const parsed = parseJsonSafe(raw);
       const cleanTrans = reduceExcessiveBulletsInTranscription(
         cleanLatexAndBadges(String(parsed?.transcription || parsed?.summary || ""))
