@@ -838,34 +838,34 @@ export function markdownToHtml(markdown: string): string {
     // Heading 1
     if (trimmed.startsWith("# ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h1 class="text-2xl font-extrabold text-gray-950 dark:text-white mt-6 mb-3 leading-tight">${formatInlineHtml(trimmed.replace(/^#\s+/, ""))}</h1>`);
+      htmlParts.push(`<h1 class="text-[21px] font-extrabold text-gray-950 dark:text-white mt-5 mb-2.5 leading-tight">${formatInlineHtml(trimmed.replace(/^#\s+/, ""))}</h1>`);
       continue;
     }
 
     // Heading 2
     if (trimmed.startsWith("## ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h2 class="text-xl font-bold text-gray-900 dark:text-white mt-6 mb-2.5 pb-1.5 border-b border-gray-200/80 dark:border-gray-800 leading-tight">${formatInlineHtml(trimmed.replace(/^##\s+/, ""))}</h2>`);
+      htmlParts.push(`<h2 class="text-[18px] font-bold text-gray-900 dark:text-white mt-6 mb-2.5 pb-1.5 border-b border-gray-200/80 dark:border-gray-800 leading-tight">${formatInlineHtml(trimmed.replace(/^##\s+/, ""))}</h2>`);
       continue;
     }
 
     // Heading 3
     if (trimmed.startsWith("### ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mt-5 mb-2 pb-1 border-b border-gray-200/70 dark:border-gray-800/80 leading-snug">${formatInlineHtml(trimmed.replace(/^###\s+/, ""))}</h3>`);
+      htmlParts.push(`<h3 class="text-[15.5px] font-bold text-gray-900 dark:text-gray-100 mt-5 mb-2 pb-1 border-b border-gray-200/70 dark:border-gray-800/80 leading-snug">${formatInlineHtml(trimmed.replace(/^###\s+/, ""))}</h3>`);
       continue;
     }
 
     // Heading 4 & 5
     if (trimmed.startsWith("##### ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h5 class="text-sm font-bold text-gray-800 dark:text-gray-200 mt-2.5 mb-1">${formatInlineHtml(trimmed.replace(/^#####\s+/, ""))}</h5>`);
+      htmlParts.push(`<h5 class="text-[13.5px] font-bold text-gray-800 dark:text-gray-200 mt-2.5 mb-1">${formatInlineHtml(trimmed.replace(/^#####\s+/, ""))}</h5>`);
       continue;
     }
 
     if (trimmed.startsWith("#### ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h4 class="text-base font-bold text-gray-800 dark:text-gray-200 mt-3 mb-1.5">${formatInlineHtml(trimmed.replace(/^####\s+/, ""))}</h4>`);
+      htmlParts.push(`<h4 class="text-[14px] font-bold text-gray-800 dark:text-gray-200 mt-3 mb-1.5">${formatInlineHtml(trimmed.replace(/^####\s+/, ""))}</h4>`);
       continue;
     }
 
@@ -938,7 +938,7 @@ export function markdownToHtml(markdown: string): string {
 
     // Regular paragraph
     closeListsAndBlocks();
-    htmlParts.push(`<p class="my-2 leading-relaxed text-gray-800 dark:text-gray-200 text-sm sm:text-base">${formatInlineHtml(trimmed)}</p>`);
+    htmlParts.push(`<p class="my-2 leading-[1.65] text-gray-800 dark:text-gray-200 text-[13.5px]">${formatInlineHtml(trimmed)}</p>`);
   }
 
   closeListsAndBlocks();

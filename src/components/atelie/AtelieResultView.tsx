@@ -2623,7 +2623,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
           )}
 
           {/* Document Sheet with Direct In-Place Editing */}
-          <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+          <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[780px] mx-auto">
             {/* Sumário Balão Flutuante do Lado Direito (sempre disponível) */}
             <NotionOutline
               content={summaryDraft || activeSummaryMarkdown}

@@ -948,7 +948,7 @@ function AnotacoesContent() {
               </div>
 
               {/* CLEAN WYSIWYG RICH TEXT EDITOR (Renders formatted headings, bold, lists & clean Unicode instead of raw Markdown/LaTeX) */}
-              <div className="min-h-[440px]">
+              <div className="min-h-[440px] w-full max-w-[780px] mx-auto">
                 <RichTextEditor
                   key={editingNote?.id || "new-note"}
                   value={editContent}

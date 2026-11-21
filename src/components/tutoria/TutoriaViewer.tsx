@@ -1383,7 +1383,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
           </div>
 
           {/* Document Workspace (Direct in-place editing active with Floating Tools on Left & NotionOutline on Right) */}
-          <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+          <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[780px] mx-auto">
             {/* Sumário Balão Flutuante do Lado Direito (Hover-to-Open, Sem Alterar Proporção do Texto) */}
             <NotionOutline
               content={currentContent}

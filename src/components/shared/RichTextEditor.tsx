@@ -1410,70 +1410,96 @@ export function RichTextEditor({
     "#047857";
 
   return (
-    <div className={`relative w-full ${className}`}>
-      {/* Scoped styles guaranteeing Heading sizes and paragraph rhythm */}
+    <div className={`relative w-full max-w-[780px] mx-auto ${className}`}>
+      {/* Scoped styles guaranteeing Heading sizes and paragraph rhythm matching editorial document proportions */}
       <style jsx global>{`
         .studyflow-editor-content {
           outline: none;
+          font-size: 13.5px !important;
+          line-height: 1.65 !important;
         }
         .studyflow-editor-content h1 {
-          font-size: 1.75rem !important;
+          font-size: 1.35rem !important;
           font-weight: 800 !important;
-          line-height: 1.25 !important;
-          margin-top: 1.5rem !important;
-          margin-bottom: 0.6rem !important;
+          line-height: 1.3 !important;
+          margin-top: 1.25rem !important;
+          margin-bottom: 0.55rem !important;
           color: #0f172a !important;
         }
         .studyflow-editor-content h2 {
-          font-size: 1.35rem !important;
-          font-weight: 700 !important;
-          line-height: 1.3 !important;
-          margin-top: 1.35rem !important;
-          margin-bottom: 0.45rem !important;
-          color: ${h2Color} !important;
-          border-bottom: none !important;
-          padding-bottom: 0 !important;
-        }
-        .studyflow-editor-content h3 {
           font-size: 1.15rem !important;
           font-weight: 700 !important;
           line-height: 1.35 !important;
-          margin-top: 1rem !important;
-          margin-bottom: 0.35rem !important;
+          margin-top: 1.4rem !important;
+          margin-bottom: 0.65rem !important;
+          color: ${h2Color} !important;
+          border-bottom: 1px solid #e2e8f0 !important;
+          padding-bottom: 0.35rem !important;
+        }
+        .studyflow-editor-content h3 {
+          font-size: 0.98rem !important;
+          font-weight: 700 !important;
+          line-height: 1.35 !important;
+          margin-top: 1.15rem !important;
+          margin-bottom: 0.5rem !important;
           color: ${h3Color} !important;
+          border-bottom: 1px solid #e2e8f0 !important;
+          padding-bottom: 0.25rem !important;
         }
         .studyflow-editor-content h4 {
-          font-size: 1.02rem !important;
+          font-size: 0.9rem !important;
           font-weight: 700 !important;
-          margin-top: 0.75rem !important;
-          margin-bottom: 0.25rem !important;
+          margin-top: 0.85rem !important;
+          margin-bottom: 0.3rem !important;
           color: #0f172a !important;
         }
         .studyflow-editor-content p {
-          margin-top: 0.5rem;
-          margin-bottom: 0.5rem;
-          line-height: 1.65;
-          color: #0f172a;
+          font-size: 13.5px !important;
+          margin-top: 0.45rem;
+          margin-bottom: 0.55rem;
+          line-height: 1.65 !important;
+          color: #1e293b;
         }
         .dark .studyflow-editor-content p {
-          color: #f1f5f9;
+          color: #e2e8f0;
         }
         .studyflow-editor-content blockquote {
-          border-left: 4px solid ${blockquoteColor};
-          padding-left: 1rem;
+          border-left: 3px solid ${blockquoteColor};
+          padding-left: 0.9rem;
           margin: 0.75rem 0;
+          font-size: 13.5px !important;
           font-style: italic;
           color: #4b5563;
         }
         .studyflow-editor-content ul {
           list-style-type: disc;
-          padding-left: 1.5rem;
-          margin: 0.5rem 0;
+          padding-left: 1.4rem;
+          margin: 0.45rem 0 0.65rem 0;
+          font-size: 13.5px !important;
+          line-height: 1.65 !important;
         }
         .studyflow-editor-content ol {
           list-style-type: decimal;
-          padding-left: 1.5rem;
-          margin: 0.5rem 0;
+          padding-left: 1.4rem;
+          margin: 0.45rem 0 0.65rem 0;
+          font-size: 13.5px !important;
+          line-height: 1.65 !important;
+        }
+        .studyflow-editor-content li {
+          font-size: 13.5px !important;
+          line-height: 1.65 !important;
+          margin-top: 0.28rem;
+          margin-bottom: 0.28rem;
+        }
+        .studyflow-editor-content ul li::marker {
+          color: #cbd5e1 !important;
+        }
+        .dark .studyflow-editor-content ul li::marker {
+          color: #475569 !important;
+        }
+        .studyflow-editor-content ol li::marker {
+          color: #64748b !important;
+          font-weight: 500;
         }
         .studyflow-editor-content a {
           color: #2563eb;
@@ -1482,12 +1508,12 @@ export function RichTextEditor({
         }
         .studyflow-editor-content hr {
           border: none;
-          border-top: 2px solid #e2e8f0;
-          margin: 1.25rem 0;
+          border-top: 1px solid #e2e8f0;
+          margin: 1.15rem 0;
         }
         .dark .studyflow-editor-content hr { border-top-color: #334155; }
         .studyflow-editor-content code {
-          padding: 0.1rem 0.4rem;
+          padding: 0.1rem 0.35rem;
           border-radius: 0.375rem;
           background: #f1f5f9;
           color: #2563eb;
@@ -1500,30 +1526,29 @@ export function RichTextEditor({
           color: #0f172a;
         }
         .studyflow-editor-content mark {
-          padding: 0.15rem 0.35rem;
+          padding: 0.12rem 0.3rem;
           border-radius: 0.375rem;
         }
         .studyflow-editor-content table {
           width: 100% !important;
-          min-width: 600px !important;
+          min-width: 100% !important;
           border-collapse: collapse !important;
-          margin: 1.5rem 0 !important;
+          margin: 1.15rem 0 !important;
+          font-size: 12.5px !important;
         }
         .studyflow-editor-content th {
           background-color: ${tableHeaderBg} !important;
           color: #FFFFFF !important;
           font-weight: 700 !important;
-          padding: 0.75rem 1rem !important;
+          padding: 0.6rem 0.8rem !important;
           border: 1px solid ${tableHeaderBorder} !important;
-          min-width: 150px !important;
           text-align: left !important;
           word-break: break-word !important;
           white-space: normal !important;
         }
         .studyflow-editor-content td {
-          padding: 0.75rem 1rem !important;
+          padding: 0.6rem 0.8rem !important;
           border: 1px solid #e2e8f0 !important;
-          min-width: 150px !important;
           word-break: break-word !important;
           white-space: normal !important;
           vertical-align: top !important;
@@ -1535,9 +1560,12 @@ export function RichTextEditor({
         .dark .studyflow-editor-content h1 { color: #f8fafc !important; }
         .dark .studyflow-editor-content h2 {
           color: ${h2DarkColor} !important;
-          border-bottom-color: ${dividerBorderDarkColor};
+          border-bottom-color: #1e293b !important;
         }
-        .dark .studyflow-editor-content h3 { color: ${h3DarkColor} !important; }
+        .dark .studyflow-editor-content h3 {
+          color: ${h3DarkColor} !important;
+          border-bottom-color: #1e293b !important;
+        }
         .dark .studyflow-editor-content h4 { color: #cbd5e1 !important; }
         .dark .studyflow-editor-content blockquote { color: #9ca3af; border-color: ${blockquoteDarkColor}; }
       `}</style>
@@ -1863,7 +1891,7 @@ export function RichTextEditor({
               onInput={() => handleEditorInput(false)}
               onKeyDown={handleEditorKeyDown}
               onPaste={handlePaste}
-              className="studyflow-editor-content py-6 sm:py-8 md:py-10 px-6 sm:px-14 md:px-24 lg:px-32 xl:px-40 text-gray-900 dark:text-gray-100 leading-relaxed font-sans select-text"
+              className="studyflow-editor-content py-7 sm:py-9 px-6 sm:px-10 md:px-12 text-[13.5px] text-gray-800 dark:text-gray-200 leading-[1.65] font-sans select-text"
               style={{
                 minHeight,
               }}
@@ -1874,7 +1902,7 @@ export function RichTextEditor({
               value={markdownSource}
               onChange={(e) => handleMarkdownChange(e.target.value)}
               style={{ minHeight }}
-              className="w-full py-6 sm:py-8 md:py-10 px-6 sm:px-14 md:px-24 lg:px-32 xl:px-40 font-mono text-xs sm:text-sm bg-gray-50/50 dark:bg-[#12141c] text-gray-900 dark:text-gray-100 focus:outline-none leading-relaxed resize-y border-none"
+              className="w-full py-7 sm:py-9 px-6 sm:px-10 md:px-12 font-mono text-xs bg-gray-50/50 dark:bg-[#12141c] text-gray-900 dark:text-gray-100 focus:outline-none leading-relaxed resize-y border-none"
               placeholder="Edite o código fonte em Markdown..."
             />
           )}

@@ -447,7 +447,7 @@ function TranscriptionDocumentViewer({
       const term = arrowM[1].trim();
       const rest = arrowM[2].trim();
       return (
-        <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
+        <span className="text-[13.5px] leading-[1.65] text-gray-800 dark:text-gray-200 inline">
           <strong className="font-bold text-gray-950 dark:text-white mr-1.5">
             {renderInlineMarkdown(term)}
           </strong>
@@ -463,7 +463,7 @@ function TranscriptionDocumentViewer({
       const term = colonM[1].trim();
       const rest = colonM[2].trim();
       return (
-        <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
+        <span className="text-[13.5px] leading-[1.65] text-gray-800 dark:text-gray-200 inline">
           <strong className="font-bold text-gray-950 dark:text-white mr-1.5">
             {renderInlineMarkdown(term)}:
           </strong>
@@ -473,7 +473,7 @@ function TranscriptionDocumentViewer({
     }
 
     return (
-      <span className="text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed text-gray-800 dark:text-gray-200 inline">
+      <span className="text-[13.5px] leading-[1.65] text-gray-800 dark:text-gray-200 inline">
         {renderInlineMarkdown(body)}
       </span>
     );
@@ -540,7 +540,7 @@ function TranscriptionDocumentViewer({
           <h1
             key={`h1-${idx}`}
             id={headingId}
-            className={`text-xl sm:text-2xl font-extrabold ${palette.tailwind.primaryText} mb-4 tracking-tight leading-tight scroll-mt-24`}
+            className={`text-[21px] font-extrabold ${palette.tailwind.primaryText} mb-3 tracking-tight leading-tight scroll-mt-24`}
           >
             {renderInlineMarkdown(text)}
           </h1>
@@ -553,8 +553,8 @@ function TranscriptionDocumentViewer({
         const text = trimmed.replace(/^##\s+/, "");
         const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
-          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-8 mb-3.5 pb-2 border-b border-gray-200/80 dark:border-gray-800 scroll-mt-24">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-950 dark:text-white tracking-tight leading-snug">
+          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-6 mb-2.5 pb-1.5 border-b border-gray-200/80 dark:border-gray-800 scroll-mt-24">
+            <h2 className="text-[18px] font-bold text-gray-950 dark:text-white tracking-tight leading-snug">
               {renderInlineMarkdown(text)}
             </h2>
           </div>
@@ -570,7 +570,7 @@ function TranscriptionDocumentViewer({
           <h3
             key={`h3-${idx}`}
             id={headingId}
-            className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white mt-6 mb-3 pb-1.5 border-b border-gray-200/70 dark:border-gray-800/80 tracking-tight scroll-mt-24"
+            className="text-[15.5px] font-bold text-gray-950 dark:text-white mt-5 mb-2 pb-1 border-b border-gray-200/70 dark:border-gray-800/80 tracking-tight scroll-mt-24"
           >
             {renderInlineMarkdown(text)}
           </h3>
@@ -586,9 +586,9 @@ function TranscriptionDocumentViewer({
           <h4
             key={`h4-${idx}`}
             id={headingId}
-            className="text-[15.5px] sm:text-[16.5px] font-bold text-gray-950 dark:text-white mt-4 mb-1.5 tracking-tight flex items-center gap-2 scroll-mt-24"
+            className="text-[14px] font-bold text-gray-950 dark:text-white mt-3.5 mb-1.5 tracking-tight flex items-center gap-2 scroll-mt-24"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 shrink-0" />
             <span>{renderInlineMarkdown(text)}</span>
           </h4>
         );
@@ -796,8 +796,8 @@ function TranscriptionDocumentViewer({
         const itemText = numMatch[3];
 
         elements.push(
-          <div key={`num-${idx}`} className={`my-2 flex items-start gap-2.5 ${isNested ? "pl-6 sm:pl-8" : "pl-1"}`}>
-            <span className="text-[15px] sm:text-[16px] font-medium text-gray-600 dark:text-gray-400 min-w-[24px] leading-relaxed shrink-0">
+          <div key={`num-${idx}`} className={`my-1.5 flex items-start gap-2 ${isNested ? "pl-6 sm:pl-8" : "pl-1"}`}>
+            <span className="text-[13.5px] font-medium text-gray-600 dark:text-gray-400 min-w-[22px] leading-[1.65] shrink-0">
               {num}.
             </span>
             <div className="flex-1">{renderItemContent(itemText)}</div>
@@ -812,7 +812,7 @@ function TranscriptionDocumentViewer({
         elements.push(
           <div
             key={`fb-h-${idx}`}
-            className={`text-[15.5px] font-bold ${palette.tailwind.primaryText} mt-3.5 mb-1.5`}
+            className={`text-[14px] font-bold ${palette.tailwind.primaryText} mt-3 mb-1.5`}
           >
             {renderInlineMarkdown(fallbackHashMatch[1])}
           </div>
@@ -824,7 +824,7 @@ function TranscriptionDocumentViewer({
       elements.push(
         <p
           key={`p-${idx}`}
-          className="text-gray-800 dark:text-gray-200 text-[15px] sm:text-[16px] md:text-[16.5px] leading-relaxed mb-3.5"
+          className="text-gray-800 dark:text-gray-200 text-[13.5px] leading-[1.65] mb-2.5"
         >
           {renderInlineMarkdown(trimmed)}
         </p>
@@ -1316,7 +1316,7 @@ function TranscriptionDocumentViewer({
       </div>
 
       {/* Document Sheet with Direct In-Place Editing */}
-      <div className="relative w-full md:w-[calc(100%-108px)] md:ml-[108px]">
+      <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[780px] mx-auto">
         {/* Sumário Balão Flutuante do Lado Direito (Hover-to-Open, sempre presente) */}
         <NotionOutline
           content={cleanedContent}
