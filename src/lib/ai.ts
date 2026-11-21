@@ -373,6 +373,7 @@ export async function generateJSONFromAI({
   maxOutputTokens = 65536,
   temperature = 0.6,
   keepPdfBinary = false,
+  rawText = false,
 }: {
   systemPrompt: string;
   userPrompt: string;
@@ -381,6 +382,8 @@ export async function generateJSONFromAI({
   temperature?: number;
   /** When true, digital PDFs are ALSO sent as binary (visual) alongside the extracted text. */
   keepPdfBinary?: boolean;
+  /** When true, requests pure text/Markdown directly instead of JSON (returns { text }). */
+  rawText?: boolean;
   fileAttachment?: {
     data: string;
     mimeType: string;
@@ -605,7 +608,7 @@ ${systemPrompt}`;
           while (attempts <= maxAttempts) {
             try {
               const genConfig: Record<string, any> = {
-                responseMimeType: "application/json",
+                ...(rawText ? {} : { responseMimeType: "application/json" }),
                 temperature,
               };
               if (effectiveMaxTokens) {
@@ -629,6 +632,9 @@ ${systemPrompt}`;
               ]);
 
               const text = res.response.text();
+              if (rawText) {
+                return { text };
+              }
               return parseAIResponseJSON(text);
             } catch (err: any) {
               if (!lastError || modelName === "gemini-2.5-flash") {
@@ -725,11 +731,11 @@ ${systemPrompt}`;
           model: "gpt-4o",
           messages,
           temperature: 0.7,
-          response_format: { type: "json_object" },
+          ...(rawText ? {} : { response_format: { type: "json_object" as const } }),
         });
 
         const content = completion.choices[0]?.message?.content;
-        if (content) return JSON.parse(content);
+        if (content) return rawText ? { text: content } : JSON.parse(content);
       } catch (err: any) {
         lastError = err;
         console.warn(`[OpenAI] Key ...${key.slice(-6)} notice:`, err.message);

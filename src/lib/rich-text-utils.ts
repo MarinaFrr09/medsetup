@@ -415,11 +415,11 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
   const isSingleAdminLine = (t: string) => {
     const plain = t.replace(/^[#*\-\s•]+/, "").replace(/\*\*/g, "").trim();
     if (!plain) return false;
-    // TBL / Individual / Grupo / Facilitador / Professor
+    // TBL / Individual / Grupo / Turma / Facilitador / Professor
     if (/^(?:TBL\b|team[\s\-]based\s+learning\b)/i.test(plain)) return true;
-    if (/^(?:individual|grupo)\s+[A-Z0-9]\b(?:\s*[-–—:].*)?$/i.test(plain)) return true;
+    if (/^(?:individual|grupo|turma)\s+[A-Z0-9]\b(?:\s*[-–—:].*)?$/i.test(plain)) return true;
     if (/^(?:teste\s+(?:individual|em\s+grupo)|iRAT|tRAT|gRAT)\b/i.test(plain)) return true;
-    if (/^(?:facilitador(?:a)?|professor(?:a)?|docente|coordenador(?:a)?|relator(?:a)?|tutor(?:a)?|orientador(?:a)?)\s*:/i.test(plain)) return true;
+    if (/^(?:facilitador(?:a)?|professor(?:a)?|docente|coordenador(?:a)?|relator(?:a)?|tutor(?:a)?|orientador(?:a)?|turma)\s*:/i.test(plain)) return true;
     // Bibliographic / URL / ISBN / Minha Biblioteca artifacts
     if (/\bISBN\b|\bintegrada\.minhabiblioteca\b|\bminhabiblioteca\.com\b|\bepubcfi\b|Bvnd\.vst|Dispon[íi]vel\s+em\s*:|Acesso\s+em\s*:/i.test(plain)) return true;
     if (/^https?\s*:\s*\/\//i.test(plain)) return true;
@@ -688,11 +688,66 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
   const caseSections = sections.filter((s) => s.kind === "case");
   const questionSections = sections.filter((s) => s.kind === "questions");
 
-  // Ensure collected questions always have a clean "## Questões" heading at the end
+  // Deduplicate repeated questions (e.g., Individual A + Grupo A repeating the exact same question in TBL PDFs)
   if (questionSections.length > 0) {
-    const firstQLine = questionSections[0].lines.find((l) => l.trim().length > 0)?.trim() || "";
-    if (!/^##\s+/i.test(firstQLine)) {
-      questionSections[0].lines.unshift("## Questões", "");
+    const allQLines = questionSections.flatMap((s) => s.lines);
+    const qBlocks: string[][] = [];
+    let curBlock: string[] = [];
+
+    const isQuestionStartLine = (t: string) =>
+      /^(?:#{2,4}\s*)?(?:\*\*)?(?:(?:quest[ãa]o|pergunta)\s*\d+\b|\d+\s*[\.\-\)]\s+\S)/i.test(t);
+
+    for (const l of allQLines) {
+      const t = l.trim();
+      // Skip duplicate "## Questões" headers when merging multiple question blocks
+      if (/^#{2,3}\s*(?:\*\*)?quest[õo]es(?:\*\*)?\s*$/i.test(t)) {
+        continue;
+      }
+      if (isQuestionStartLine(t)) {
+        if (curBlock.length > 0) qBlocks.push(curBlock);
+        curBlock = [l];
+      } else {
+        curBlock.push(l);
+      }
+    }
+    if (curBlock.length > 0) qBlocks.push(curBlock);
+
+    const normQ = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[*#\-•()[\].,:;!?]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const seenFull = new Set<string>();
+    const seenHeadAndOpts = new Set<string>();
+    const dedupedBlocks: string[][] = [];
+
+    for (const blk of qBlocks) {
+      const nonEmpty = blk.map((x) => x.trim()).filter(Boolean);
+      if (nonEmpty.length === 0) continue;
+      const fullKey = normQ(nonEmpty.join(" "));
+      if (!fullKey || seenFull.has(fullKey)) continue;
+
+      // Also catch partial TBL repeats (same question title + same options, missing middle statements)
+      const headKey = normQ(nonEmpty[0] || "");
+      const optsKey = normQ(
+        nonEmpty.filter((x) => /^(?:[\*\-]\s*)?(?:\*\*)?(?:[a-eA-E][\)\.]|[IVX]+\s+e\s+[IVX]+|I,\s*II)/i.test(x)).join(" ")
+      );
+      const comboKey = optsKey.length > 15 ? `${headKey}||${optsKey}` : "";
+      if (comboKey && seenHeadAndOpts.has(comboKey)) continue;
+
+      seenFull.add(fullKey);
+      if (comboKey) seenHeadAndOpts.add(comboKey);
+      dedupedBlocks.push(blk);
+    }
+
+    questionSections.length = 0;
+    if (dedupedBlocks.length > 0) {
+      questionSections.push({
+        kind: "questions",
+        lines: ["## Questões", "", ...dedupedBlocks.flatMap((b) => [...b, ""])],
+      });
     }
   }
 

@@ -576,30 +576,24 @@ Responda OBRIGATORIAMENTE em JSON válido:
     if (cleanPath.endsWith("/api/ai/transcribe-document")) {
       const expand = body.expand === "true" || body.expand === true;
       const customPrompt = String(body.customPrompt || "");
-      const sys = `${FAITHFUL_TRANSCRIPTION_RULES}
-${
-  expand
-    ? "\nMODO EXPANDIDO ATIVADO: Aprofunde cada tópico com mecanismos fisiopatológicos, farmacológicos e correlações clínicas mantendo EXATAMENTE a mesma hierarquia limpa (##, ###, * **Termo:** e subtópicos recuados   * )."
-    : ""
-}
-Responda OBRIGATORIAMENTE em JSON válido:
-{
-  "title": "Título do Documento (máximo 6 palavras)",
-  "transcription": "Transcrição completa e estruturada em Markdown seguindo exatamente a hierarquia acima...",
-  "summary": "Uma única frase neutra descrevendo o tema do material...",
-  "keyPoints": ["Ponto-chave 1", "Ponto-chave 2", "Ponto-chave 3", "Ponto-chave 4"]
-}`;
-      const prompt = `Transcreva e estruture integralmente o documento anexado seguindo exatamente o modelo hierárquico (## tema principal + frase introdutória, ### subseções, * **Termo:** explicação fluida e subtópicos recuados   * ).${customPrompt ? ` Instruções adicionais: ${customPrompt}` : ""}`;
-      const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts, expand ? 0.3 : 0.15);
-      const parsed = parseJsonSafe(raw);
-      const cleanTrans = reduceExcessiveBulletsInTranscription(
-        cleanLatexAndBadges(String(parsed?.transcription || parsed?.summary || ""))
-      );
+      const sys = expand
+        ? `${FAITHFUL_TRANSCRIPTION_RULES}\n\nMODO APROFUNDAMENTO MÁXIMO ATIVADO: Aprofunde ainda mais mecanismos fisiopatológicos, farmacológicos e correlações clínicas mantendo a mesma estrutura limpa.`
+        : FAITHFUL_TRANSCRIPTION_RULES;
+      const prompt = `Transcreva, organize e detalhe integralmente o documento anexado em Markdown puro, na ordem original do PDF, começando com "# Título" e "## Objetivos" (5 objetivos curtos de até 3 linhas), preservando todas as frases e dados com detalhamentos importantes e reunindo todas as questões SEM REPETIÇÃO no final sob "## Questões" com a alternativa correta em negrito.${customPrompt ? ` Instruções adicionais: ${customPrompt}` : ""}`;
+      let raw = await callGeminiDirectBrowser(prompt, sys, false, inlineParts, expand ? 0.35 : 0.2);
+      raw = String(raw || "").trim().replace(/^```(?:markdown|md)?\s*\n/i, "").replace(/\n```\s*$/i, "").trim();
+      let extractedTitle = inlineParts[0]?.name?.replace(/\.[^/.]+$/, "") || "Transcrição Acadêmica";
+      const h1Match = raw.match(/^#\s+(.+)$/m);
+      if (h1Match && h1Match[1]) {
+        extractedTitle = h1Match[1].replace(/\*\*/g, "").trim();
+        raw = raw.replace(/^#\s+.+\n?/, "").trim();
+      }
+      const cleanTrans = reduceExcessiveBulletsInTranscription(cleanLatexAndBadges(raw));
       return jsonResponse({
-        title: parsed?.title || inlineParts[0]?.name?.replace(/\.[^/.]+$/, "") || "Transcrição Acadêmica",
+        title: extractedTitle,
         transcription: cleanTrans,
-        summary: cleanLatexAndBadges(String(parsed?.summary || "")),
-        keyPoints: Array.isArray(parsed?.keyPoints) ? parsed.keyPoints : [],
+        summary: extractedTitle,
+        keyPoints: [],
       });
     }
 

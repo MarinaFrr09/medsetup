@@ -5,7 +5,6 @@ import {
   extractTextFromPptx,
   extractTextFromPdf,
   extractSlidesFromPptx,
-  formatVerbatimDocumentMarkdown,
 } from "@/lib/document-parser";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -168,46 +167,17 @@ export async function POST(request: NextRequest) {
       .replace(/[_-]/g, " ")
       .trim();
 
-    // Prepare system instructions adhering strictly to the gold-standard medical transcription engine
+    // Pure Markdown output (never wrapped in JSON) to avoid JSON truncation/escaping errors on long PDFs
     const systemPrompt = expand
       ? `${FAITHFUL_TRANSCRIPTION_RULES}
 
-MODO EXTENSÃO E APROFUNDAMENTO ATIVADO:
-- Seguindo EXATAMENTE a mesma estrutura limpa acima (## título principal + 1 frase introdutória + ### subseções + tópicos "* **Termo:** Explicação completa" com subtópicos recuados "  * "), aprofunde cada mecanismo fisiopatológico, farmacológico e correlação clínica com rigor de tratado médico, mantendo a organização hierárquica impecável.
-
-Responda OBRIGATORIAMENTE em JSON válido:
-{
-  "title": "Título Representativo e Formal do Tema (máximo 6 palavras)",
-  "summary": "Uma única frase neutra descrevendo o tema do material",
-  "transcription": "Texto integral da Transcrição Estruturada e Expandida em Markdown puro seguindo exatamente a hierarquia acima...",
-  "keyPoints": [
-    "Ponto-chave essencial 1",
-    "Ponto-chave essencial 2",
-    "Ponto-chave essencial 3",
-    "Ponto-chave essencial 4"
-  ]
-}`
-      : `${FAITHFUL_TRANSCRIPTION_RULES}
-
-Responda OBRIGATORIAMENTE em JSON válido:
-{
-  "title": "Título do Documento (máximo 6 palavras, baseado no título dos slides)",
-  "transcription": "Transcrição ESTRUTURADA e COMPLETA em Markdown seguindo rigorosamente a hierarquia acima (## tema principal + frase introdutória, ### subseções, tópicos * **Termo:** explicação fluida e subtópicos recuados   * )...",
-  "summary": "Uma única frase neutra descrevendo o tema do material (NÃO faz parte da transcrição)",
-  "keyPoints": [
-    "Ponto-chave 1",
-    "Ponto-chave 2",
-    "Ponto-chave 3",
-    "Ponto-chave 4"
-  ]
-}`;
+MODO APROFUNDAMENTO MÁXIMO ATIVADO:
+- Aprofunde ainda mais os mecanismos fisiopatológicos, farmacológicos e correlações clínicas, mantendo a mesma organização limpa (## Objetivos com 5 itens curtos -> conteúdo na ordem do PDF -> ## Questões sem duplicatas e com a resposta correta em negrito no final).`
+      : FAITHFUL_TRANSCRIPTION_RULES;
 
     const nonDigitalDocs = extractedDocs.filter((d) => !d.hasDigitalText);
-    // In faithful mode, also send digital PDFs visually so the model can see bold/colored emphasis,
-    // bullet indentation levels and figures exactly as in the original slides.
-    const visualPdfDocs = !expand
-      ? digitalDocs.filter((d) => d.ext === "pdf" && d.buffer.length <= 18 * 1024 * 1024)
-      : [];
+    // Also send digital PDFs visually (up to 18MB) so the model can see bold emphasis, figures & layout
+    const visualPdfDocs = digitalDocs.filter((d) => d.ext === "pdf" && d.buffer.length <= 18 * 1024 * 1024);
     const docsToAttach =
       digitalDocs.length > 0 ? [...nonDigitalDocs, ...visualPdfDocs] : extractedDocs;
 
@@ -238,83 +208,38 @@ Responda OBRIGATORIAMENTE em JSON válido:
             : d.fullText
         )
         .join("\n\n");
-      userPrompt = expand
-        ? `Transcreva e aprofunde todo o documento/slides abaixo seguindo rigorosamente o modelo hierárquico limpo (## tema principal unificado + 1 frase introdutória, ### subseções, tópicos "* **Termo:** explicação fluida e completa" e subtópicos recuados "  * "), sem omitir nenhum dado e sem repetir títulos de slides:\n\n${perPageText}`
-        : `Transcreva e estruture TODO o conteúdo do documento/slides abaixo seguindo rigorosamente o modelo hierárquico limpo (## tema principal unificado + 1 frase introdutória, ### subseções, tópicos "* **Termo:** explicação fluida e completa" e subtópicos recuados "  * "), sem omitir nenhum dado, número ou mecanismo. ${
-            visualPdfDocs.length > 0
-              ? "O PDF original está anexado: use-o como referência visual para identificar títulos, subtítulos, hierarquia dos tópicos/subtópicos, negritos, destaques e figuras. "
-              : ""
-          }Os marcadores [[ SLIDE/PÁGINA N ]] servem apenas para sua orientação e NÃO devem aparecer na saída:\n\n${perPageText}`;
+      userPrompt = `Transcreva, organize e detalhe todo o conteúdo do documento abaixo em Markdown puro, seguindo a ordem original do PDF, começando com "# Título" e "## Objetivos" (5 objetivos curtos de até 3 linhas), preservando todas as frases e dados do PDF com detalhamentos importantes, sem metadados administrativos (Facilitador, TBL, Turma, Páginas, Bibliografia) e reunindo todas as questões SEM REPETIÇÃO no final sob "## Questões" com a alternativa correta em negrito.${
+        visualPdfDocs.length > 0
+          ? " O PDF original está anexado como referência visual para hierarquia, negritos e figuras."
+          : ""
+      } Os marcadores [[ SLIDE/PÁGINA N ]] servem apenas para orientação e NÃO devem aparecer na saída:\n\n${perPageText}`;
     } else {
-      userPrompt = expand
-        ? `Transcreva e aprofunde todo o documento anexado seguindo rigorosamente o modelo hierárquico limpo (## tema principal unificado + 1 frase introdutória, ### subseções, tópicos "* **Termo:** explicação fluida" e subtópicos recuados "  * ").`
-        : `Transcreva e estruture integralmente o documento anexado seguindo rigorosamente o modelo hierárquico limpo (## tema principal unificado + 1 frase introdutória, ### subseções, tópicos "* **Termo:** explicação fluida" e subtópicos recuados "  * "), sem omitir nenhum dado.`;
+      userPrompt = `Transcreva, organize e detalhe integralmente o documento anexado em Markdown puro, seguindo a ordem original do arquivo, começando com "# Título" e "## Objetivos" (5 objetivos curtos de até 3 linhas), preservando todos os dados com detalhamentos importantes e reunindo todas as questões SEM REPETIÇÃO no final sob "## Questões" com a alternativa correta em negrito.`;
     }
 
-    let result: any = null;
-    try {
-      result = await generateJSONFromAI({
-        systemPrompt,
-        userPrompt,
-        fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-        maxOutputTokens: 65536,
-        temperature: expand ? 0.3 : 0.1,
-        keepPdfBinary: !expand && visualPdfDocs.length > 0,
-      });
-    } catch (aiErr: any) {
-      console.warn("[transcribe-document] AI generation error:", aiErr?.message);
-      if (digitalDocs.length > 0) {
-        result = {
-          title: fallbackTitle,
-          transcription: "",
-          summary: "",
-          keyPoints: ["Documento transcrito com base no conteúdo textual integral do arquivo."],
-        };
-      } else {
-        throw aiErr;
-      }
+    const aiResponse = await generateJSONFromAI({
+      systemPrompt,
+      userPrompt,
+      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+      maxOutputTokens: 65536,
+      temperature: expand ? 0.35 : 0.2,
+      keepPdfBinary: visualPdfDocs.length > 0,
+      rawText: true,
+    });
+
+    let rawMarkdown = String(aiResponse?.text || "").trim();
+    // Strip accidental ```markdown fences if model added them
+    rawMarkdown = rawMarkdown.replace(/^```(?:markdown|md)?\s*\n/i, "").replace(/\n```\s*$/i, "").trim();
+
+    // Extract title from first "# Title" line if present
+    let extractedTitle = fallbackTitle;
+    const h1Match = rawMarkdown.match(/^#\s+(.+)$/m);
+    if (h1Match && h1Match[1]) {
+      extractedTitle = h1Match[1].replace(/\*\*/g, "").trim();
+      rawMarkdown = rawMarkdown.replace(/^#\s+.+\n?/, "").trim();
     }
 
-    // 1. Gera a Transcrição Fiel Integral como fallback de segurança
-    let verbatimTranscription = "";
-    if (digitalDocs.length > 0) {
-      const allPages: Array<{ num: number; text: string }> = [];
-      let pageNumCounter = 1;
-      for (const d of digitalDocs) {
-        for (const p of d.pages) {
-          allPages.push({ num: pageNumCounter++, text: p.text });
-        }
-      }
-
-      verbatimTranscription = formatVerbatimDocumentMarkdown({
-        title: result.title || fallbackTitle,
-        pages: allPages,
-        documentType: firstDoc?.ext || "pdf",
-      });
-    }
-
-    const genTrans = (result?.transcription || "").trim();
-    const genSum = (result?.summary || "").trim();
-
-    // Ensure finalTranscription is ALWAYS the longest, most comprehensive text generated
-    let finalTranscription = "";
-    if (genTrans.length >= genSum.length && genTrans.length > 50) {
-      finalTranscription = genTrans;
-    } else if (genSum.length > genTrans.length && genSum.length > 50) {
-      finalTranscription = genSum;
-    } else if (genTrans.length > 0) {
-      finalTranscription = genTrans;
-    } else if (verbatimTranscription) {
-      finalTranscription = verbatimTranscription;
-    }
-
-    let rawSummary = (genSum && genSum.length < finalTranscription.length && genSum.length > 0)
-      ? genSum
-      : (genTrans && genTrans.length < finalTranscription.length && genTrans.length > 0)
-      ? genTrans
-      : finalTranscription.slice(0, 500) + "...";
-
-    // Standardize text arrows & eliminate residual LaTeX dollar signs (ResumoPro engine)
+    // Standardize text arrows & eliminate residual LaTeX dollar signs
     const sanitizeText = (txt: string) => {
       let t = txt
         .replace(/\\rightarrow/g, "->")
@@ -330,16 +255,18 @@ Responda OBRIGATORIAMENTE em JSON válido:
       return reduceExcessiveBulletsInTranscription(filtered);
     };
 
-    finalTranscription = sanitizeText(finalTranscription);
-    rawSummary = sanitizeText(rawSummary);
+    const finalTranscription = sanitizeText(rawMarkdown);
+    const firstParagraph = finalTranscription
+      .split("\n")
+      .find((l) => l.trim().length > 40 && !/^[#*\d]/.test(l.trim())) || extractedTitle;
 
     const finalWordCount = finalTranscription.split(/\s+/).filter(Boolean).length;
 
     return NextResponse.json({
-      title: result.title || fallbackTitle,
+      title: extractedTitle,
       transcription: finalTranscription,
-      summary: rawSummary,
-      keyPoints: Array.isArray(result.keyPoints) && result.keyPoints.length > 0 ? result.keyPoints : [],
+      summary: firstParagraph.slice(0, 320),
+      keyPoints: [],
       pageCount: totalPages,
       wordCount: finalWordCount || totalWords,
       expanded: expand,
