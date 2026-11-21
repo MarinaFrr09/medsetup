@@ -1243,7 +1243,7 @@ function TranscriptionDocumentViewer({
       {!printOnly && (
       <>
       {/* Top Action Bar */}
-      <div className="flex items-center justify-between gap-2 flex-wrap bg-white dark:bg-[#1A1D27] p-3 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
+      <div className="w-full max-w-[880px] mx-auto flex items-center justify-between gap-2 flex-wrap bg-white dark:bg-[#1A1D27] p-3 rounded-2xl border border-gray-200 dark:border-[#2a2d3a] shadow-xs">
         <div className="flex items-center gap-2">
           {expanded && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
@@ -1316,7 +1316,7 @@ function TranscriptionDocumentViewer({
       </div>
 
       {/* Document Sheet with Direct In-Place Editing */}
-      <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[780px] mx-auto">
+      <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[880px] mx-auto">
         {/* Sumário Balão Flutuante do Lado Direito (Hover-to-Open, sempre presente) */}
         <NotionOutline
           content={cleanedContent}

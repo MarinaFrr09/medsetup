@@ -2623,7 +2623,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
           )}
 
           {/* Document Sheet with Direct In-Place Editing */}
-          <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[780px] mx-auto">
+          <div className="relative w-full md:max-w-[calc(100%-108px)] lg:max-w-[880px] mx-auto">
             {/* Sumário Balão Flutuante do Lado Direito (sempre disponível) */}
             <NotionOutline
               content={summaryDraft || activeSummaryMarkdown}
@@ -2643,7 +2643,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
 
       {/* ──────────────────────── MODE 3: PERGUNTAS & GABARITO ──────────────────────── */}
       {viewMode === "questions" && (
-        <div className="space-y-4">
+        <div className="w-full max-w-[880px] mx-auto space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -2713,7 +2713,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
 
       {/* ──────────────────────── MODE 4: MORFOLOGIA & LÂMINAS ──────────────────────── */}
       {viewMode === "morphology" && (
-        <div className="space-y-8">
+        <div className="w-full max-w-[880px] mx-auto space-y-8">
           {/* Histologia & Lâminas Section */}
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -2834,7 +2834,7 @@ Contexto:\n${summaryContext.slice(0, 8000)}`,
 
       {/* ──────────────────────── MODE 4: CASO CLÍNICO ──────────────────────── */}
       {viewMode === "cases" && (
-        <div className="space-y-6">
+        <div className="w-full max-w-[880px] mx-auto space-y-6">
           {(!result.clinicalCases || result.clinicalCases.length === 0) ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-[#12151e]">
               <Stethoscope className="mx-auto h-10 w-10 text-blue-500 mb-2" />

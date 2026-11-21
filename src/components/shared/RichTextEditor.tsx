@@ -1410,7 +1410,7 @@ export function RichTextEditor({
     "#047857";
 
   return (
-    <div className={`relative w-full max-w-[780px] mx-auto ${className}`}>
+    <div className={`relative w-full max-w-[880px] mx-auto ${className}`}>
       {/* Scoped styles guaranteeing Heading sizes and paragraph rhythm matching editorial document proportions */}
       <style jsx global>{`
         .studyflow-editor-content {

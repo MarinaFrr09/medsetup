@@ -723,7 +723,7 @@ INSTRUÇÃO OBRIGATÓRIA: Formule todas as perguntas diretamente sobre o conteú
   ];
 
   return (
-    <div className="w-full max-w-4xl mx-auto pb-16 space-y-6">
+    <div className="w-full max-w-[880px] mx-auto pb-16 space-y-6">
       {/* Mode Switcher: Casos Clínicos | Adivinhar Remédio | Adivinhar Exame | Tratamento */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-2xl border border-border/80 bg-card/90 p-1.5 shadow-sm">
         <button

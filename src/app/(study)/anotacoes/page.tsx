@@ -756,7 +756,7 @@ function AnotacoesContent() {
             /* ========================================================= */
             /* 3. PROFESSIONAL NOTE STUDIO & WORKSTATION                 */
             /* ========================================================= */
-            <div className="bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
+            <div className="w-full max-w-[880px] mx-auto bg-white dark:bg-[#1A1D27] border border-gray-200 dark:border-[#2a2d3a] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
               {/* Studio Header Toolbar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 dark:border-gray-800/80 pb-4">
                 <div className="flex items-center gap-3">
@@ -948,7 +948,7 @@ function AnotacoesContent() {
               </div>
 
               {/* CLEAN WYSIWYG RICH TEXT EDITOR (Renders formatted headings, bold, lists & clean Unicode instead of raw Markdown/LaTeX) */}
-              <div className="min-h-[440px] w-full max-w-[780px] mx-auto">
+              <div className="min-h-[440px] w-full max-w-[880px] mx-auto">
                 <RichTextEditor
                   key={editingNote?.id || "new-note"}
                   value={editContent}
