@@ -260,12 +260,25 @@ async function handleStaticApiRequest(
   // 1. /api/settings
   if (cleanPath.endsWith("/api/settings")) {
     if (method === "GET") {
-      return jsonResponse({ settings: getSessionSettings() });
+      const s = getSessionSettings();
+      const rawKey = getSessionApiKey();
+      return jsonResponse({
+        ...s,
+        openaiApiKey: rawKey,
+        apiKey: rawKey,
+        settings: { ...s, openaiApiKey: rawKey },
+      });
     }
     if (method === "POST") {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
-      if (typeof body.apiKey === "string") {
-        const trimmed = body.apiKey.trim();
+      const incomingKey =
+        typeof body.openaiApiKey === "string"
+          ? body.openaiApiKey
+          : typeof body.apiKey === "string"
+          ? body.apiKey
+          : undefined;
+      if (typeof incomingKey === "string") {
+        const trimmed = incomingKey.trim();
         if (!trimmed) {
           setSessionApiKey("");
         } else if (!trimmed.includes("...")) {
@@ -295,9 +308,10 @@ async function handleStaticApiRequest(
   // 2. /api/settings/test-key
   if (cleanPath.endsWith("/api/settings/test-key")) {
     const body = init?.body ? JSON.parse(String(init.body)) : {};
+    const rawCandidate = body.openaiApiKey ?? body.apiKey;
     const testKey =
-      body.apiKey && !String(body.apiKey).includes("...")
-        ? String(body.apiKey).trim()
+      rawCandidate && !String(rawCandidate).includes("...")
+        ? String(rawCandidate).trim()
         : getSessionApiKey();
     if (!testKey) {
       return jsonResponse(
@@ -1535,8 +1549,14 @@ export function installClientApiInterceptor() {
     if (isApiCall && urlStr.includes("/api/settings") && init?.method?.toUpperCase() === "POST") {
       try {
         const body = init?.body ? JSON.parse(String(init.body)) : {};
-        if (typeof body.apiKey === "string") {
-          const trimmed = body.apiKey.trim();
+        const incomingKey =
+          typeof body.openaiApiKey === "string"
+            ? body.openaiApiKey
+            : typeof body.apiKey === "string"
+            ? body.apiKey
+            : undefined;
+        if (typeof incomingKey === "string") {
+          const trimmed = incomingKey.trim();
           if (!trimmed) {
             setSessionApiKey("");
           } else if (!trimmed.includes("...")) {
@@ -1555,14 +1575,14 @@ export function installClientApiInterceptor() {
     }
 
     // On localhost, if sessionStorage holds the active session key, ensure the server process has it
-    if (isApiCall && urlStr.includes("/api/ai/")) {
+    if (isApiCall && (urlStr.includes("/api/ai/") || (urlStr.includes("/api/settings") && (!init?.method || init.method.toUpperCase() === "GET")))) {
       const localKey = getSessionApiKey();
       if (localKey) {
         try {
           await window.origFetch("/api/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ apiKey: localKey }),
+            body: JSON.stringify({ openaiApiKey: localKey, apiKey: localKey }),
           });
         } catch {}
       }

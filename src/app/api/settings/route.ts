@@ -46,19 +46,21 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
-    const sessionKey = (data.openaiApiKey || "").trim();
+    const sessionKey = String(data.openaiApiKey ?? data.apiKey ?? "").trim();
 
     // Mantém a chave APENAS na memória RAM volátil da sessão atual (nunca grava em arquivos/pastas ou no banco dev.db)
     setVolatileApiKey(sessionKey);
 
+    const updatePayload: Record<string, any> = { openaiApiKey: "" };
+    if (typeof data.theme === "string" && data.theme) updatePayload.theme = data.theme;
+    if (typeof data.language === "string" && data.language) updatePayload.language = data.language;
+    if (data.trashAutoDelete !== undefined && !Number.isNaN(Number(data.trashAutoDelete))) {
+      updatePayload.trashAutoDelete = Number(data.trashAutoDelete) || 30;
+    }
+
     const updated = await prisma.appSettings.upsert({
       where: { id: "default" },
-      update: {
-        theme: data.theme,
-        language: data.language,
-        openaiApiKey: "",
-        trashAutoDelete: Number(data.trashAutoDelete) || 30,
-      },
+      update: updatePayload,
       create: {
         id: "default",
         theme: data.theme || "dark",
