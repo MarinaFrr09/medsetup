@@ -397,7 +397,7 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
   if (!markdown) return "";
 
   const nonHeadingVerbRegex =
-    /\b(inibe|inibem|reduz|reduzem|danifica|danificam|aumenta|aumentam|ativa|ativam|gera|geram|bloqueia|bloqueiam|impede|impedem|causa|causam|provoca|provocam|diminui|diminuem|produz|produzem|estimula|estimulam|promove|promovem|leva|levam|resulta|resultam|ocorre|ocorrem|altera|alteram|compromete|comprometem|induz|induzem|favorece|favorecem|acumula|acumulam|libera|liberam|acelera|aceleram|afeta|afetam|lesa|lesam|interfere|interferem|contém|contêm|possui|possuem|apresenta|apresentam|é|são|está|estão|foi|foram|pode|podem|deve|devem)\b/i;
+    /\b(inibe|inibem|reduz|reduzem|danifica|danificam|aumenta|aumentam|ativa|ativam|gera|geram|bloqueia|bloqueiam|impede|impedem|causa|causam|provoca|provocam|diminui|diminuem|produz|produzem|estimula|estimulam|promove|promovem|leva|levam|resulta|resultam|ocorre|ocorrem|altera|alteram|compromete|comprometem|induz|induzem|favorece|favorecem|acumula|acumulam|libera|liberam|acelera|aceleram|afeta|afetam|lesa|lesam|interfere|interferem|contém|contêm|possui|possuem|apresenta|apresentam|é|são|está|estão|foi|foram|pode|podem|deve|devem|absorvido|absorvida|absorvidos|absorvidas|inalado|inalada|inalados|inaladas|ingerido|ingerida|ingeridos|ingeridas|excretado|excretada|eliminado|eliminada|acumulado|acumulada|encontrado|encontrada|utilizado|utilizada|associado|associada|caracterizado|caracterizada|ligado|ligada|metabolizado|metabolizada|convertido|convertida|transportado|transportada|distribu[íi]do|distribu[íi]da|armazenado|armazenada|respons[áa]vel|incomum|raro|rara)\b/i;
 
   // 1. Pre-split inline slide arrow bullets (➤, ➢, ►) and strip raw DOIs
   const preCleaned = markdown
@@ -530,6 +530,20 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
           i = nextIdx;
           continue;
         }
+
+        // Detect consecutive same-level headings with NO body between them (e.g. "## Chumbo tetraetila (gasolina)" followed by "## Absorvido pela pele ou inalado")
+        const nextHeadingMatch = nextTrim.match(/^(#{1,6})\s+(.+)$/);
+        if (nextHeadingMatch && nextHeadingMatch[1].length === hashes.length) {
+          const nextHText = nextHeadingMatch[2].trim();
+          const nextLooksDescriptive =
+            nonHeadingVerbRegex.test(nextHText) ||
+            /\b(pela|pelo|pelos|pelas|via|atrav[ée]s|por|com|sem|em|no|na)\b/i.test(nextHText);
+          if (nextLooksDescriptive) {
+            repairedLines.push(`* **${hText.replace(/:\s*$/, "")}:** ${nextHText}`);
+            i = nextIdx;
+            continue;
+          }
+        }
       }
 
       // Check if heading ends with ":" (e.g. "## O chumbo aumenta ROS porque:") -> convert to bold lead-in paragraph
@@ -611,9 +625,27 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
     /^#{1,4}\s*(?:\*\*)?(?:caso\s+cl[íi]nico|situa[çc][ãa]o[\s\-]problema|relato\s+de\s+caso|apresenta[çc][ãa]o\s+do\s+caso)\b/i.test(t);
 
   const isQuestionsHeading = (t: string) =>
-    /^#{1,4}\s*(?:\*\*)?(?:quest[õo]es|perguntas|exerc[íi]cios|atividades?\s+(?:de\s+fixa[çc][ãa]o|do\s+roteiro|pr[áa]ticas?)|quest[ãa]o\s+\d+|pergunta\s+\d+|teste\s+seu\s+conhecimento|avalia[çc][ãa]o)\b/i.test(t);
+    /^#{1,4}\s*(?:\*\*)?(?:quest[õo]es|perguntas|exerc[íi]cios|atividades?\s+(?:de\s+fixa[çc][ãa]o|do\s+roteiro|pr[áa]ticas?)|quest[ãa]o\s*\d*|pergunta\s*\d*|teste\s+seu\s+conhecimento|avalia[çc][ãa]o|gabarito(?:\s+comentado)?)\b/i.test(t);
 
-  for (const line of sectionLines) {
+  const isInlineQuestionStart = (t: string) =>
+    /^(?:\*\*)?(?:quest[ãa]o|pergunta)\s*\d+\s*(?:\*\*)?[:.\-–]?\s*/i.test(t);
+
+  const looksLikeMultipleChoiceAhead = (idx: number): boolean => {
+    let optionHits = 0;
+    for (let k = idx + 1; k < Math.min(sectionLines.length, idx + 12); k++) {
+      const s = sectionLines[k].trim();
+      if (!s) continue;
+      if (/^#{1,3}\s+/.test(s)) break;
+      if (/^(?:[\*\-]\s*)?(?:\*\*)?[a-eA-E][\)\.]\s+\S/.test(s)) {
+        optionHits++;
+        if (optionHits >= 2) return true;
+      }
+    }
+    return false;
+  };
+
+  for (let idx = 0; idx < sectionLines.length; idx++) {
+    const line = sectionLines[idx];
     const t = line.trim();
     if (/^#{2,4}\s+/.test(t)) {
       if (isObjectivesHeading(t)) {
@@ -637,6 +669,13 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
         currentSec = { kind: "theory", lines: [line] };
         continue;
       }
+    } else if (
+      currentSec.kind !== "questions" &&
+      (isInlineQuestionStart(t) || (/^(?:\d+[\.\)]\s+|\*\*\d+[\.\)])/.test(t) && looksLikeMultipleChoiceAhead(idx)))
+    ) {
+      if (currentSec.lines.length > 0) sections.push(currentSec);
+      currentSec = { kind: "questions", lines: [line] };
+      continue;
     }
     currentSec.lines.push(line);
   }
@@ -648,6 +687,14 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
   const theorySections = sections.filter((s) => s.kind === "theory");
   const caseSections = sections.filter((s) => s.kind === "case");
   const questionSections = sections.filter((s) => s.kind === "questions");
+
+  // Ensure collected questions always have a clean "## Questões" heading at the end
+  if (questionSections.length > 0) {
+    const firstQLine = questionSections[0].lines.find((l) => l.trim().length > 0)?.trim() || "";
+    if (!/^##\s+/i.test(firstQLine)) {
+      questionSections[0].lines.unshift("## Questões", "");
+    }
+  }
 
   const orderedSections = [...objectivesSections, ...theorySections, ...caseSections, ...questionSections];
   return orderedSections
