@@ -407,10 +407,47 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
 
   const rawLines = preCleaned.split("\n");
   const compactNonEmpty: string[] = [];
+  let skipAdminBlock = false;
+
+  const isBibOrAdminSectionStart = (t: string) =>
+    /^(?:#{1,6}\s+)?(?:\*\*)?(?:leitura\s+pr[ée]via|refer[êe]ncias?(?:\s+bibliogr[áa]ficas?)?|bibliografia(?:\s+recomendada|\s+b[áa]sica)?|fontes?\s+consultadas?|sugest[ãa]o\s+de\s+leitura)(?:\*\*)?:?\s*$/i.test(t);
+
+  const isSingleAdminLine = (t: string) => {
+    const plain = t.replace(/^[#*\-\s•]+/, "").replace(/\*\*/g, "").trim();
+    if (!plain) return false;
+    // TBL / Individual / Grupo / Facilitador / Professor
+    if (/^(?:TBL\b|team[\s\-]based\s+learning\b)/i.test(plain)) return true;
+    if (/^(?:individual|grupo)\s+[A-Z0-9]\b(?:\s*[-–—:].*)?$/i.test(plain)) return true;
+    if (/^(?:teste\s+(?:individual|em\s+grupo)|iRAT|tRAT|gRAT)\b/i.test(plain)) return true;
+    if (/^(?:facilitador(?:a)?|professor(?:a)?|docente|coordenador(?:a)?|relator(?:a)?|tutor(?:a)?|orientador(?:a)?)\s*:/i.test(plain)) return true;
+    // Bibliographic / URL / ISBN / Minha Biblioteca artifacts
+    if (/\bISBN\b|\bintegrada\.minhabiblioteca\b|\bminhabiblioteca\.com\b|\bepubcfi\b|Bvnd\.vst|Dispon[íi]vel\s+em\s*:|Acesso\s+em\s*:/i.test(plain)) return true;
+    if (/^https?\s*:\s*\/\//i.test(plain)) return true;
+    if (/^[A-ZÀ-ÖØ-Þ]{3,},\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+.*(?:\d{4}|E-book|Editora|Grupo\s+A|Porto\s+Alegre|Rio\s+de\s+Janeiro|S[ãa]o\s+Paulo)/i.test(plain)) return true;
+    if (/^p[áa]ginas?\s+\d+\s*[–\-]\s*\d+/i.test(plain)) return true;
+    if (/^cap[íi]tulo\s+\d+\s*[–\-]\s*.+$/i.test(plain) && plain.length < 90) return true;
+    return false;
+  };
+
   for (const l of rawLines) {
     const t = l.trim();
     // Strip standalone horizontal dividers (---) that were placed after every topic
     if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(t)) {
+      continue;
+    }
+    if (isBibOrAdminSectionStart(t)) {
+      skipAdminBlock = true;
+      continue;
+    }
+    if (skipAdminBlock) {
+      // Exit admin/bibliography block only when a genuine thematic heading starts
+      if (/^#{1,3}\s+/.test(t) && !isBibOrAdminSectionStart(t) && !isSingleAdminLine(t)) {
+        skipAdminBlock = false;
+      } else {
+        continue;
+      }
+    }
+    if (isSingleAdminLine(t)) {
       continue;
     }
     compactNonEmpty.push(l);
@@ -555,17 +592,20 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
     repairedLines.push(rawLine);
   }
 
-  // 3. Reorder sections so Clinical Cases come after theory, and Questions ALWAYS come at the very end after the Clinical Case
+  // 3. Reorder sections so Objectives ALWAYS come first, Theory next, Clinical Cases after theory, and Questions ALWAYS at the very end
   const fullJoined = repairedLines.join("\n");
   const sectionLines = fullJoined.split("\n");
 
   interface DocSection {
-    kind: "theory" | "case" | "questions";
+    kind: "objectives" | "theory" | "case" | "questions";
     lines: string[];
   }
 
   const sections: DocSection[] = [];
   let currentSec: DocSection = { kind: "theory", lines: [] };
+
+  const isObjectivesHeading = (t: string) =>
+    /^#{1,4}\s*(?:\*\*)?objetivos?(?:\s+de\s+aprendizagem|\s+da\s+aula|\s+do\s+estudo|\s+do\s+arquivo)?\b/i.test(t);
 
   const isCaseHeading = (t: string) =>
     /^#{1,4}\s*(?:\*\*)?(?:caso\s+cl[íi]nico|situa[çc][ãa]o[\s\-]problema|relato\s+de\s+caso|apresenta[çc][ãa]o\s+do\s+caso)\b/i.test(t);
@@ -576,6 +616,11 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
   for (const line of sectionLines) {
     const t = line.trim();
     if (/^#{2,4}\s+/.test(t)) {
+      if (isObjectivesHeading(t)) {
+        if (currentSec.lines.length > 0) sections.push(currentSec);
+        currentSec = { kind: "objectives", lines: [line] };
+        continue;
+      }
       if (isQuestionsHeading(t)) {
         if (currentSec.lines.length > 0) sections.push(currentSec);
         currentSec = { kind: "questions", lines: [line] };
@@ -586,7 +631,7 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
         currentSec = { kind: "case", lines: [line] };
         continue;
       }
-      // If we were inside a case or questions section and hit a new major H2 theoretical heading
+      // If we were inside objectives, case, or questions and hit a new major H2 theoretical heading
       if (currentSec.kind !== "theory" && /^##\s+/.test(t)) {
         sections.push(currentSec);
         currentSec = { kind: "theory", lines: [line] };
@@ -599,11 +644,12 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
     sections.push(currentSec);
   }
 
+  const objectivesSections = sections.filter((s) => s.kind === "objectives");
   const theorySections = sections.filter((s) => s.kind === "theory");
   const caseSections = sections.filter((s) => s.kind === "case");
   const questionSections = sections.filter((s) => s.kind === "questions");
 
-  const orderedSections = [...theorySections, ...caseSections, ...questionSections];
+  const orderedSections = [...objectivesSections, ...theorySections, ...caseSections, ...questionSections];
   return orderedSections
     .map((s) => s.lines.join("\n").trim())
     .filter(Boolean)
@@ -799,14 +845,14 @@ export function markdownToHtml(markdown: string): string {
     // Heading 2
     if (trimmed.startsWith("## ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h2 class="text-xl font-bold text-gray-900 dark:text-white mt-5 mb-2 leading-tight">${formatInlineHtml(trimmed.replace(/^##\s+/, ""))}</h2>`);
+      htmlParts.push(`<h2 class="text-xl font-bold text-gray-900 dark:text-white mt-6 mb-2.5 pb-1.5 border-b border-gray-200/80 dark:border-gray-800 leading-tight">${formatInlineHtml(trimmed.replace(/^##\s+/, ""))}</h2>`);
       continue;
     }
 
     // Heading 3
     if (trimmed.startsWith("### ")) {
       closeListsAndBlocks();
-      htmlParts.push(`<h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mt-4 mb-2 leading-snug">${formatInlineHtml(trimmed.replace(/^###\s+/, ""))}</h3>`);
+      htmlParts.push(`<h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mt-5 mb-2 pb-1 border-b border-gray-200/70 dark:border-gray-800/80 leading-snug">${formatInlineHtml(trimmed.replace(/^###\s+/, ""))}</h3>`);
       continue;
     }
 
@@ -845,17 +891,17 @@ export function markdownToHtml(markdown: string): string {
         inOl = false;
       }
       if (!inUl) {
-        htmlParts.push('<ul class="list-disc list-outside pl-6 my-2.5 space-y-1.5 text-gray-800 dark:text-gray-200">');
+        htmlParts.push('<ul class="list-disc list-outside pl-6 my-2.5 space-y-1.5 text-gray-800 dark:text-gray-200 marker:text-gray-300 dark:marker:text-gray-600">');
         inUl = true;
       }
       const indentSpaces = bulletMatch[1].replace(/\t/g, "  ").length;
       if (indentSpaces >= 4) {
         htmlParts.push(
-          `<li data-indent="2" class="ml-12 list-[square] text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+          `<li data-indent="2" class="ml-12 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
         );
       } else if (indentSpaces >= 2) {
         htmlParts.push(
-          `<li data-indent="1" class="ml-6 list-[circle] text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+          `<li data-indent="1" class="ml-6 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
         );
       } else {
         htmlParts.push(`<li class="leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`);

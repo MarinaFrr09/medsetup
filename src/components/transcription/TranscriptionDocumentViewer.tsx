@@ -548,12 +548,12 @@ function TranscriptionDocumentViewer({
         continue;
       }
 
-      // H2 Section (## Section) — black heading without bottom divider line
+      // H2 Section (## Section) — clean heading with subtle light-gray bottom border
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
         const headingId = `heading-sec-${headingCounter++}`;
         elements.push(
-          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-7 mb-2.5 scroll-mt-24">
+          <div key={`h2-wrap-${idx}`} id={headingId} className="mt-8 mb-3.5 pb-2 border-b border-gray-200/80 dark:border-gray-800 scroll-mt-24">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-950 dark:text-white tracking-tight leading-snug">
               {renderInlineMarkdown(text)}
             </h2>
@@ -562,7 +562,7 @@ function TranscriptionDocumentViewer({
         continue;
       }
 
-      // H3 Subsection (### Subsection)
+      // H3 Subsection (### Subsection) — clean subsection with subtle light-gray bottom border
       if (trimmed.startsWith("### ")) {
         const text = trimmed.replace(/^###\s+/, "");
         const headingId = `heading-sec-${headingCounter++}`;
@@ -570,7 +570,7 @@ function TranscriptionDocumentViewer({
           <h3
             key={`h3-${idx}`}
             id={headingId}
-            className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white mt-5 mb-2 tracking-tight scroll-mt-24"
+            className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white mt-6 mb-3 pb-1.5 border-b border-gray-200/70 dark:border-gray-800/80 tracking-tight scroll-mt-24"
           >
             {renderInlineMarkdown(text)}
           </h3>
@@ -740,7 +740,7 @@ function TranscriptionDocumentViewer({
         }
       }
 
-      // Level 2 / Level 3 Nested Bullets (indented with 2+ spaces or tabs)
+      // Level 2 / Level 3 Nested Bullets (indented with 2+ spaces or tabs) — light-gray circular dots
       const subBulletMatch = line.match(/^(\s{2,}|\t+)[\*\-]\s+(.*)$/);
       if (subBulletMatch) {
         const indentStr = subBulletMatch[1].replace(/\t/g, "  ");
@@ -748,24 +748,22 @@ function TranscriptionDocumentViewer({
         const itemText = subBulletMatch[2];
 
         if (isLevel3) {
-          // Level 3: solid square (▪), indented pl-10 sm:pl-12
           elements.push(
             <div
               key={`subbullet3-${idx}`}
-              className="pl-10 sm:pl-12 my-1.5 flex items-start group"
+              className="pl-12 sm:pl-14 my-1.5 flex items-start group"
             >
-              <span className="w-1.5 h-1.5 rounded-xs bg-gray-800 dark:bg-gray-200 mt-2 mr-2.5 flex-shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 mt-2.5 mr-3 flex-shrink-0" />
               <div className="flex-1">{renderItemContent(itemText)}</div>
             </div>
           );
         } else {
-          // Level 2: hollow ring / open circle (◦), indented pl-5 sm:pl-7
           elements.push(
             <div
               key={`subbullet2-${idx}`}
-              className="pl-5 sm:pl-7 my-1.5 flex items-start group"
+              className="pl-6 sm:pl-8 my-1.5 flex items-start group"
             >
-              <span className="w-2 h-2 rounded-full border-2 border-gray-700 dark:border-gray-300 bg-transparent mt-1.5 mr-2.5 flex-shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 mt-2.5 mr-3 flex-shrink-0" />
               <div className="flex-1">{renderItemContent(itemText)}</div>
             </div>
           );
@@ -773,7 +771,7 @@ function TranscriptionDocumentViewer({
         continue;
       }
 
-      // Level 1 Topic Bullet ("* " or "- ") - solid circle (•)
+      // Level 1 Topic Bullet ("* " or "- ") — light-gray circular dot
       const bulletMatch = line.match(/^[\*\-]\s+(.*)$/);
       if (bulletMatch) {
         const itemText = bulletMatch[1];
@@ -782,39 +780,24 @@ function TranscriptionDocumentViewer({
             key={`bullet-${idx}`}
             className="my-2.5 flex items-start group"
           >
-            <span className="w-2 h-2 rounded-full bg-gray-950 dark:bg-white mt-2 mr-2.5 flex-shrink-0 shadow-2xs" />
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 mt-2.5 mr-3 flex-shrink-0" />
             <div className="flex-1">{renderItemContent(itemText)}</div>
           </div>
         );
         continue;
       }
 
-      // Numbered List (supports 1., 1.1, 1.x, 2.y, etc., with indent support)
+      // Numbered List (clean academic numbered list matching Objetivos model)
       const numMatch = line.match(/^(\s*)(\d+(?:\.[\w\d]+)*)\.?\s+(.*)$/);
       if (numMatch) {
         const indent = numMatch[1]?.length || 0;
         const isNested = indent >= 2;
         const num = numMatch[2];
         const itemText = numMatch[3];
-        const isTopLevel = !isNested && /^\d+$/.test(num);
-
-        if (isTopLevel) {
-          elements.push(
-            <div key={`num-${idx}`} className="mt-6 mb-2.5 flex items-center gap-2.5 pt-2 border-t border-gray-100 dark:border-gray-800/60">
-              <span className={`font-extrabold text-xs sm:text-sm px-2.5 py-1 rounded-lg ${palette.tailwind.badgeBg} ${palette.tailwind.badgeText} shrink-0 shadow-xs`}>
-                {num}.
-              </span>
-              <h4 className="text-[17px] sm:text-[18.5px] font-bold text-gray-950 dark:text-white tracking-tight">
-                {renderInlineMarkdown(itemText)}
-              </h4>
-            </div>
-          );
-          continue;
-        }
 
         elements.push(
-          <div key={`num-${idx}`} className={`my-2 flex items-start ${isNested ? "pl-5 sm:pl-7" : ""}`}>
-            <span className={`text-sm font-bold ${palette.tailwind.minorText} min-w-[24px] mt-0.5`}>
+          <div key={`num-${idx}`} className={`my-2 flex items-start gap-2.5 ${isNested ? "pl-6 sm:pl-8" : "pl-1"}`}>
+            <span className="text-[15px] sm:text-[16px] font-medium text-gray-600 dark:text-gray-400 min-w-[24px] leading-relaxed shrink-0">
               {num}.
             </span>
             <div className="flex-1">{renderItemContent(itemText)}</div>
@@ -1002,7 +985,7 @@ function TranscriptionDocumentViewer({
       if (trimmed.startsWith("## ")) {
         const text = trimmed.replace(/^##\s+/, "");
         elements.push(
-          <div key={`print-h2-wrap-${idx}`} style={{ marginTop: "16px", marginBottom: "8px" }}>
+          <div key={`print-h2-wrap-${idx}`} style={{ marginTop: "18px", marginBottom: "9px", paddingBottom: "5px", borderBottom: "1px solid #E2E8F0" }}>
             <h2
               style={{
                 fontSize: "15px",
@@ -1029,8 +1012,10 @@ function TranscriptionDocumentViewer({
               fontSize: "13.5px",
               fontWeight: 700,
               color: "#0F172A",
-              marginTop: "13px",
-              marginBottom: "5px",
+              marginTop: "14px",
+              marginBottom: "6px",
+              paddingBottom: "4px",
+              borderBottom: "1px solid #E2E8F0",
             }}
           >
             {renderPrintInlineMarkdown(text)}
@@ -1101,9 +1086,10 @@ function TranscriptionDocumentViewer({
             >
               <span
                 style={{
-                  width: "4px",
-                  height: "4px",
-                  backgroundColor: "#334155",
+                  width: "5px",
+                  height: "5px",
+                  borderRadius: "50%",
+                  backgroundColor: "#CBD5E1",
                   marginTop: "6.5px",
                   marginRight: "8px",
                   flexShrink: 0,
@@ -1131,9 +1117,8 @@ function TranscriptionDocumentViewer({
                   width: "5px",
                   height: "5px",
                   borderRadius: "50%",
-                  border: "1.5px solid #334155",
-                  backgroundColor: "transparent",
-                  marginTop: "5.5px",
+                  backgroundColor: "#CBD5E1",
+                  marginTop: "6px",
                   marginRight: "8px",
                   flexShrink: 0,
                 }}
@@ -1166,8 +1151,8 @@ function TranscriptionDocumentViewer({
                 width: "5px",
                 height: "5px",
                 borderRadius: "50%",
-                backgroundColor: "#0F172A",
-                marginTop: "6px",
+                backgroundColor: "#CBD5E1",
+                marginTop: "6.5px",
                 marginRight: "8px",
                 flexShrink: 0,
               }}
