@@ -185,12 +185,19 @@ export function TutoriaViewer({
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [zoomImageCaption, setZoomImageCaption] = useState<string>("");
 
-  const currentContent = isEditing ? (editedText || localContent) : cleanLatexAndBadges(localContent);
+  const normalizeTutoriaMarkdown = useCallback((raw: string) => {
+    return cleanLatexAndBadges(raw || "")
+      .replace(/^##\s+Quest[õo]es\s+de\s+Aprendizagem\s*\n+/gim, "")
+      .replace(/^###\s+Quest[ãa]o\s+\d+\s*[:.\-–)]\s*(?:\d+\s*[:.\-–)]\s*)?/gim, "## ");
+  }, []);
+
+  const currentContent = isEditing ? (editedText || localContent) : normalizeTutoriaMarkdown(localContent);
 
   useEffect(() => {
-    setLocalContent(markdownContent || "");
-    setEditedText(cleanLatexAndBadges(markdownContent || ""));
-  }, [markdownContent]);
+    const normalized = normalizeTutoriaMarkdown(markdownContent || "");
+    setLocalContent(normalized);
+    setEditedText(normalized);
+  }, [markdownContent, normalizeTutoriaMarkdown]);
 
   const handleEditorChange = useCallback((newText: string) => {
     setEditedText(newText);

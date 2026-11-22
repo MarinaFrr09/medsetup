@@ -288,7 +288,7 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
        É expressamente proibido fornecer respostas curtas, telegráficas, genéricas ou superficiais. Cada resposta deve ser uma aula completa, profunda, minuciosa e exaustiva, cobrindo o tema como uma seção de tratado de medicina de referência.
      * **CONTEÚDO OBRIGATÓRIO PARA CADA QUESTÃO DE APRENDIZAGEM (DISSEQUE CADA TÓPICO COM RIGOR)**:
        Para CADA questão, estruture a resposta dissecando com riqueza de detalhes todos os aspectos aplicáveis:
-       1. **Contextualização e Relevância Clínica**: Definição conceitual abrangente, relevância epidemiológica com dados quantitativos e citação de fonte entre parênteses ex: (Fonte: Ministério da Saúde / Sociedades de Especialidade), impacto sistêmico e panorama clínico inicial.
+       1. Parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:" ou "Contextualização:"): definição conceitual abrangente, relevância epidemiológica com dados quantitativos e citação de fonte entre parênteses ex: (Fonte: Ministério da Saúde / Sociedades de Especialidade), impacto sistêmico e panorama clínico inicial.
        2. **Bases Anatômicas, Histológicas e Fisiológicas**: Topografia anatômica funcional, vascularização e inervação se pertinente, tipos celulares específicos envolvidos, histologia tecidual, barreiras biológicas e fisiologia basal com cascatas de regulação e feedbacks hormonais.
        3. **Fisiopatologia Celular e Molecular Minuciosa**: Dissecção profunda das vias bioquímicas, citocinas inflamatórias específicas (IL-1, IL-6, TNF-alfa, prostaglandinas, etc.), receptores celulares, alterações de permeabilidade capilar, lesão tecidual e repercussões hemodinâmicas/metabólicas passo a passo.
        4. **Quadro Clínico e Semiótica Específica**: Sintomas cardinais, formas de apresentação atípicas, semiotécnica e manobras de exame físico com nomes de sinais propedêuticos/epônimos, sinais de gravidade, choque e alarme ("red flags").
@@ -308,7 +308,7 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
        É terminantemente proibido fornecer respostas em um único bloco maciço e contínuo de texto sem quebras ou subtítulos ("mega texto"). A resposta deve ser visualmente limpa, pedagógica e estruturada em seções bem delimitadas.
      * **2. MODELO DIDÁTICO E FLEXÍVEL (ORGANIZAÇÃO EM TÓPICOS, SUBTÓPICOS E CONTEXTUALIZAÇÃO)**:
        Estruture a resposta com clareza visual e alto rigor acadêmico:
-       - **Contextualização**: Pode incluir uma contextualização introdutória inicial (2 a 5 linhas situando o conceito central, relevância clínica e panorama epidemiológico antes de desmembrar os aspectos específicos).
+       - **Parágrafo Introdutório Direto (SEM escrever "Contextualização e Relevância Clínica:")**: Inicie diretamente com 2 a 4 linhas situando o conceito central e panorama epidemiológico antes de desmembrar os aspectos específicos, sem rótulos ou prefixos introdutórios.
        - **Tópicos e Subtópicos com Bolinhas para Estruturas, Tipos e Características**: Divida o conteúdo em tópicos e subtópicos com títulos claros em negrito (ex: '* **Mecanismo Fisiopatológico Detalhado:** [explicação aprofundada]', '* **Conduta Farmacológica e Manejo Clínico:** [posologias, fármacos, doses]'). Sempre que listar ou detalhar estruturas anatômicas (ex: ossos, cartilagens, camadas, divisões de órgãos), tipos, classificações ou características, prefira usar subtópicos indentados com bolinhas ('\\n  * **Nome da Estrutura / Característica:** explicação') em vez de um texto corrido longo.
        - **Etapas Sequenciais Numeradas ('1.', '2.', '3.')**: Para processos que envolvem etapas, fases evolutivas cronológicas (ex: estágios do choque hipovolêmico, ciclo ovariano/endometrial, cascata de hemostasia) ou passos de conduta médica e protocolos sequenciais de atendimento, utilize etapas numeradas (1. 2. 3.) detalhando cada fase.
        - **Cadeias de Causalidade e Fluxos com Setas ('->' ou '→')**: Utilize setas de forma equilibrada para ilustrar relações de causa-efeito, cascatas hormonais ou encadeamentos fisiopatológicos (ex: Hemorragia volumosa -> Hipovolemia relativa -> Queda do retorno venoso -> Ativação simpática compensatória). Use com moderação e equilíbrio, sem exageros.
@@ -636,9 +636,8 @@ Retorne estritamente o JSON válido:
       parts.push("");
     }
 
-    // 5. Questões de Aprendizagem
+    // 5. Questões de Aprendizagem (cada questão diretamente como título principal ##)
     if (result.learningQuestions && result.learningQuestions.length > 0) {
-      parts.push(`## Questões de Aprendizagem\n`);
       for (let i = 0; i < result.learningQuestions.length; i++) {
         const lq = result.learningQuestions[i];
         const rawQ = (lq.question || "").trim();
@@ -648,7 +647,7 @@ Retorne estritamente o JSON válido:
         const finalQuestion = cleanQ || rawQ;
         lq.question = finalQuestion;
         lq.detailedAnswer = cleanLatexAndBadges(lq.detailedAnswer || "");
-        parts.push(`### Questão ${i + 1}: ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
+        parts.push(`## ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
       }
     }
 

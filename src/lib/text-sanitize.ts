@@ -87,8 +87,8 @@ export function cleanLatexAndBadges(str: string): string {
     .replace(/\(\s*,\s*/g, "(")
     .replace(/,\s*\)/g, ")")
     .replace(/^(\s*[*•-]\s*),\s*/gm, "$1")
-    // Strip unnecessary boilerplate contextualization attribution prefixes
-    .replace(/(?:^|\n)\s*(?:\*\*)?(?:Contextualização\s+(?:Fisiopatológica[,\s]*Histológica\s+e\s+Epidemiológica\s+Abrangente|Fisiopatológica[^\n:*]*|Histológica[^\n:*]*|Epidemiológica[^\n:*]*|Abrangente|Objetiva|Clínica)|Contextualização)(?:\*\*)?\s*:\s*/gim, "\n\n")
+    // Strip unnecessary boilerplate contextualization attribution prefixes (including "Contextualização e Relevância Clínica:")
+    .replace(/(?:^|\n)\s*(?:#{1,6}\s*|[*•-]\s*|\d+\.\s*)*(?:\*\*)?(?:Contextualização\s+(?:e\s+Relevância\s+Clínica|Fisiopatológica[,\s]*Histológica\s+e\s+Epidemiológica\s+Abrangente|Fisiopatológica[^\n:*]*|Histológica[^\n:*]*|Epidemiológica[^\n:*]*|Abrangente|Objetiva|Clínica)|Contextualização)(?:\*\*)?\s*:?\s*/gim, "\n\n")
     // Remove numerical prefix from topic headings like "1. Síndrome..." or "2. Síndrome..."
     .replace(/^(\s*#{1,6}\s*|\s*|\s*[*•-]\s*)\d+\.\s+(Síndrome\b|Grandes\s+Síndromes\b|Pilares\b|Pilar\b|Eixo\b)/gim, "$1$2")
     // Normalize "Mega Aprofundamento..." to "Aprofundamento"

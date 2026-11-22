@@ -1815,7 +1815,7 @@ export async function exportDocumentToProfessionalPdf({
     // Regular contextual paragraph (clean any stray hashes and boilerplate contextualization attribution prefixes)
     const rawCleaned = trimmed
       .replace(/^#{1,6}\s*/, "")
-      .replace(/^(?:\*\*)?(?:Contextualização\s+(?:Fisiopatológica[,\s]*Histológica\s+e\s+Epidemiológica\s+Abrangente|Fisiopatológica[^\n:*]*|Histológica[^\n:*]*|Epidemiológica[^\n:*]*|Abrangente|Objetiva|Clínica)|Contextualização)(?:\*\*)?\s*:\s*/i, "");
+      .replace(/^(?:#{1,6}\s*|[*•-]\s*|\d+\.\s*)*(?:\*\*)?(?:Contextualização\s+(?:e\s+Relevância\s+Clínica|Fisiopatológica[,\s]*Histológica\s+e\s+Epidemiológica\s+Abrangente|Fisiopatológica[^\n:*]*|Histológica[^\n:*]*|Epidemiológica[^\n:*]*|Abrangente|Objetiva|Clínica)|Contextualização)(?:\*\*)?\s*:?\s*/i, "");
     if (!rawCleaned.trim()) continue;
 
     ensureSpace(12);

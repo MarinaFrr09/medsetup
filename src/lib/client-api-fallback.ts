@@ -621,7 +621,7 @@ REGRAS OBRIGATÓRIAS:
 2. "unknownTerms": Defina os termos desconhecidos presentes no documento/anotações.
 3. "hypothesisAnalysis": Julgue as hipóteses diagnósticas ("Correta (Provável)" ou "Incorreta (Descartada)") com justificativa clínica.
 4. "clinicalConclusion": Forneça "summary", "clinicalReasoning", "conductAndOutcome" e "differentialTable" (tabela Markdown completa comparando diagnósticos diferenciais).
-5. "learningQuestions": Responda a TODOS os Objetivos/Questões de Aprendizagem do documento com profundidade de tratado médico (Contextualização, Bases Morfofuncionais, Fisiopatologia Celular/Molecular, Clínica, Propedêutica e Terapêutica Completa).
+5. "learningQuestions": Responda a TODOS os Objetivos/Questões de Aprendizagem do documento com profundidade de tratado médico (introdução direta sem escrever "Contextualização e Relevância Clínica:", Bases Morfofuncionais, Fisiopatologia Celular/Molecular, Clínica, Propedêutica e Terapêutica Completa).
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título Acadêmico do Caso Clínico",
@@ -681,9 +681,11 @@ Responda OBRIGATORIAMENTE em JSON válido:
         }
       }
       if (Array.isArray(result.learningQuestions) && result.learningQuestions.length > 0) {
-        parts.push(`## Questões de Aprendizagem\n`);
-        result.learningQuestions.forEach((lq: any, i: number) => {
-          parts.push(`### Questão ${i + 1}: ${lq.question}\n\n${lq.detailedAnswer}\n`);
+        result.learningQuestions.forEach((lq: any) => {
+          const cleanQ = String(lq.question || "")
+            .replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "")
+            .trim();
+          parts.push(`## ${cleanQ || lq.question}\n\n${lq.detailedAnswer}\n`);
         });
       }
 
