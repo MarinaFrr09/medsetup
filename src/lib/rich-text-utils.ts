@@ -739,7 +739,24 @@ export function repairTranscriptionHeadingsAndOrder(markdown: string): string {
 
       seenFull.add(fullKey);
       if (comboKey) seenHeadAndOpts.add(comboKey);
-      dedupedBlocks.push(blk);
+
+      // Promote the first line of each question block to clean H2 "## N) Enunciado..."
+      const qIndex = dedupedBlocks.length + 1;
+      const formattedBlk = [...blk];
+      const firstNonEmptyIdx = formattedBlk.findIndex((x) => x.trim().length > 0);
+      if (firstNonEmptyIdx !== -1) {
+        const cleanFirst = formattedBlk[firstNonEmptyIdx]
+          .trim()
+          .replace(/^#{1,6}\s+/, "")
+          .replace(/^\*\*|\*\*$/g, "")
+          .replace(/^(?:quest[ãa]o|pergunta)?\s*\d+\s*[:.\-–)]+\s*/i, "")
+          .replace(/\*\*/g, "")
+          .trim();
+        if (cleanFirst) {
+          formattedBlk[firstNonEmptyIdx] = `## ${qIndex}) ${cleanFirst}`;
+        }
+      }
+      dedupedBlocks.push(formattedBlk);
     }
 
     questionSections.length = 0;

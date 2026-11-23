@@ -537,10 +537,10 @@ ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${book
 
         const objectivesInstruction =
           questionsSourceList.length > 0
-            ? `LISTA LITERAL DAS ${questionsSourceList.length} QUESTÕES DO ANEXO (COPIE CADA UMA EXATAMENTE COMO ESTÁ ESCRITA COMO TÍTULO "## Questão N: ..." E RESPONDA DETALHADAMENTE LOGO ABAIXO):\n${questionsSourceList
-                .map((obj, i) => `${i + 1}. ${obj.replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "").trim()}`)
+            ? `LISTA LITERAL DAS ${questionsSourceList.length} QUESTÕES DO ANEXO (COPIE CADA UMA EXATAMENTE COMO ESTÁ ESCRITA COMO TÍTULO H2 "## 1) ...", "## 2) ..." E RESPONDA DETALHADAMENTE LOGO ABAIXO):\n${questionsSourceList
+                .map((obj, i) => `${i + 1}) ${obj.replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "").trim()}`)
                 .join("\n")}\n\nSe houver alguma questão adicional no arquivo anexo que não esteja na lista acima, inclua-a também e responda completamente!`
-            : `Leia ATENTAMENTE TODO o arquivo anexo (todas as páginas, imagens e textos) e as anotações do estudante. Identifique TODAS as questões, perguntas ou objetivos de aprendizagem do anexo, copie CADA UMA literalmente como título "## Questão N: ..." e responda detalhadamente logo abaixo de cada uma!`;
+            : `Leia ATENTAMENTE TODO o arquivo anexo (todas as páginas, imagens e textos) e as anotações do estudante. Identifique TODAS as questões, perguntas ou objetivos de aprendizagem do anexo, copie CADA UMA literalmente como título H2 "## 1) ...", "## 2) ..." e responda detalhadamente logo abaixo de cada uma!`;
 
         const qMdRes = await generateJSONFromAI({
           systemPrompt: `Você é um Professor Titular de Medicina especialista em Tutoria Médica / PBL.
@@ -548,9 +548,10 @@ Sua ÚNICA missão agora é responder de forma COMPLETA, PROFUNDA e DETALHADA a 
 
 REGRAS INVIOLÁVEIS:
 1. Responda EXCLUSIVAMENTE em Markdown puro (NÃO retorne JSON, NÃO use blocos \`\`\`markdown, NÃO escreva introdução fora das questões).
-2. Para CADA questão do anexo, escreva o título EXATAMENTE neste formato, copiando o enunciado LITERALMENTE palavra por palavra do anexo:
-   ## Questão 1: [Texto exato da questão 1 exatamente como está no anexo]
-3. Logo abaixo de cada título "## Questão N: ...", escreva a RESPOSTA COMPLETA E DETALHADA daquela questão:
+2. Para CADA questão do anexo, escreva o título H2 EXATAMENTE neste formato, copiando o enunciado LITERALMENTE palavra por palavra do anexo:
+   ## 1) [Texto exato da questão 1 exatamente como está no anexo]
+   ## 2) [Texto exato da questão 2 exatamente como está no anexo]
+3. Logo abaixo de cada título "## N) ...", escreva a RESPOSTA COMPLETA E DETALHADA daquela questão:
    - Comece com um parágrafo introdutório direto e fluido (PROIBIDO escrever "Contextualização e Relevância Clínica:" ou "Contextualização:").
    - Organize a explicação detalhada com subtítulos (### quando pertinente), tópicos com bolinhas ("* **Termo:** explicação detalhada...") e subtópicos recuados ("  * ..."), cobrindo fisiopatologia, mecanismos, quadro clínico, diagnóstico, exames com valores de referência e conduta/tratamento conforme aplicável à pergunta.
    - Responda de forma científica, didática e completa.
@@ -712,7 +713,7 @@ Retorne estritamente o JSON válido:
         const finalQuestion = cleanQ || rawQ;
         lq.question = finalQuestion;
         lq.detailedAnswer = cleanLatexAndBadges(lq.detailedAnswer || "");
-        parts.push(`## Questão ${i + 1}: ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
+        parts.push(`## ${i + 1}) ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
       }
     }
 

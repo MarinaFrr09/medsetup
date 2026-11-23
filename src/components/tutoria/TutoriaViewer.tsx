@@ -190,9 +190,15 @@ export function TutoriaViewer({
   const normalizeTutoriaMarkdown = useCallback((raw: string) => {
     return cleanLatexAndBadges(raw || "")
       .replace(/^##\s+Quest[õo]es\s+de\s+Aprendizagem\s*\n+/gim, "")
+      // Convert "Questão 3: ...", "**Questão 3:** ...", "### Questão 3: ...", "Pergunta 1: ..." into H2 "## 3) ..."
       .replace(
-        /^(?:#{1,6}\s+)?(?:\*\*)?(Quest[ãa]o\s+\d+)(?:\*\*)?\s*[:.\-–)](?:\*\*)?\s*(?:\d+\s*[:.\-–)]\s*)?([^\n]+?)(?:\*\*)?$/gim,
-        "## $1: $2"
+        /^(?:#{1,6}\s+)?(?:\*\*)?(?:Quest[ãa]o|Pergunta)\s+(\d+)(?:\*\*)?\s*[:.\-–)](?:\*\*)?\s*(?:\d+\s*[:.\-–)]\s*)?([^\n]+?)(?:\*\*)?$/gim,
+        "## $1) $2"
+      )
+      // Also promote standalone numbered questions like "**1)** Defina..." or "1) Defina..." (with academic command/question) into H2 "## 1) ..."
+      .replace(
+        /^(?:#{3,6}\s+|(?:\*\*))?(\d+)\)(?:\*\*)?\s+([A-ZÀ-ÖØ-Þ][^\n]{15,}?)(?:\*\*)?$/gm,
+        "## $1) $2"
       );
   }, []);
 

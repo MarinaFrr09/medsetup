@@ -651,8 +651,9 @@ Responda OBRIGATORIAMENTE em JSON válido:
 Sua ÚNICA missão é responder de forma COMPLETA, PROFUNDA e DETALHADA a TODAS as questões do anexo em Markdown puro.
 REGRAS INVIOLÁVEIS:
 1. Responda EXCLUSIVAMENTE em Markdown puro (NÃO retorne JSON, NÃO use blocos \`\`\`markdown).
-2. Para CADA questão do anexo, escreva o título exatamente como:
-   ## Questão 1: [Enunciado LITERAL exato da questão 1 do anexo]
+2. Para CADA questão do anexo, escreva o título H2 exatamente como:
+   ## 1) [Enunciado LITERAL exato da questão 1 do anexo]
+   ## 2) [Enunciado LITERAL exato da questão 2 do anexo]
 3. Logo abaixo de cada título, escreva a resposta médica detalhada, organizada em parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:") seguido de tópicos ("* **Termo:** ...") e subtópicos ("  * ...").
 4. PROIBIDO usar cores HTML (<span style="color:...">) — escreva todo o texto em preto padrão.
 5. TODAS as questões do anexo DEVEM ser respondidas sem pular nenhuma!`;
@@ -736,7 +737,7 @@ REGRAS INVIOLÁVEIS:
           const cleanQ = String(lq.question || "")
             .replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "")
             .trim();
-          parts.push(`## Questão ${i + 1}: ${cleanQ || lq.question}\n\n${lq.detailedAnswer}\n`);
+          parts.push(`## ${i + 1}) ${cleanQ || lq.question}\n\n${lq.detailedAnswer}\n`);
         });
       }
 
