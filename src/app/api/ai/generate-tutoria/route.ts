@@ -402,8 +402,9 @@ DIRETRIZES DE TRANSCRIÇÃO INTEGRAL (ZERO CORTES / ZERO RESUMOS):
    - Exames laboratoriais e complementares (hemograma, bioquímica, gasometria, ECG, laudos de radiografia, tomografia, ultrassom) com TODOS os valores numéricos, unidades e referências.
    - Qualquer pergunta disparadora, dúvida, desafio ou problema formulado no final do caso original.
 3. Se o caso estiver distribuído em múltiplas fotos/imagens/slides, junte tudo em uma única transcrição contínua, completa e cronológica do caso clínico.
-4. PROIBIDO resumir, PROIBIDO parafrasear, PROIBIDO omitir frases e PROIBIDO inventar dados que não estão lá.
-5. Se houver Objetivos de Aprendizagem ou Questões de Aprendizagem/Perguntas escritas na imagem ou documento, extraia CADA UMA DELAS no array "detectedObjectives" COPIANDO LITERALMENTE PALAVRA POR PALAVRA exatamente como está escrito no anexo (sem resumir, sem parafrasear e sem pular nenhuma!).
+4. PROIBIDO resumir, PROIBIDO parafrasear, PROIBIDO omitir frases clínicas e PROIBIDO inventar dados que não estão lá.
+4.1. EXCLUA DA TRANSCRIÇÃO DO CASO qualquer metadado administrativo de grupo: NUNCA transcreva "Coordenador(a)", "Coordenadoria", "Relator(a)", "Relatoria", "Facilitador(a)", "Tutor(a)", "Secretário(a)", "Integrantes", "Participantes", "Turma" ou nomes das pessoas/alunos do grupo.
+5. Se houver Objetivos de Aprendizagem ou Questões/Perguntas escritas em qualquer página do anexo (seja em texto ou em imagem/foto/print), extraia CADA UMA DELAS no array "detectedObjectives" COPIANDO LITERALMENTE PALAVRA POR PALAVRA exatamente como está escrito no anexo (sem resumir, sem parafrasear e sem pular nenhuma!).
 6. Se houver Palavras Desconhecidas ou Termos Desconhecidos listados na imagem ou documento (Passo 1 do PBL), extraia cada uma delas no array "detectedUnknownTerms".
 7. Se houver Hipóteses ou Hipóteses Diagnósticas levantadas na imagem ou documento (Passo 3 do PBL), extraia cada uma delas no array "detectedHypotheses".
 
@@ -418,6 +419,7 @@ Retorne estritamente o JSON válido:
           fileAttachments: caseAttachments,
           maxOutputTokens: 16384,
           temperature: 0.1,
+          keepPdfBinary: true,
         });
 
         if (ocrRes?.caseTranscription && ocrRes.caseTranscription.trim().length > 30) {
@@ -496,6 +498,7 @@ ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${book
       fileAttachments,
       maxOutputTokens: 65536,
       temperature: 0.3,
+      keepPdfBinary: true,
     });
 
     // Ensure caseTranscription is populated with full fidelity from pre-OCR
@@ -503,68 +506,97 @@ ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${book
       result.caseTranscription = initialTranscribedCase;
     }
 
-    // Safeguard: Guarantee ALL learningQuestions from the attachment are answered completely (never missing, empty, or cut off!)
+    // Dedicated PURE MARKDOWN pass for ALL learning questions so every single question from the attachment
+    // is rewritten verbatim as a "## Questão N: ..." heading and thoroughly answered below — never truncated by JSON limits!
     const currentQuestions: Array<{ question?: string; detailedAnswer?: string }> = Array.isArray(result.learningQuestions)
       ? result.learningQuestions
       : [];
     const hasEmptyOrShortAnswer = currentQuestions.some(
-      (q) => !q?.detailedAnswer || String(q.detailedAnswer).trim().length < 120
+      (q) => !q?.detailedAnswer || String(q.detailedAnswer).trim().length < 250
     );
     const missingDetectedCount =
       initialDetectedObjectives.length > 0 && currentQuestions.length < initialDetectedObjectives.length;
 
-    if (currentQuestions.length <= 1 || hasEmptyOrShortAnswer || missingDetectedCount) {
-      console.warn(
-        `[generate-tutoria] learningQuestions incompleto (${currentQuestions.length} geradas, ${initialDetectedObjectives.length} detectadas, curtas=${hasEmptyOrShortAnswer}). Gerando respostas dedicadas...`
+    let dedicatedQuestionsMarkdown = "";
+    const shouldRunDedicatedQuestionsPass =
+      currentQuestions.length === 0 ||
+      currentQuestions.length <= 1 ||
+      hasEmptyOrShortAnswer ||
+      missingDetectedCount ||
+      initialDetectedObjectives.length > 0;
+
+    if (shouldRunDedicatedQuestionsPass) {
+      console.log(
+        `[generate-tutoria] Executando etapa dedicada em Markdown puro para responder 100% das questões da tutoria (detectadas=${initialDetectedObjectives.length}, iniciais=${currentQuestions.length})...`
       );
       try {
-        const objectivesInstruction =
+        const questionsSourceList =
           initialDetectedObjectives.length > 0
-            ? `LISTA EXATA DAS ${initialDetectedObjectives.length} QUESTÕES/OBJETIVOS DO ANEXO (COPIE CADA ENUNCIADO LITERALMENTE PALAVRA POR PALAVRA NO CAMPO "question" E RESPONDA COMPLETAMENTE EM "detailedAnswer"):\n${initialDetectedObjectives
-                .map((obj, i) => `${i + 1}. ${obj}`)
-                .join("\n")}`
-            : `Leia todo o documento anexo, copie LITERALMENTE palavra por palavra TODAS as questões/objetivos presentes nele no campo "question" e responda completamente a CADA UMA em "detailedAnswer".`;
+            ? initialDetectedObjectives
+            : currentQuestions.map((q) => String(q.question || "").trim()).filter(Boolean);
 
-        const fallbackRes = await generateJSONFromAI({
-          systemPrompt: `Você é um preceptor médico especialista sênior em PBL / Tutoria Médica.
-Sua missão ÚNICA e PRIORITÁRIA é responder a TODAS as questões/objetivos de aprendizagem do documento anexo com profundidade médica completa.
+        const objectivesInstruction =
+          questionsSourceList.length > 0
+            ? `LISTA LITERAL DAS ${questionsSourceList.length} QUESTÕES DO ANEXO (COPIE CADA UMA EXATAMENTE COMO ESTÁ ESCRITA COMO TÍTULO "## Questão N: ..." E RESPONDA DETALHADAMENTE LOGO ABAIXO):\n${questionsSourceList
+                .map((obj, i) => `${i + 1}. ${obj.replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "").trim()}`)
+                .join("\n")}\n\nSe houver alguma questão adicional no arquivo anexo que não esteja na lista acima, inclua-a também e responda completamente!`
+            : `Leia ATENTAMENTE TODO o arquivo anexo (todas as páginas, imagens e textos) e as anotações do estudante. Identifique TODAS as questões, perguntas ou objetivos de aprendizagem do anexo, copie CADA UMA literalmente como título "## Questão N: ..." e responda detalhadamente logo abaixo de cada uma!`;
+
+        const qMdRes = await generateJSONFromAI({
+          systemPrompt: `Você é um Professor Titular de Medicina especialista em Tutoria Médica / PBL.
+Sua ÚNICA missão agora é responder de forma COMPLETA, PROFUNDA e DETALHADA a TODAS as questões do anexo da Tutoria em Markdown puro.
+
 REGRAS INVIOLÁVEIS:
-1. COPIE CADA QUESTÃO/OBJETIVO EXATAMENTE DO JEITO QUE ESTÁ ESCRITO NO ANEXO no campo "question" (palavra por palavra, sem parafrasear, sem resumir).
-2. Responda a 100% DAS QUESTÕES do anexo em "detailedAnswer" com explicação médica detalhada, organizada em parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:") seguido de tópicos e subtópicos com bolinhas e negrito.
-3. PROIBIDO usar cores HTML (<span style="color:...">) — escreva todo o texto em preto padrão (Markdown puro).
-4. Responda de forma teórica, científica e completa; se correlacionar com o caso clínico, faça apenas em uma breve estrofe final ("**Correlação ao Caso Clínico:** ...").
-Retorne estritamente o JSON válido:
-{
-  "learningQuestions": [
-    {
-      "question": "Enunciado LITERAL exato da questão conforme está no anexo",
-      "detailedAnswer": "Resposta médica completa, detalhada e bem estruturada em Markdown puro"
-    }
-  ]
-}`,
+1. Responda EXCLUSIVAMENTE em Markdown puro (NÃO retorne JSON, NÃO use blocos \`\`\`markdown, NÃO escreva introdução fora das questões).
+2. Para CADA questão do anexo, escreva o título EXATAMENTE neste formato, copiando o enunciado LITERALMENTE palavra por palavra do anexo:
+   ## Questão 1: [Texto exato da questão 1 exatamente como está no anexo]
+3. Logo abaixo de cada título "## Questão N: ...", escreva a RESPOSTA COMPLETA E DETALHADA daquela questão:
+   - Comece com um parágrafo introdutório direto e fluido (PROIBIDO escrever "Contextualização e Relevância Clínica:" ou "Contextualização:").
+   - Organize a explicação detalhada com subtítulos (### quando pertinente), tópicos com bolinhas ("* **Termo:** explicação detalhada...") e subtópicos recuados ("  * ..."), cobrindo fisiopatologia, mecanismos, quadro clínico, diagnóstico, exames com valores de referência e conduta/tratamento conforme aplicável à pergunta.
+   - Responda de forma científica, didática e completa.
+4. COR DO TEXTO: PROIBIDO usar tags HTML de cor (<span style="color:...">) ou pintar remédios de vermelho ou doenças de verde. Use apenas Markdown puro (preto padrão + negrito **...**).
+5. NUNCA pule, resuma ou deixe nenhuma questão do anexo sem resposta! TODAS as questões do anexo DEVEM ser respondidas.`,
           userPrompt: `${objectivesInstruction}
-${initialTranscribedCase ? `\nCaso Clínico de referência:\n"""\n${initialTranscribedCase}\n"""\n` : ""}
-${userNotes ? `\nAnotações/Questões enviadas pelo estudante:\n"""\n${userNotes}\n"""` : ""}`,
+${initialTranscribedCase ? `\nCaso Clínico de referência (apenas para contexto — responda cada questão com rigor teórico completo):\n"""\n${initialTranscribedCase}\n"""\n` : ""}
+${userNotes ? `\nAnotações/Questões do estudante:\n"""\n${userNotes}\n"""` : ""}
+${hasReferenceBooks ? `\nLivros de referência selecionados: ${bookTitles.join(", ")}.` : ""}`,
           fileAttachments,
           maxOutputTokens: 65536,
           temperature: 0.25,
+          keepPdfBinary: true,
+          rawText: true,
         });
 
-        if (fallbackRes?.learningQuestions && Array.isArray(fallbackRes.learningQuestions) && fallbackRes.learningQuestions.length > 0) {
-          if (currentQuestions.length <= 1 || hasEmptyOrShortAnswer || fallbackRes.learningQuestions.length >= currentQuestions.length) {
-            result.learningQuestions = fallbackRes.learningQuestions;
-          } else {
-            const existingQ = new Set(currentQuestions.map((q: any) => q.question?.toLowerCase().trim()));
-            for (const fq of fallbackRes.learningQuestions) {
-              if (fq?.question && !existingQ.has(fq.question.toLowerCase().trim())) {
-                result.learningQuestions.push(fq);
-              }
+        let rawQMd = String(qMdRes?.text || "")
+          .trim()
+          .replace(/^```(?:markdown|md)?\s*\n/i, "")
+          .replace(/\n```\s*$/i, "")
+          .trim();
+
+        if (rawQMd.length > 200) {
+          rawQMd = cleanLatexAndBadges(
+            rawQMd.replace(/<span\s+style=["']\s*color:\s*(?:#dc2626|#16a34a|red|green)\s*;?\s*["']>([\s\S]*?)<\/span>/gi, "$1")
+          );
+          dedicatedQuestionsMarkdown = rawQMd;
+
+          // Parse back into structured learningQuestions array for flashcards/questions/mindmap tools
+          const parsedQuestions: Array<{ question: string; detailedAnswer: string }> = [];
+          const qRegex = /^##\s*(?:Quest[ãa]o\s*\d+\s*[:.\-–)]\s*)?([^\n]+)\n+([\s\S]*?)(?=\n##\s+|$)/gim;
+          let match: RegExpExecArray | null;
+          while ((match = qRegex.exec(rawQMd)) !== null) {
+            const qText = (match[1] || "").trim();
+            const qAns = (match[2] || "").trim();
+            if (qText && qAns) {
+              parsedQuestions.push({ question: qText, detailedAnswer: qAns });
             }
           }
-          console.log(`[generate-tutoria] learningQuestions completo via etapa dedicada: ${result.learningQuestions.length} questões respondidas.`);
+          if (parsedQuestions.length > 0) {
+            result.learningQuestions = parsedQuestions;
+          }
+          console.log(`[generate-tutoria] Etapa dedicada concluída: ${parsedQuestions.length} questões respondidas (${rawQMd.length} chars).`);
         }
       } catch (fbErr) {
-        console.error("Failed to generate fallback learning questions:", fbErr);
+        console.error("Failed to generate dedicated Markdown learning questions:", fbErr);
       }
     }
 
@@ -599,7 +631,25 @@ Retorne estritamente o JSON válido:
       }
     }
 
-    const finalCaseTranscription = (result.caseTranscription || initialTranscribedCase || "").trim();
+    const rawCaseTranscription = (result.caseTranscription || initialTranscribedCase || "").trim();
+    // Strip administrative role/people lines (Coordenadoria, Relatoria, Facilitador, Tutor, Integrantes, Turma)
+    const finalCaseTranscription = rawCaseTranscription
+      .split("\n")
+      .filter((line: string) => {
+        const plain = line.replace(/^[#*\-\s•]+/, "").replace(/\*\*/g, "").trim();
+        if (!plain) return true;
+        if (
+          /^(?:coordenador(?:a|ia)?|relator(?:a|ia)?|facilitador(?:a)?|tutor(?:a)?|secret[áa]ri[oa]|professor(?:a)?|docente|integrantes?|participantes?|membros?|alunos?|estudantes?|grupo|turma)\s*[:\-–]/i.test(
+            plain
+          )
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
 
     const parts: string[] = [];
     parts.push(`# ${result.title || "Resolução de Tutoria Clínica"}\n`);
@@ -649,8 +699,10 @@ Retorne estritamente o JSON válido:
       parts.push("");
     }
 
-    // 5. Questões de Aprendizagem (cada questão diretamente como título principal ##)
-    if (result.learningQuestions && result.learningQuestions.length > 0) {
+    // 5. Questões de Aprendizagem (cada questão reescrita literalmente do anexo como título ## Questão N: ... seguida pela resposta detalhada)
+    if (dedicatedQuestionsMarkdown) {
+      parts.push(`${dedicatedQuestionsMarkdown}\n`);
+    } else if (result.learningQuestions && result.learningQuestions.length > 0) {
       for (let i = 0; i < result.learningQuestions.length; i++) {
         const lq = result.learningQuestions[i];
         const rawQ = (lq.question || "").trim();

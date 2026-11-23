@@ -615,17 +615,17 @@ Responda OBRIGATORIAMENTE em JSON válido:
     if (cleanPath.endsWith("/api/ai/generate-tutoria")) {
       const userNotes = String(body.userNotes || body.notes || "");
       const sys = `Você é um Professor Titular de Clínica Médica especialista em Tutoria Médica / PBL.
-Analise o caso clínico/documento anexado e as anotações do estudante e resolva integralmente a Tutoria.
+Analise o caso clínico/documento anexado e as anotações do estudante.
 REGRAS OBRIGATÓRIAS:
-1. "caseTranscription": Transcreva literalmente todas as palavras do caso clínico (incluindo OCR de imagens/PDFs).
-2. "unknownTerms": Defina os termos desconhecidos presentes no documento/anotações.
+1. "caseTranscription": Transcreva literalmente todo o caso clínico (incluindo OCR de imagens/PDFs). EXCLUA linhas de Coordenador(a), Coordenadoria, Relator(a), Relatoria, Facilitador(a), Tutor(a), Turma ou nomes de alunos/professores.
+2. "unknownTerms": Defina os termos desconhecidos presentes no documento/anotações (se houver).
 3. "hypothesisAnalysis": Julgue as hipóteses diagnósticas ("Correta (Provável)" ou "Incorreta (Descartada)") com justificativa clínica.
 4. "clinicalConclusion": Forneça "summary", "clinicalReasoning", "conductAndOutcome" e "differentialTable" (tabela Markdown completa comparando diagnósticos diferenciais).
-5. "learningQuestions": OBRIGATÓRIO extrair e responder a TODAS as questões/objetivos de aprendizagem do documento anexo (sem pular nenhuma!). No campo "question", COPIE O ENUNCIADO EXATAMENTE DO JEITO QUE ESTÁ NO ANEXO (palavra por palavra, sem parafrasear). Em "detailedAnswer", responda detalhadamente logo abaixo com parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:" e PROIBIDO usar <span style="color:..."> vermelho/verde — todo texto em preto padrão), seguido de tópicos e subtópicos completos (Bases Morfofuncionais, Fisiopatologia Celular/Molecular, Clínica, Propedêutica e Terapêutica Completa).
+5. "detectedQuestions": Extraia TODAS as questões/perguntas/objetivos de aprendizagem do anexo COPIANDO LITERALMENTE PALAVRA POR PALAVRA exatamente como está escrito no documento (sem parafrasear e sem pular nenhuma!).
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título Acadêmico do Caso Clínico",
-  "caseTranscription": "Transcrição integral do caso clínico palavra por palavra",
+  "caseTranscription": "Transcrição integral do caso clínico palavra por palavra (sem Coordenadoria/Relatoria/nomes)",
   "unknownTerms": [ { "term": "Termo", "definition": "Definição médica completa" } ],
   "hypothesisAnalysis": [ { "hypothesis": "Hipótese", "judgment": "Correta (Provável)", "explanation": "Justificativa clínica" } ],
   "clinicalConclusion": {
@@ -634,43 +634,71 @@ Responda OBRIGATORIAMENTE em JSON válido:
     "conductAndOutcome": "Conduta médica e terapêutica",
     "differentialTable": "| Patologia | Fisiopatologia | Achados Clínicos | Conduta |\\n| --- | --- | --- | --- |\\n| ... | ... | ... | ... |"
   },
-  "learningQuestions": [
-    {
-      "question": "Enunciado do objetivo/questão de aprendizagem",
-      "detailedAnswer": "Resposta teórica exaustiva e estruturada em Markdown com subtítulos (### e ####)"
-    }
-  ],
+  "detectedQuestions": ["Enunciado literal exato da questão 1 do anexo", "Enunciado literal exato da questão 2 do anexo"],
   "references": ["Harrison - Medicina Interna", "UpToDate"]
 }`;
-      const prompt = `Resolva integralmente a Tutoria Médica / PBL dos arquivos anexados.${userNotes ? `\n\nAnotações/Objetivos do estudante:\n${userNotes}` : ""}`;
+      const prompt = `Extraia o caso clínico (sem Coordenadoria/Relatoria/nomes), termos desconhecidos, hipóteses diagnósticas, conclusão clínica com quadro diferencial e a lista LITERAL de todas as questões/objetivos dos arquivos anexados.${userNotes ? `\n\nAnotações/Questões do estudante:\n${userNotes}` : ""}`;
       const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts);
       const result = parseJsonSafe(raw) || {};
 
-      // Safeguard: se learningQuestions veio vazio ou com respostas vazias/curtas, faz chamada dedicada só para responder todas as questões do anexo literalmente
-      const lqArr = Array.isArray(result.learningQuestions) ? result.learningQuestions : [];
-      const hasMissingAnswers =
-        lqArr.length === 0 ||
-        lqArr.some((q: any) => !q?.detailedAnswer || String(q.detailedAnswer).trim().length < 100);
-      if (hasMissingAnswers) {
-        try {
-          const qSys = `Você é um preceptor médico de Tutoria/PBL. Extraia LITERALMENTE (palavra por palavra, exatamente como está no anexo) TODAS as questões/objetivos de aprendizagem do documento e responda a CADA UMA delas com profundidade médica completa em Markdown puro (texto preto padrão, sem tags <span style="color:..."> e sem escrever "Contextualização e Relevância Clínica:"). Retorne JSON: { "learningQuestions": [ { "question": "Enunciado literal do anexo", "detailedAnswer": "Resposta completa e detalhada" } ] }`;
-          const qRaw = await callGeminiDirectBrowser(
-            `Extraia literalmente todas as questões/objetivos do anexo e responda completamente a cada uma.${userNotes ? `\n\nAnotações/Questões do estudante:\n${userNotes}` : ""}`,
-            qSys,
-            true,
-            inlineParts
-          );
-          const qParsed = parseJsonSafe(qRaw);
-          if (Array.isArray(qParsed?.learningQuestions) && qParsed.learningQuestions.length > 0) {
-            result.learningQuestions = qParsed.learningQuestions;
+      // Etapa 2 dedicada em Markdown puro: responder 100% das questões copiando cada uma literalmente como título "## Questão N: ..."
+      const detectedList: string[] = Array.isArray(result.detectedQuestions)
+        ? result.detectedQuestions.map((q: any) => String(q || "").trim()).filter(Boolean)
+        : [];
+      let dedicatedQuestionsMd = "";
+      try {
+        const qSys = `Você é um Professor Titular de Medicina especialista em Tutoria Médica / PBL.
+Sua ÚNICA missão é responder de forma COMPLETA, PROFUNDA e DETALHADA a TODAS as questões do anexo em Markdown puro.
+REGRAS INVIOLÁVEIS:
+1. Responda EXCLUSIVAMENTE em Markdown puro (NÃO retorne JSON, NÃO use blocos \`\`\`markdown).
+2. Para CADA questão do anexo, escreva o título exatamente como:
+   ## Questão 1: [Enunciado LITERAL exato da questão 1 do anexo]
+3. Logo abaixo de cada título, escreva a resposta médica detalhada, organizada em parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:") seguido de tópicos ("* **Termo:** ...") e subtópicos ("  * ...").
+4. PROIBIDO usar cores HTML (<span style="color:...">) — escreva todo o texto em preto padrão.
+5. TODAS as questões do anexo DEVEM ser respondidas sem pular nenhuma!`;
+        const qPrompt =
+          detectedList.length > 0
+            ? `Responda detalhadamente a TODAS as ${detectedList.length} questões abaixo (copiando cada enunciado literalmente como "## Questão N: ...") e inclua qualquer outra questão presente no anexo:\n${detectedList
+                .map((q, i) => `${i + 1}. ${q.replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "").trim()}`)
+                .join("\n")}${userNotes ? `\n\nAnotações/Questões do estudante:\n${userNotes}` : ""}`
+            : `Leia todo o arquivo anexo, copie LITERALMENTE todas as questões/objetivos presentes nele como títulos "## Questão 1: ...", "## Questão 2: ..." e responda detalhadamente a cada uma logo abaixo.${userNotes ? `\n\nAnotações/Questões do estudante:\n${userNotes}` : ""}`;
+        const qRaw = await callGeminiDirectBrowser(qPrompt, qSys, false, inlineParts, 0.25);
+        dedicatedQuestionsMd = cleanLatexAndBadges(
+          String(qRaw || "")
+            .trim()
+            .replace(/^```(?:markdown|md)?\s*\n/i, "")
+            .replace(/\n```\s*$/i, "")
+            .replace(/<span\s+style=["']\s*color:\s*(?:#dc2626|#16a34a|red|green)\s*;?\s*["']>([\s\S]*?)<\/span>/gi, "$1")
+            .trim()
+        );
+        if (dedicatedQuestionsMd) {
+          const parsedQs: Array<{ question: string; detailedAnswer: string }> = [];
+          const qRe = /^##\s*(?:Quest[ãa]o\s*\d+\s*[:.\-–)]\s*)?([^\n]+)\n+([\s\S]*?)(?=\n##\s+|$)/gim;
+          let m: RegExpExecArray | null;
+          while ((m = qRe.exec(dedicatedQuestionsMd)) !== null) {
+            if (m[1]?.trim() && m[2]?.trim()) {
+              parsedQs.push({ question: m[1].trim(), detailedAnswer: m[2].trim() });
+            }
           }
-        } catch {}
-      }
+          if (parsedQs.length > 0) result.learningQuestions = parsedQs;
+        }
+      } catch {}
+
+      const cleanCase = String(result.caseTranscription || "")
+        .split("\n")
+        .filter((line: string) => {
+          const plain = line.replace(/^[#*\-\s•]+/, "").replace(/\*\*/g, "").trim();
+          if (!plain) return true;
+          return !/^(?:coordenador(?:a|ia)?|relator(?:a|ia)?|facilitador(?:a)?|tutor(?:a)?|secret[áa]ri[oa]|professor(?:a)?|docente|integrantes?|participantes?|membros?|alunos?|estudantes?|grupo|turma)\s*[:\-–]/i.test(plain);
+        })
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 
       const parts: string[] = [];
       parts.push(`# ${result.title || "Resolução de Tutoria Clínica"}\n`);
-      if (result.caseTranscription) {
-        parts.push(`## Caso Clínico\n\n${result.caseTranscription}\n`);
+      if (cleanCase) {
+        parts.push(`## Caso Clínico\n\n${cleanCase}\n`);
       }
       if (Array.isArray(result.unknownTerms) && result.unknownTerms.length > 0) {
         parts.push(`## Termos e Palavras Desconhecidas\n`);
@@ -701,7 +729,9 @@ Responda OBRIGATORIAMENTE em JSON válido:
           parts.push(`\n### Quadro Comparativo de Diagnóstico Diferencial\n\n${result.clinicalConclusion.differentialTable}\n`);
         }
       }
-      if (Array.isArray(result.learningQuestions) && result.learningQuestions.length > 0) {
+      if (dedicatedQuestionsMd) {
+        parts.push(`${dedicatedQuestionsMd}\n`);
+      } else if (Array.isArray(result.learningQuestions) && result.learningQuestions.length > 0) {
         result.learningQuestions.forEach((lq: any, i: number) => {
           const cleanQ = String(lq.question || "")
             .replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "")
@@ -712,7 +742,7 @@ Responda OBRIGATORIAMENTE em JSON válido:
 
       return jsonResponse({
         title: result.title || "Resolução de Tutoria Clínica",
-        caseTranscription: result.caseTranscription || "",
+        caseTranscription: cleanCase,
         unknownTerms: result.unknownTerms || [],
         hypothesisAnalysis: result.hypothesisAnalysis || [],
         clinicalConclusion: result.clinicalConclusion || {},
