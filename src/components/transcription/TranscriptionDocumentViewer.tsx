@@ -269,8 +269,14 @@ function TranscriptionDocumentViewer({
   const activeRawText = localContent || (content ?? transcription ?? summary ?? "");
   const cleanedContent = isEditing ? (editedText || activeRawText) : cleanTranscriptionContent(activeRawText);
 
+  const lastSavedByMeRef = useRef<string | null>(null);
+
   useEffect(() => {
     const raw = content ?? transcription ?? summary ?? "";
+    // Never overwrite or re-clean while user is editing or when prop echoes our own auto-save!
+    if (raw === lastSavedByMeRef.current || autoSaveTimerRef.current !== null) {
+      return;
+    }
     setLocalContent(raw);
     setEditedText(cleanTranscriptionContent(raw));
   }, [content, transcription, summary]);
@@ -284,6 +290,8 @@ function TranscriptionDocumentViewer({
       clearTimeout(autoSaveTimerRef.current);
     }
     autoSaveTimerRef.current = setTimeout(() => {
+      lastSavedByMeRef.current = newText;
+      autoSaveTimerRef.current = null;
       onSaveContent?.(newText, "transcription");
       setSaveStatus("saved");
     }, 800);

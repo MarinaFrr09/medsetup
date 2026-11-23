@@ -175,6 +175,8 @@ export function TutoriaViewer({
   const [isEditing, setIsEditing] = useState(true); // Edição direta instantânea ativa por padrão!
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedByMeRef = useRef<string | null>(null);
+  const lastDocIdRef = useRef<string | undefined>(analysis?.id);
   const [localContent, setLocalContent] = useState<string>(markdownContent || "");
   const [editedText, setEditedText] = useState("");
   const [viewMode, setViewMode] = useState<"document" | "mindmap">("document");
@@ -188,16 +190,28 @@ export function TutoriaViewer({
   const normalizeTutoriaMarkdown = useCallback((raw: string) => {
     return cleanLatexAndBadges(raw || "")
       .replace(/^##\s+Quest[õo]es\s+de\s+Aprendizagem\s*\n+/gim, "")
-      .replace(/^(?:#{1,6}\s+|\*\*)?(Quest[ãa]o\s+\d+)\s*[:.\-–)]\s*(?:\d+\s*[:.\-–)]\s*)?([^\n]+?)(?:\*\*)?$/gim, "## $1: $2");
+      .replace(
+        /^(?:#{1,6}\s+)?(?:\*\*)?(Quest[ãa]o\s+\d+)(?:\*\*)?\s*[:.\-–)](?:\*\*)?\s*(?:\d+\s*[:.\-–)]\s*)?([^\n]+?)(?:\*\*)?$/gim,
+        "## $1: $2"
+      );
   }, []);
 
   const currentContent = isEditing ? (editedText || localContent) : normalizeTutoriaMarkdown(localContent);
 
   useEffect(() => {
-    const normalized = normalizeTutoriaMarkdown(markdownContent || "");
+    const incoming = markdownContent || "";
+    const docChanged = analysis?.id !== lastDocIdRef.current;
+    lastDocIdRef.current = analysis?.id;
+
+    // Never revert or re-normalize while the user is actively editing or when the prop echoes our own auto-save!
+    if (!docChanged && (incoming === lastSavedByMeRef.current || autoSaveTimerRef.current !== null)) {
+      return;
+    }
+
+    const normalized = normalizeTutoriaMarkdown(incoming);
     setLocalContent(normalized);
     setEditedText(normalized);
-  }, [markdownContent, normalizeTutoriaMarkdown]);
+  }, [markdownContent, analysis?.id, normalizeTutoriaMarkdown]);
 
   const handleEditorChange = useCallback((newText: string) => {
     setEditedText(newText);
@@ -208,6 +222,8 @@ export function TutoriaViewer({
       clearTimeout(autoSaveTimerRef.current);
     }
     autoSaveTimerRef.current = setTimeout(() => {
+      lastSavedByMeRef.current = newText;
+      autoSaveTimerRef.current = null;
       onSaveContent?.(newText);
       if (analysis) {
         onUpdateAnalysis?.({ customMarkdown: newText });

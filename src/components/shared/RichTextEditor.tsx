@@ -131,6 +131,7 @@ export function RichTextEditor({
   const [markdownSource, setMarkdownSource] = useState(value);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
+  const lastEmittedMdRef = useRef<string | null>(null);
 
   // Popover menus for colors
   const [showTextColorMenu, setShowTextColorMenu] = useState(false);
@@ -172,8 +173,16 @@ export function RichTextEditor({
     }
   }, [pushHistorySnapshot]);
 
-  // Sync external value -> internal visual DOM
+  // Sync external value -> internal visual DOM (never overwrite active user edits!)
   useEffect(() => {
+    const isEchoOfMyEdit = isInternalUpdateRef.current || (lastEmittedMdRef.current !== null && value === lastEmittedMdRef.current);
+    isInternalUpdateRef.current = false;
+
+    if (isEchoOfMyEdit) {
+      return;
+    }
+
+    lastEmittedMdRef.current = null;
     setMarkdownSource(value);
     const chars = value ? value.length : 0;
     const words = value ? value.trim().split(/\s+/).filter(Boolean).length : 0;
@@ -181,12 +190,9 @@ export function RichTextEditor({
     setWordCount(words);
 
     if (activeMode === "visual" && editorRef.current) {
-      if (!isInternalUpdateRef.current) {
-        const html = markdownToHtml(value);
-        editorRef.current.innerHTML = html;
-        pushHistorySnapshot(html, true);
-      }
-      isInternalUpdateRef.current = false;
+      const html = markdownToHtml(value);
+      editorRef.current.innerHTML = html;
+      pushHistorySnapshot(html, true);
     }
   }, [value, activeMode, pushHistorySnapshot]);
 
@@ -198,6 +204,7 @@ export function RichTextEditor({
     pushHistorySnapshot(currentHtml, immediateHistory);
 
     const convertedMd = htmlToMarkdown(currentHtml);
+    lastEmittedMdRef.current = convertedMd;
     setMarkdownSource(convertedMd);
 
     const chars = convertedMd.length;
@@ -263,6 +270,8 @@ export function RichTextEditor({
 
   // Handle markdown textarea changes
   const handleMarkdownChange = (newMd: string) => {
+    lastEmittedMdRef.current = newMd;
+    isInternalUpdateRef.current = true;
     setMarkdownSource(newMd);
     onChange(newMd);
     const chars = newMd.length;
