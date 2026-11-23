@@ -1059,14 +1059,30 @@ export function formatInlineHtml(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+    // Normalize LaTeX bold/italic commands if any survived
+    .replace(/\\textbf\{([^{}]+)\}/g, "**$1**")
+    .replace(/\\textit\{([^{}]+)\}/g, "*$1*")
+    // Remove empty bold pairs (**** or ** **)
+    .replace(/\*{4,}/g, "")
+    .replace(/\*\*\s+\*\*/g, " ")
     // Restore markdown images that were inside text
     .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="max-h-60 rounded-lg inline-block my-1" />')
-    // Bold **text** or __text__
-    .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-gray-950 dark:text-white">$1</strong>')
-    .replace(/__([^_]+)__/g, '<strong class="font-bold text-gray-950 dark:text-white">$1</strong>')
+    // Bold + Italic ***text***
+    .replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<strong class="font-bold text-gray-950 dark:text-white"><em class="italic">$1</em></strong>')
+    // Bold **text** or __text__ (non-greedy so nested single * or symbols never break bold!)
+    .replace(/\*\*([\s\S]+?)\*\*/g, (_, inner) =>
+      inner.trim() ? `<strong class="font-bold text-gray-950 dark:text-white">${inner}</strong>` : inner
+    )
+    .replace(/__([\s\S]+?)__/g, (_, inner) =>
+      inner.trim() ? `<strong class="font-bold text-gray-950 dark:text-white">${inner}</strong>` : inner
+    )
+    // Repair unclosed "**Termo:" at start of segment into proper bold
+    .replace(/\*\*([^*\n]{2,80}:)/g, '<strong class="font-bold text-gray-950 dark:text-white">$1</strong>')
+    // Strip any remaining orphan ** so literal double asterisks never appear in rendered text
+    .replace(/\*\*/g, "")
     // Italics *text* or _text_ (excluding double asterisks)
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em class="italic">$1</em>')
-    .replace(/(?<!_)_([^_]+)_(?!_)/g, '<em class="italic">$1</em>')
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em class="italic">$1</em>')
+    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, '<em class="italic">$1</em>')
     // Underline <u>text</u> (unescape previously escaped tags)
     .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, '<u>$1</u>')
     // Subscript / superscript
@@ -1288,8 +1304,10 @@ export function htmlToMarkdown(html: string): string {
 
   const rawMd = traverseNode(root);
 
-  // Normalize excessive newlines (max 2 consecutive)
+  // Normalize excessive newlines (max 2 consecutive) and collapse adjacent/empty bold markers
   return rawMd
+    .replace(/\*{4,}/g, "")
+    .replace(/\*\*\s+\*\*/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

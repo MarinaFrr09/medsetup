@@ -87,6 +87,9 @@ export function cleanLatexAndBadges(str: string): string {
     .replace(/\(\s*,\s*/g, "(")
     .replace(/,\s*\)/g, ")")
     .replace(/^(\s*[*•-]\s*),\s*/gm, "$1")
+    // Clean empty/adjacent bold markers (**** or ** **)
+    .replace(/\*{4,}/g, "")
+    .replace(/\*\*\s+\*\*/g, " ")
     // Strip unnecessary boilerplate contextualization attribution prefixes (including "Contextualização e Relevância Clínica:")
     .replace(/(?:^|\n)\s*(?:#{1,6}\s*|[*•-]\s*|\d+\.\s*)*(?:\*\*)?(?:Contextualização\s+(?:e\s+Relevância\s+Clínica|Fisiopatológica[,\s]*Histológica\s+e\s+Epidemiológica\s+Abrangente|Fisiopatológica[^\n:*]*|Histológica[^\n:*]*|Epidemiológica[^\n:*]*|Abrangente|Objetiva|Clínica)|Contextualização)(?:\*\*)?\s*:?\s*/gim, "\n\n")
     // Remove numerical prefix from topic headings like "1. Síndrome..." or "2. Síndrome..."
