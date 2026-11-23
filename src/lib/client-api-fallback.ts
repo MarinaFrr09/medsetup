@@ -681,11 +681,11 @@ Responda OBRIGATORIAMENTE em JSON válido:
         }
       }
       if (Array.isArray(result.learningQuestions) && result.learningQuestions.length > 0) {
-        result.learningQuestions.forEach((lq: any) => {
+        result.learningQuestions.forEach((lq: any, i: number) => {
           const cleanQ = String(lq.question || "")
             .replace(/^(?:quest[aã]o|pergunta)?\s*\d+\s*[:.\-–)]*\s*/i, "")
             .trim();
-          parts.push(`## ${cleanQ || lq.question}\n\n${lq.detailedAnswer}\n`);
+          parts.push(`## Questão ${i + 1}: ${cleanQ || lq.question}\n\n${lq.detailedAnswer}\n`);
         });
       }
 

@@ -188,7 +188,7 @@ export function TutoriaViewer({
   const normalizeTutoriaMarkdown = useCallback((raw: string) => {
     return cleanLatexAndBadges(raw || "")
       .replace(/^##\s+Quest[õo]es\s+de\s+Aprendizagem\s*\n+/gim, "")
-      .replace(/^###\s+Quest[ãa]o\s+\d+\s*[:.\-–)]\s*(?:\d+\s*[:.\-–)]\s*)?/gim, "## ");
+      .replace(/^(?:#{1,6}\s+|\*\*)?(Quest[ãa]o\s+\d+)\s*[:.\-–)]\s*(?:\d+\s*[:.\-–)]\s*)?([^\n]+?)(?:\*\*)?$/gim, "## $1: $2");
   }, []);
 
   const currentContent = isEditing ? (editedText || localContent) : normalizeTutoriaMarkdown(localContent);

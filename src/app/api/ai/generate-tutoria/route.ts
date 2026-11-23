@@ -332,9 +332,8 @@ ${hasReferenceBooks ? `   - Obras de referência selecionadas pelo estudante na 
    - PROIBIÇÃO ABSOLUTA DE LATEX E CIFRÕES ($):
      * NUNCA utilize notação LaTeX nem cifrões ($) no texto sob nenhuma circunstância.
      * Escreva grandezas em texto simples: '<= 6', '< 10', '>= 10', '+/- 2', 'x 10^3'.
-   - CORES MÉDICAS SEMÂNTICAS:
-     * Medicamentos / Fármacos: envolva o nome em vermelho: '<span style="color: #DC2626;">NomeDoFármaco</span>'
-     * Patologias / Doenças principais: envolva o nome em verde: '<span style="color: #16A34A;">NomeDaDoença</span>'
+   - COR DO TEXTO (PADRÃO PRETO LIMPO):
+     * PROIBIDO usar tags HTML de cor (<span style="color: ...">) ou pintar remédios de vermelho ou doenças de verde. Escreva TODO o texto em cor padrão preta (Markdown puro), usando apenas negrito (**termo**) quando necessário para destacar conceitos importantes.
    - NUNCA use rótulos entre colchetes como '[Fisiológico]' ou '[Patológico]' e não gere tags vazias.
    - Inicie direto pelo título (# Nome do Caso).
 
@@ -647,7 +646,7 @@ Retorne estritamente o JSON válido:
         const finalQuestion = cleanQ || rawQ;
         lq.question = finalQuestion;
         lq.detailedAnswer = cleanLatexAndBadges(lq.detailedAnswer || "");
-        parts.push(`## ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
+        parts.push(`## Questão ${i + 1}: ${finalQuestion}\n\n${lq.detailedAnswer}\n`);
       }
     }
 
@@ -671,7 +670,11 @@ Retorne estritamente o JSON válido:
       parts.push("");
     }
 
-    const finalMarkdown = cleanLatexAndBadges(parts.join("\n"));
+    const finalMarkdown = cleanLatexAndBadges(
+      parts
+        .join("\n")
+        .replace(/<span\s+style=["']\s*color:\s*(?:#dc2626|#16a34a|red|green)\s*;?\s*["']>([\s\S]*?)<\/span>/gi, "$1")
+    );
 
     return NextResponse.json({
       title: result.title || "Resolução de Tutoria Clínica",
