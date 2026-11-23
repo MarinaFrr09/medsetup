@@ -553,7 +553,8 @@ REGRAS INVIOLÁVEIS:
    ## 2) [Texto exato da questão 2 exatamente como está no anexo]
 3. Logo abaixo de cada título "## N) ...", escreva a RESPOSTA COMPLETA E DETALHADA daquela questão:
    - Comece com um parágrafo introdutório direto e fluido (PROIBIDO escrever "Contextualização e Relevância Clínica:" ou "Contextualização:").
-   - Organize a explicação detalhada com subtítulos (### quando pertinente), tópicos com bolinhas ("* **Termo:** explicação detalhada...") e subtópicos recuados ("  * ..."), cobrindo fisiopatologia, mecanismos, quadro clínico, diagnóstico, exames com valores de referência e conduta/tratamento conforme aplicável à pergunta.
+   - Organize a explicação detalhada com subtítulos limpos (### para grandes blocos como "### Manifestações Clínicas", "### Diagnóstico", "### Tratamento", e #### para subcategorias como "#### Gastrointestinais", "#### Hematológicas", "#### Neurológicas") e parágrafos fluidos.
+   - USO CRITERIOSO DE MARCADORES (BOLINHAS): Use bolinhas ("* ") APENAS para enumerações pontuais (tipos, etapas, características, sintomas específicos, critérios, exemplos ou fármacos). NUNCA coloque bolinhas em títulos de seção/categoria (como "Tratamento", "Diagnóstico", "Gastrointestinais", "Hematológicas") e NÃO transforme o texto inteiro em lista de bolinhas!
    - Responda de forma científica, didática e completa.
 4. COR DO TEXTO: PROIBIDO usar tags HTML de cor (<span style="color:...">) ou pintar remédios de vermelho ou doenças de verde. Use apenas Markdown puro (preto padrão + negrito **...**).
 5. NUNCA pule, resuma ou deixe nenhuma questão do anexo sem resposta! TODAS as questões do anexo DEVEM ser respondidas.`,

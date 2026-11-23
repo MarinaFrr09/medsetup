@@ -1049,8 +1049,82 @@ export function RichTextEditor({
       return;
     }
 
-    // Backspace inside a blockquote / callout ("Nota importante"): unwrap if empty or at start of content
+    // Backspace inside a blockquote / callout ("Nota importante") or at the start of a list item (<li>):
     if (e.key === "Backspace") {
+      const li = findClosestTag(["LI"]);
+      if (li && editorRef.current) {
+        const sel = window.getSelection();
+        if (sel && sel.isCollapsed && sel.rangeCount > 0) {
+          const r = sel.getRangeAt(0).cloneRange();
+          r.selectNodeContents(li);
+          r.setEnd(sel.anchorNode!, sel.anchorOffset);
+          const beforeText = r.toString().replace(/\u200B/g, "");
+          if (beforeText.length === 0) {
+            e.preventDefault();
+            recordPreMutationSnapshot();
+
+            const curIndent = Number(li.getAttribute("data-indent") || "0");
+            if (curIndent >= 2) {
+              li.setAttribute("data-indent", "1");
+              li.classList.remove("ml-12");
+              li.classList.add("ml-6");
+            } else if (curIndent === 1) {
+              li.removeAttribute("data-indent");
+              li.classList.remove("ml-6", "ml-12");
+            } else {
+              // Convert this <li> into a clean <p> without bullet marker, splitting the parent <ul>/<ol> if needed
+              const listParent = li.parentElement;
+              if (listParent && (listParent.tagName === "UL" || listParent.tagName === "OL")) {
+                const p = document.createElement("p");
+                p.className = "my-2 leading-[1.65] text-gray-800 dark:text-gray-200 text-[13.5px]";
+                while (li.firstChild) {
+                  p.appendChild(li.firstChild);
+                }
+                if (!p.hasChildNodes()) {
+                  p.innerHTML = "<br>";
+                }
+
+                const nextSiblings: ChildNode[] = [];
+                let sib = li.nextSibling;
+                while (sib) {
+                  nextSiblings.push(sib);
+                  sib = sib.nextSibling;
+                }
+
+                listParent.removeChild(li);
+
+                // Insert <p> right after listParent (or before if listParent is now empty before nextSiblings)
+                const grandParent = listParent.parentNode;
+                if (grandParent) {
+                  if (nextSiblings.length > 0) {
+                    const afterList = listParent.cloneNode(false) as HTMLElement;
+                    nextSiblings.forEach((n) => afterList.appendChild(n));
+                    grandParent.insertBefore(afterList, listParent.nextSibling);
+                    grandParent.insertBefore(p, afterList);
+                  } else {
+                    grandParent.insertBefore(p, listParent.nextSibling);
+                  }
+                  if (listParent.children.length === 0) {
+                    grandParent.removeChild(listParent);
+                  }
+                }
+
+                // Place caret at the exact start of the new paragraph
+                const newRange = document.createRange();
+                newRange.selectNodeContents(p);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+              }
+            }
+
+            handleEditorInput(true);
+            refreshActiveFormats();
+            return;
+          }
+        }
+      }
+
       const bq = findClosestTag(["BLOCKQUOTE"]);
       if (bq) {
         const rawText = (bq.textContent || "").replace(/\u00a0/g, " ").trim();

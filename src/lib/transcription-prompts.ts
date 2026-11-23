@@ -38,10 +38,10 @@ REGRA 3 — USO PROFISSIONAL DE TÍTULOS, SUBTÍTULOS, MARCADORES E NEGRITO:
     ## Absorvido pela pele ou inalado
   - CERTO:
     * **Chumbo tetraetila e tetrametila (gasolina):** Compostos orgânicos altamente lipossolúveis, absorvidos com facilidade pela pele intacta ou por via inalatória, com rápida penetração no sistema nervoso central.
-- Mescle com equilíbrio:
-  - Parágrafos curtos para contextualização.
-  - Marcadores de nível 1 com termo em negrito: "* **Termo ou Conceito:** Explicação completa e detalhada com **palavras-chave médicas** em negrito quando relevante."
-  - Sub-marcadores recuados com 2 espaços ("  * ") para desdobrar mecanismos, faixas de concentração, fatores facilitadores ou exemplos específicos.
+- Mescle com equilíbrio e critério profissional:
+  - Parágrafos curtos e fluidos para explicações conceituais e contextualização (NÃO transforme absolutamente tudo em bolinhas!).
+  - Subtítulos limpos (### e ####) para categorias e seções (como "### Manifestações Clínicas", "### Tratamento", "#### Gastrointestinais") — NUNCA coloque bolinhas em títulos de seção/categoria!
+  - Marcadores de bolinha ("* **Termo:** ...") APENAS para listas pontuais de tipos, etapas, características, sintomas, exemplos ou fatores, usando sub-marcadores ("  * ") quando houver desdobramentos diretos.
 - NUNCA escreva "Slide 1", "Página 1", divisórias horizontais (---) ou LaTeX com cifra de dólar ($). Use texto puro (mcg/dL, mg/dL, <=, >=, Ca2+, Mg2+, K+, Fe2+).
 
 REGRA 4 — SEÇÃO "## Questões" NO FINAL ABSOLUTO (SEM REPETIÇÃO E COM RESPOSTA EM NEGRITO):

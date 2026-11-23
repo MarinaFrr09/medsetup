@@ -1005,6 +1005,23 @@ export function markdownToHtml(markdown: string): string {
     // Bullet list (supporting nested sub-bullets with 2+ spaces indentation)
     const bulletMatch = rawLine.match(/^(\s*)(?:[\*\-]|\u2022)\s+(.*)$/);
     if (bulletMatch) {
+      const indentSpaces = bulletMatch[1].replace(/\t/g, "  ").length;
+      const bulletBody = bulletMatch[2].trim();
+
+      // Convert standalone section-header bullets (e.g. "* **Tratamento:**", "* **Gastrointestinais:**")
+      // that have NO explanation after the colon into clean subheadings without bullet dots!
+      const standaloneCategoryMatch =
+        indentSpaces === 0 &&
+        bulletBody.match(/^(?:\*\*)?([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s/()\-–&]{2,48}):(?:\*\*)?\s*$/);
+      if (standaloneCategoryMatch) {
+        closeListsAndBlocks();
+        const label = standaloneCategoryMatch[1].trim();
+        htmlParts.push(
+          `<h4 class="text-[14px] font-bold text-gray-900 dark:text-gray-100 mt-4 mb-1.5 leading-snug">${formatInlineHtml(label)}</h4>`
+        );
+        continue;
+      }
+
       if (inOl) {
         htmlParts.push("</ol>");
         inOl = false;
@@ -1013,17 +1030,16 @@ export function markdownToHtml(markdown: string): string {
         htmlParts.push('<ul class="list-disc list-outside pl-6 my-2.5 space-y-1.5 text-gray-800 dark:text-gray-200 marker:text-gray-300 dark:marker:text-gray-600">');
         inUl = true;
       }
-      const indentSpaces = bulletMatch[1].replace(/\t/g, "  ").length;
       if (indentSpaces >= 4) {
         htmlParts.push(
-          `<li data-indent="2" class="ml-12 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+          `<li data-indent="2" class="ml-12 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletBody)}</li>`
         );
       } else if (indentSpaces >= 2) {
         htmlParts.push(
-          `<li data-indent="1" class="ml-6 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`
+          `<li data-indent="1" class="ml-6 list-disc marker:text-gray-300 dark:marker:text-gray-600 text-gray-700 dark:text-gray-300 leading-relaxed">${formatInlineHtml(bulletBody)}</li>`
         );
       } else {
-        htmlParts.push(`<li class="leading-relaxed">${formatInlineHtml(bulletMatch[2])}</li>`);
+        htmlParts.push(`<li class="leading-relaxed">${formatInlineHtml(bulletBody)}</li>`);
       }
       continue;
     }

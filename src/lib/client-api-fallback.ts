@@ -654,7 +654,7 @@ REGRAS INVIOLÁVEIS:
 2. Para CADA questão do anexo, escreva o título H2 exatamente como:
    ## 1) [Enunciado LITERAL exato da questão 1 do anexo]
    ## 2) [Enunciado LITERAL exato da questão 2 do anexo]
-3. Logo abaixo de cada título, escreva a resposta médica detalhada, organizada em parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:") seguido de tópicos ("* **Termo:** ...") e subtópicos ("  * ...").
+3. Logo abaixo de cada título, escreva a resposta médica detalhada com parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:"), subtítulos limpos (### e #### para seções como Tratamento, Diagnóstico, Manifestações Clínicas, Gastrointestinais — NUNCA coloque bolinhas em títulos de seção!) e use marcadores ("* ") APENAS para enumerações pontuais (tipos, etapas, características, exemplos, sintomas ou fármacos).
 4. PROIBIDO usar cores HTML (<span style="color:...">) — escreva todo o texto em preto padrão.
 5. TODAS as questões do anexo DEVEM ser respondidas sem pular nenhuma!`;
         const qPrompt =
