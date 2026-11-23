@@ -321,7 +321,7 @@ ESTRUTURA OBRIGATÓRIA DA RESOLUÇÃO DA TUTORIA (SIGA ESTA ORDEM ESTRITA):
      * **6. VALORES CONCRETOS E ACHADOS ESPECÍFICOS**:
        Forneça pontos de corte laboratoriais, valores de pH, achados de microscopia e sinais semiológicos patognomônicos.
      * **7. ENUNCIADO LIMPO**:
-       No campo "question" de cada item de "learningQuestions", forneça APENAS o texto da pergunta SEM prefixos numéricos (NÃO escreva "1.", "Questão 1:", etc.).
+       No campo "question" de cada item de "learningQuestions", COPIE A QUESTÃO/OBJETIVO EXATAMENTE DO JEITO QUE ESTÁ ESCRITO NO ANEXO (palavra por palavra, sem parafrasear, sem resumir e sem alterar o enunciado original — apenas remova o prefixo numérico como "1." ou "Questão 1:" porque o sistema adiciona "Questão N:" automaticamente como título). TODA questão do anexo DEVE ter uma resposta completa, detalhada e aprofundada em "detailedAnswer" logo abaixo!
 
 7. **FONTES EPIDEMIOLÓGICAS E REFERÊNCIAS CIENTÍFICAS (OBRIGATÓRIO)**:
    - CITAÇÃO IMEDIATA NO TEXTO: Ao citar dados epidemiológicos (incidência, prevalência, mortalidade, novos casos), mostre a fonte logo após o dado, entre parênteses (ex: (Fonte: INCA, Estimativa de Câncer)).
@@ -403,7 +403,7 @@ DIRETRIZES DE TRANSCRIÇÃO INTEGRAL (ZERO CORTES / ZERO RESUMOS):
    - Qualquer pergunta disparadora, dúvida, desafio ou problema formulado no final do caso original.
 3. Se o caso estiver distribuído em múltiplas fotos/imagens/slides, junte tudo em uma única transcrição contínua, completa e cronológica do caso clínico.
 4. PROIBIDO resumir, PROIBIDO parafrasear, PROIBIDO omitir frases e PROIBIDO inventar dados que não estão lá.
-5. Se houver Objetivos de Aprendizagem ou Questões de Aprendizagem explícitas escritas na imagem ou documento, extraia cada uma delas no array "detectedObjectives".
+5. Se houver Objetivos de Aprendizagem ou Questões de Aprendizagem/Perguntas escritas na imagem ou documento, extraia CADA UMA DELAS no array "detectedObjectives" COPIANDO LITERALMENTE PALAVRA POR PALAVRA exatamente como está escrito no anexo (sem resumir, sem parafrasear e sem pular nenhuma!).
 6. Se houver Palavras Desconhecidas ou Termos Desconhecidos listados na imagem ou documento (Passo 1 do PBL), extraia cada uma delas no array "detectedUnknownTerms".
 7. Se houver Hipóteses ou Hipóteses Diagnósticas levantadas na imagem ou documento (Passo 3 do PBL), extraia cada uma delas no array "detectedHypotheses".
 
@@ -461,11 +461,14 @@ ${initialDetectedHypotheses.length > 0 ? `🚨 HIPÓTESES DIAGNÓSTICAS EXTRAÍD
 ${initialDetectedHypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}
 Avalie e julgue EXATAMENTE estas hipóteses no array "hypothesisAnalysis" (Correta ou Incorreta)! NÃO invente outras hipóteses!` : ""}
 
-${initialDetectedObjectives.length > 0 ? `🚨 OBJETIVOS DE APRENDIZAGEM EXTRAÍDOS DAS IMAGENS/DOCUMENTOS:
+${initialDetectedObjectives.length > 0 ? `🚨 QUESTÕES / OBJETIVOS DE APRENDIZAGEM EXTRAÍDOS LITERALMENTE DO ANEXO (OBRIGATÓRIO RESPONDER A TODOS):
 ${initialDetectedObjectives.map((obj, i) => `${i + 1}. ${obj}`).join("\n")}
-Responda OBRIGATORIAMENTE a CADA UM destes objetivos no array "learningQuestions"! Não omita nenhum!
-${initialDetectedObjectives.length === 1 ? `ATENÇÃO CRÍTICA: Foi detectado apenas 1 objetivo prévio na leitura inicial, porém uma Tutoria Médica exige o desdobramento e resposta a TODOS os objetivos do documento ou a formulação de 5 a 8 Questões de Aprendizagem completas cobrindo todos os eixos biomédicos do caso (fisiopatologia celular e molecular, semiologia e diagnóstico diferencial, propedêutica armada e manejo clínico/farmacológico completo). É TERMINANTEMENTE PROIBIDO PARAR NA QUESTÃO 1 OU GERAR APENAS 1 QUESTÃO!` : ""}` : `🚨 ATENÇÃO PARA AS QUESTÕES DE APRENDIZAGEM:
-Extraia e responda a TODOS os objetivos de aprendizagem do documento. Se não houver lista explícita, formule e responda de 5 a 8 Questões de Aprendizagem profundas cobrindo todos os pilares biomédicos do caso. PROIBIDO PARAR NA QUESTÃO 1!`}
+REGRA INVIOLÁVEL:
+- Você DEVE incluir CADA UMA das ${initialDetectedObjectives.length} questões acima no array "learningQuestions", mantendo o enunciado EXATAMENTE como está escrito acima no campo "question" (palavra por palavra, sem parafrasear!).
+- Logo abaixo de cada questão, preencha "detailedAnswer" com uma resposta médica completa, aprofundada, bem estruturada em tópicos e em texto preto padrão (sem cores vermelho/verde e sem o rótulo "Contextualização e Relevância Clínica:").
+- É TERMINANTEMENTE PROIBIDO pular, agrupar ou deixar qualquer uma dessas ${initialDetectedObjectives.length} questões sem resposta!
+${initialDetectedObjectives.length === 1 ? `ATENÇÃO: Se houver mais questões/objetivos no documento anexo além deste 1 detectado inicialmente, extraia literalmente TODOS eles e responda a cada um!` : ""}` : `🚨 ATENÇÃO PARA AS QUESTÕES DE APRENDIZAGEM:
+Extraia LITERALMENTE (palavra por palavra, do jeito que está no anexo) TODAS as questões/objetivos de aprendizagem do documento e responda a CADA UMA delas com profundidade em "learningQuestions". Somente se o anexo não tiver nenhuma questão ou objetivo escrito, formule e responda de 5 a 8 questões cobrindo todos os pilares do caso.`}
 
 ${userNotes ? `🚨 ATENÇÃO - ANOTAÇÕES E PERGUNTAS DO ESTUDANTE:
 """
@@ -500,54 +503,65 @@ ${hasReferenceBooks ? `\nObras de referência selecionadas da biblioteca: ${book
       result.caseTranscription = initialTranscribedCase;
     }
 
-    // Safeguard: Guarantee learningQuestions has ALL questions and is never empty or cut off at 1 question!
-    if (!result.learningQuestions || !Array.isArray(result.learningQuestions) || result.learningQuestions.length <= 1) {
-      console.warn("learningQuestions has <= 1 question in primary result. Generating dedicated learning questions with full document attachments...");
+    // Safeguard: Guarantee ALL learningQuestions from the attachment are answered completely (never missing, empty, or cut off!)
+    const currentQuestions: Array<{ question?: string; detailedAnswer?: string }> = Array.isArray(result.learningQuestions)
+      ? result.learningQuestions
+      : [];
+    const hasEmptyOrShortAnswer = currentQuestions.some(
+      (q) => !q?.detailedAnswer || String(q.detailedAnswer).trim().length < 120
+    );
+    const missingDetectedCount =
+      initialDetectedObjectives.length > 0 && currentQuestions.length < initialDetectedObjectives.length;
+
+    if (currentQuestions.length <= 1 || hasEmptyOrShortAnswer || missingDetectedCount) {
+      console.warn(
+        `[generate-tutoria] learningQuestions incompleto (${currentQuestions.length} geradas, ${initialDetectedObjectives.length} detectadas, curtas=${hasEmptyOrShortAnswer}). Gerando respostas dedicadas...`
+      );
       try {
+        const objectivesInstruction =
+          initialDetectedObjectives.length > 0
+            ? `LISTA EXATA DAS ${initialDetectedObjectives.length} QUESTÕES/OBJETIVOS DO ANEXO (COPIE CADA ENUNCIADO LITERALMENTE PALAVRA POR PALAVRA NO CAMPO "question" E RESPONDA COMPLETAMENTE EM "detailedAnswer"):\n${initialDetectedObjectives
+                .map((obj, i) => `${i + 1}. ${obj}`)
+                .join("\n")}`
+            : `Leia todo o documento anexo, copie LITERALMENTE palavra por palavra TODAS as questões/objetivos presentes nele no campo "question" e responda completamente a CADA UMA em "detailedAnswer".`;
+
         const fallbackRes = await generateJSONFromAI({
           systemPrompt: `Você é um preceptor médico especialista sênior em PBL / Tutoria Médica.
-Sua missão única e prioritária é EXTRAIR E RESPONDER A TODAS AS PERGUNTAS E OBJETIVOS DE APRENDIZAGEM do caso clínico em anexo COM MÁXIMO NÍVEL DE DETALHAMENTO (PADRÃO TRATADO MÉDICO / UPTODATE).
-Leia atentamente todo o documento anexo (PDF, Word ou Texto) e as anotações do estudante até o fim.
-Localize e extraia TODOS os objetivos de aprendizagem e questões do documento anexo. Responda a TODOS sem omitir nenhum!
-PROIBIÇÃO INVIOLÁVEL: É terminantemente proibido parar na questão 1 ou retornar apenas 1 questão! Uma sessão completa de Tutoria exige responder a todos os objetivos do documento ou, caso não haja lista explícita no documento, formular e responder de 5 a 8 Questões de Aprendizagem essenciais cobrindo:
-1) Fisiopatologia celular e molecular profunda;
-2) Correlação anatomoclínica e fisiologia do sistema afetado;
-3) Semiotécnica, manobras diagnósticas e sinais de alarme ("red flags");
-4) Diagnóstico diferencial e critérios de exclusão;
-5) Propedêutica armada e exames complementares com valores de referência;
-6) Terapêutica medicamentosa (classes, fármacos, doses, posologia e efeitos adversos) e conduta não farmacológica.
-Responda a cada questão com riqueza exaustiva de detalhes (padrão tratado médico / UpToDate).
-REGRA MANDATÓRIA: Responda a cada questão de forma puramente teórica, científica e universal. NÃO mencione nem misture o caso clínico do problema ao longo da resposta! Se for correlacionar com o caso, faça-o exclusivamente ao final como uma única estrofe independente destacada ("**Aplicação / Correlação ao Caso Clínico:** Agora correlacionando diretamente com o caso clínico do problema...").
-Estrutura estrita: tópicos e subtópicos detalhados (proibido mega texto monolítico corrido), contextualização inicial, etapas numeradas (1. 2. 3.) para processos com fases, setas (->) para encadeamentos causais sem exagero.
+Sua missão ÚNICA e PRIORITÁRIA é responder a TODAS as questões/objetivos de aprendizagem do documento anexo com profundidade médica completa.
+REGRAS INVIOLÁVEIS:
+1. COPIE CADA QUESTÃO/OBJETIVO EXATAMENTE DO JEITO QUE ESTÁ ESCRITO NO ANEXO no campo "question" (palavra por palavra, sem parafrasear, sem resumir).
+2. Responda a 100% DAS QUESTÕES do anexo em "detailedAnswer" com explicação médica detalhada, organizada em parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:") seguido de tópicos e subtópicos com bolinhas e negrito.
+3. PROIBIDO usar cores HTML (<span style="color:...">) — escreva todo o texto em preto padrão (Markdown puro).
+4. Responda de forma teórica, científica e completa; se correlacionar com o caso clínico, faça apenas em uma breve estrofe final ("**Correlação ao Caso Clínico:** ...").
 Retorne estritamente o JSON válido:
 {
   "learningQuestions": [
     {
-      "question": "Texto da pergunta de aprendizagem sem prefixo numérico",
-      "detailedAnswer": "Resposta didática, profunda e altamente detalhada (padrão tratado médico) em tópicos, subtópicos aprofundados, contextualização e etapas explicadas passo a passo"
+      "question": "Enunciado LITERAL exato da questão conforme está no anexo",
+      "detailedAnswer": "Resposta médica completa, detalhada e bem estruturada em Markdown puro"
     }
   ]
 }`,
-          userPrompt: `Extraia e responda com profundidade máxima e detalhamento exaustivo a TODAS as questões e objetivos de aprendizagem do caso clínico em anexo (sem omitir nenhum objetivo, responda a todos os objetivos do documento ou formule de 5 a 8 questões completas, NUNCA pare na questão 1)!
-${initialTranscribedCase ? `Caso Clínico Transcrito:\n"""\n${initialTranscribedCase}\n"""\n` : ""}
-${userNotes ? `Anotações do estudante com perguntas prioritárias:\n"""\n${userNotes}\n"""` : "Identifique e responda a todos os objetivos de aprendizagem do documento com máxima densidade acadêmica."}`,
-          fileAttachments, // PASS THE FILE ATTACHMENTS TO FALLBACK!
+          userPrompt: `${objectivesInstruction}
+${initialTranscribedCase ? `\nCaso Clínico de referência:\n"""\n${initialTranscribedCase}\n"""\n` : ""}
+${userNotes ? `\nAnotações/Questões enviadas pelo estudante:\n"""\n${userNotes}\n"""` : ""}`,
+          fileAttachments,
           maxOutputTokens: 65536,
-          temperature: 0.3,
+          temperature: 0.25,
         });
 
         if (fallbackRes?.learningQuestions && Array.isArray(fallbackRes.learningQuestions) && fallbackRes.learningQuestions.length > 0) {
-          if (!result.learningQuestions || result.learningQuestions.length <= 1) {
+          if (currentQuestions.length <= 1 || hasEmptyOrShortAnswer || fallbackRes.learningQuestions.length >= currentQuestions.length) {
             result.learningQuestions = fallbackRes.learningQuestions;
           } else {
-            const existingQ = new Set(result.learningQuestions.map((q: any) => q.question?.toLowerCase().trim()));
+            const existingQ = new Set(currentQuestions.map((q: any) => q.question?.toLowerCase().trim()));
             for (const fq of fallbackRes.learningQuestions) {
               if (fq?.question && !existingQ.has(fq.question.toLowerCase().trim())) {
                 result.learningQuestions.push(fq);
               }
             }
           }
-          console.log(`[generate-tutoria] learningQuestions enriquecido/restaurado com sucesso via fallback: ${result.learningQuestions.length} questões.`);
+          console.log(`[generate-tutoria] learningQuestions completo via etapa dedicada: ${result.learningQuestions.length} questões respondidas.`);
         }
       } catch (fbErr) {
         console.error("Failed to generate fallback learning questions:", fbErr);

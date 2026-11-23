@@ -621,7 +621,7 @@ REGRAS OBRIGATÓRIAS:
 2. "unknownTerms": Defina os termos desconhecidos presentes no documento/anotações.
 3. "hypothesisAnalysis": Julgue as hipóteses diagnósticas ("Correta (Provável)" ou "Incorreta (Descartada)") com justificativa clínica.
 4. "clinicalConclusion": Forneça "summary", "clinicalReasoning", "conductAndOutcome" e "differentialTable" (tabela Markdown completa comparando diagnósticos diferenciais).
-5. "learningQuestions": Responda a TODOS os Objetivos/Questões de Aprendizagem do documento com profundidade de tratado médico (introdução direta sem escrever "Contextualização e Relevância Clínica:", Bases Morfofuncionais, Fisiopatologia Celular/Molecular, Clínica, Propedêutica e Terapêutica Completa).
+5. "learningQuestions": OBRIGATÓRIO extrair e responder a TODAS as questões/objetivos de aprendizagem do documento anexo (sem pular nenhuma!). No campo "question", COPIE O ENUNCIADO EXATAMENTE DO JEITO QUE ESTÁ NO ANEXO (palavra por palavra, sem parafrasear). Em "detailedAnswer", responda detalhadamente logo abaixo com parágrafo introdutório direto (PROIBIDO escrever "Contextualização e Relevância Clínica:" e PROIBIDO usar <span style="color:..."> vermelho/verde — todo texto em preto padrão), seguido de tópicos e subtópicos completos (Bases Morfofuncionais, Fisiopatologia Celular/Molecular, Clínica, Propedêutica e Terapêutica Completa).
 Responda OBRIGATORIAMENTE em JSON válido:
 {
   "title": "Título Acadêmico do Caso Clínico",
@@ -644,7 +644,28 @@ Responda OBRIGATORIAMENTE em JSON válido:
 }`;
       const prompt = `Resolva integralmente a Tutoria Médica / PBL dos arquivos anexados.${userNotes ? `\n\nAnotações/Objetivos do estudante:\n${userNotes}` : ""}`;
       const raw = await callGeminiDirectBrowser(prompt, sys, true, inlineParts);
-      const result = parseJsonSafe(raw);
+      const result = parseJsonSafe(raw) || {};
+
+      // Safeguard: se learningQuestions veio vazio ou com respostas vazias/curtas, faz chamada dedicada só para responder todas as questões do anexo literalmente
+      const lqArr = Array.isArray(result.learningQuestions) ? result.learningQuestions : [];
+      const hasMissingAnswers =
+        lqArr.length === 0 ||
+        lqArr.some((q: any) => !q?.detailedAnswer || String(q.detailedAnswer).trim().length < 100);
+      if (hasMissingAnswers) {
+        try {
+          const qSys = `Você é um preceptor médico de Tutoria/PBL. Extraia LITERALMENTE (palavra por palavra, exatamente como está no anexo) TODAS as questões/objetivos de aprendizagem do documento e responda a CADA UMA delas com profundidade médica completa em Markdown puro (texto preto padrão, sem tags <span style="color:..."> e sem escrever "Contextualização e Relevância Clínica:"). Retorne JSON: { "learningQuestions": [ { "question": "Enunciado literal do anexo", "detailedAnswer": "Resposta completa e detalhada" } ] }`;
+          const qRaw = await callGeminiDirectBrowser(
+            `Extraia literalmente todas as questões/objetivos do anexo e responda completamente a cada uma.${userNotes ? `\n\nAnotações/Questões do estudante:\n${userNotes}` : ""}`,
+            qSys,
+            true,
+            inlineParts
+          );
+          const qParsed = parseJsonSafe(qRaw);
+          if (Array.isArray(qParsed?.learningQuestions) && qParsed.learningQuestions.length > 0) {
+            result.learningQuestions = qParsed.learningQuestions;
+          }
+        } catch {}
+      }
 
       const parts: string[] = [];
       parts.push(`# ${result.title || "Resolução de Tutoria Clínica"}\n`);
